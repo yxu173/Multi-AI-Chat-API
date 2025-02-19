@@ -1,0 +1,6 @@
+﻿services:
+  web.api:
+    image: web.api
+    build:
+      context: .
+      dockerfile: src/Web.Api/Dockerfile
