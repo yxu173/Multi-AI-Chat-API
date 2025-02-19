@@ -32,4 +32,10 @@ public record Error
 
     public static Error Conflict(string code, string description) =>
         new(code, description, ErrorType.Conflict);
+    public static Error Validation(string code, string description) =>
+        new(code, description, ErrorType.Validation);
+    
+    public static Error BadRequest(string code, string description) =>
+        new(code, description, ErrorType.BadRequest);
+
 }

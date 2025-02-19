@@ -2,17 +2,11 @@
 
 public sealed record ValidationError : Error
 {
-    public ValidationError(Error[] errors)
-        : base(
-            "Validation.General",
-            "One or more validation errors occurred",
-            ErrorType.Validation)
+    public IReadOnlyDictionary<string, Error[]> ErrorsByProperty { get; }
+
+    public ValidationError(Error[] errors, Dictionary<string, Error[]> errorsByProperty) 
+        : base("Validation.General", "One or more validation errors occurred", ErrorType.Validation)
     {
-        Errors = errors;
+        ErrorsByProperty = errorsByProperty;
     }
-
-    public Error[] Errors { get; }
-
-    public static ValidationError FromResults(IEnumerable<Result> results) =>
-        new(results.Where(r => r.IsFailure).Select(r => r.Error).ToArray());
 }

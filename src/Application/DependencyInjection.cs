@@ -1,4 +1,5 @@
 ﻿using Application.Abstractions.Behaviors;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Application;
@@ -12,10 +13,10 @@ public static class DependencyInjection
             config.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly);
 
             config.AddOpenBehavior(typeof(RequestLoggingPipelineBehavior<,>));
-            // config.AddOpenBehavior(typeof(ValidationPipelineBehavior<,>));
+             config.AddOpenBehavior(typeof(ValidationPipelineBehavior<,>));
         });
 
-        // services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
+         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
 
         return services;
     }

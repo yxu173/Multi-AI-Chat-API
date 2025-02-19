@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Identity;
+using SharedKernel;
 
 namespace Domain.Users;
 
@@ -7,21 +8,23 @@ public sealed class User : IdentityUser<Guid>
     private User()
     {
     }
-
-    public string? FirstName { get; private set; }
-    public string? LastName { get; private set; }
-    public string? Provider { get; set; }
-    public string? ProviderUserId { get; set; }
-
-    public static User Create(string firstName, string lastName, string email, string userName)
+    
+    private User(string email, string userName)
     {
-        return new User
+        Email = email;
+        UserName = userName;
+    }
+
+
+    public static Result<User> Create(string email, string userName)
+    {
+        try
         {
-            Id = Guid.NewGuid(),
-            FirstName = firstName,
-            LastName = lastName,
-            Email = email,
-            UserName = userName
-        };
+            return Result.Success(new User(email.Trim(), userName.Trim()));
+        }
+        catch (ArgumentException ex)
+        {
+            return Result.Failure<User>(Error.Validation("User.Create", ex.Message));
+        }
     }
 }
