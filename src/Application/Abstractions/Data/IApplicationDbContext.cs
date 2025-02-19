@@ -1,4 +1,4 @@
-﻿using Domain.Users;
+﻿using Domain.Aggregates.Users;
 using Microsoft.EntityFrameworkCore;
 
 namespace Application.Abstractions.Data;

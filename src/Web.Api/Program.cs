@@ -16,10 +16,10 @@ builder.Host.UseSerilog((context, loggerConfig) => loggerConfig.ReadFrom.Configu
 
 
 builder.Services
-    .AddApplication()
     .AddPresentation()
-    .AddInfrastructure(builder.Configuration)
-    .AddAuthorization();
+    .AddApplication()
+    .AddInfrastructure(builder.Configuration);
+
 
 
 builder.Services.AddOpenApi();

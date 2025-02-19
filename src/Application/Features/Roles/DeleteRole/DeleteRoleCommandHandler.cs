@@ -1,5 +1,6 @@
 ﻿using Application.Abstractions.Messaging;
-using Domain.Users;
+using Domain.Aggregates.Users;
+using Domain.DomainErrors;
 using Microsoft.AspNetCore.Identity;
 using SharedKernel;
 

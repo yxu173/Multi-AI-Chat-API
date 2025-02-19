@@ -1,6 +1,8 @@
 ﻿using Application.Abstractions.Data;
 using Application.Abstractions.Messaging;
-using Domain.Users;
+using Domain.Aggregates.Users;
+using Domain.DomainErrors;
+using Domain.Repositories;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel;
@@ -9,25 +11,29 @@ namespace Application.Features.Identity.Register;
 
 internal sealed class RegisterUserCommandHandler(
     IApplicationDbContext context,
-    UserManager<User> userManager)
+    IUserRepository userRepository)
     : ICommandHandler<RegisterUserCommand, Guid>
 {
     public async Task<Result<Guid>> Handle(RegisterUserCommand command, CancellationToken cancellationToken)
     {
-        if (await context.Users.FirstOrDefaultAsync(x => x.Email == command.Email, cancellationToken) != null)
+        if (await userRepository.ExistsByEmailAsync(command.Email))
         {
             return Result.Failure<Guid>(UserErrors.EmailNotUnique);
         }
 
-        var user = User.Create(command.FirstName, command.LastName, command.Email, command.UserName);
+        var user = User.Create( command.Email, command.UserName);
+        if (user.IsFailure)
+        {
+            return Result.Failure<Guid>(user.Error);
+        }
 
-        var result = await userManager.CreateAsync(user, command.Password);
-        var addRoleResult = await userManager.AddToRoleAsync(user, Roles.user.ToString());
+        var result = await userRepository.CreateAsync(user.Value, command.Password);
+        //var addRoleResult = await userManager.AddToRoleAsync(user.Value, Roles.Basic.ToString());
         if (!result.Succeeded)
         {
             return Result.Failure<Guid>(UserErrors.RegisterUserError);
         }
 
-        return user.Id;
+        return user.Value.Id;
     }
 }

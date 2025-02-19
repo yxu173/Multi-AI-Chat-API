@@ -1,6 +1,6 @@
 ﻿using SharedKernel;
 
-namespace Domain.Users;
+namespace Domain.DomainErrors;
 
 public static class RoleErrors
 {

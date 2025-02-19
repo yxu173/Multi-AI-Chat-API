@@ -1,5 +1,5 @@
 ﻿using Application.Abstractions.Data;
-using Domain.Users;
+using Domain.Aggregates.Users;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
