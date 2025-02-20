@@ -9,5 +9,5 @@ public class BaseController : ControllerBase
 {
     private IMediator _mediatorInstance;
     protected IMediator _mediator => _mediatorInstance ??= HttpContext.RequestServices.GetService<IMediator>();
-    protected string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier);
+    protected Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 }

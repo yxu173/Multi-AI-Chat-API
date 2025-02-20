@@ -1,11 +1,13 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using Application.Abstractions.Authentication;
 using Application.Abstractions.Data;
 using Domain.Aggregates.Users;
+using Domain.Repositories;
 using Infrastructure.Authentication;
 using Infrastructure.Authentication.Options;
 using Infrastructure.Database;
+using Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
@@ -26,6 +28,9 @@ public static class DependencyInjection
                 configuration.GetConnectionString("Database")));
 
         services.AddHttpContextAccessor();
+        services.AddScoped<IChatRepository,ChatRepository>();
+        services.AddScoped<IMessageRepository,MessageRepository>();
+        services.AddScoped<IUserRepository,UserRepository>();
         services.AddScoped<IUserContext, UserContext>();
         services.AddSingleton<ITokenProvider, TokenProvider>();
         services.AddScoped<IApplicationDbContext, ApplicationDbContext>();
@@ -91,6 +96,22 @@ public static class DependencyInjection
                     ValidAudience = jwtSettings.Audience,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SigningKey))
                 };
+
+                jwt.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
+                {
+                    context.Token = accessToken;
+                }
+                
+                return Task.CompletedTask;
+            }
+        };
             })
             .AddGoogle(googleOptions =>
             {

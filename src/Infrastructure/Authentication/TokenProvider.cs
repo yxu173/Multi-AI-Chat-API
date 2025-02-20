@@ -1,41 +1,51 @@
-﻿using System.Security.Claims;
+﻿using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 using Application.Abstractions.Authentication;
 using Domain.Aggregates.Users;
-using Microsoft.Extensions.Configuration;
-using Microsoft.IdentityModel.JsonWebTokens;
+using Infrastructure.Authentication.Options;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using JwtRegisteredClaimNames = Microsoft.IdentityModel.JsonWebTokens.JwtRegisteredClaimNames;
 
 namespace Infrastructure.Authentication;
 
-internal sealed class TokenProvider(IConfiguration configuration) : ITokenProvider
+internal sealed class TokenProvider : ITokenProvider
 {
+    private readonly JwtSettings _jwtSettings;
+    private readonly byte[] _key;
+
+    public TokenProvider(IOptions<JwtSettings> jwtSettings)
+    {
+        _jwtSettings = jwtSettings.Value;
+        _key = Encoding.UTF8.GetBytes(_jwtSettings.SigningKey);
+    }
+
     public string Create(User user)
     {
-        string secretKey = configuration["Jwt:Secret"]!;
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
-
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var claims = new List<Claim>
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
+            new Claim(JwtRegisteredClaimNames.Name, user.UserName ?? string.Empty),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(JwtRegisteredClaimNames.Aud, _jwtSettings.Audience)
+        };
+        
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
-            Subject = new ClaimsIdentity(
-            [
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
-                new Claim(JwtRegisteredClaimNames.Name, user.UserName ?? string.Empty),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-            ]),
-            Expires = DateTime.UtcNow.AddMinutes(30),
-            SigningCredentials = credentials,
-            Issuer = configuration["Jwt:Issuer"],
-            Audience = configuration["Jwt:Audience"]
+            Subject = new ClaimsIdentity(claims),
+            Issuer = _jwtSettings.Issuer,
+            Audience = _jwtSettings.Audience,
+            Expires = DateTime.UtcNow.AddDays(7),
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(_key),
+                SecurityAlgorithms.HmacSha256)
         };
 
-        var handler = new JsonWebTokenHandler();
-
-        string token = handler.CreateToken(tokenDescriptor);
-
-        return token;
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        return tokenHandler.WriteToken(token);
     }
 }
