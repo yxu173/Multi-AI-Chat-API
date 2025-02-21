@@ -12,14 +12,14 @@ services:
     user: "1000:1000"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__Database=Host=db;Port=5432;Database=Internship-Platform;Username=postgres;Password=postgres
+      - ConnectionStrings__Database=Host=db;Port=5432;Database=Multi-Ai-Chat;Username=postgres;Password=postgres
 
   db:
     image: postgres:17-alpine
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=Internship-Platform
+      - POSTGRES_DB=Multi-Ai-Chat
     volumes:
       - ./.containers/intern_db:/var/lib/postgresql/data
     ports:

@@ -17,7 +17,7 @@ public class DeepSeekService : IAiModelService
     {
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://api.deepseek.com/v1/");
-        _apiKey = configuration["AI:DeepSeek:ApiKey"];
+        _apiKey = configuration["AI:DeepSeek:ApiKey"]!;
     }
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
@@ -54,31 +54,37 @@ public class DeepSeekService : IAiModelService
             var line = await reader.ReadLineAsync();
             if (string.IsNullOrEmpty(line)) continue;
 
-
             if (line.StartsWith("data: "))
             {
-                var json = line["data: ".Length..];
-                var chunk = JsonSerializer.Deserialize<DeepSeekResponse>(json);
-                var content = chunk?.choices?.FirstOrDefault()?.delta?.content;
-
-                if (!string.IsNullOrEmpty(content))
+                var json = line["data: ".Length..].Trim();
+                if (json == "[DONE]")
                 {
-                    yield return content;
+                    break;
+                }
+                else
+                {
+                    var chunk = JsonSerializer.Deserialize<DeepSeekResponse>(json);
+                    var content = chunk?.choices?.FirstOrDefault()?.delta?.content;
+
+                    if (!string.IsNullOrEmpty(content))
+                    {
+                        yield return content;
+                    }
                 }
             }
         }
     }
 
+
     private record DeepSeekMessage(string role, string content);
 
     private record DeepSeekResponse(
-        [property: JsonPropertyName("choices")] 
+        [property: JsonPropertyName("choices")]
         IEnumerable<DeepSeekChoice> choices
     );
 
     private record DeepSeekChoice(
-        [property: JsonPropertyName("delta")]
-        DeepSeekDelta delta
+        [property: JsonPropertyName("delta")] DeepSeekDelta delta
     );
 
     private record DeepSeekDelta(

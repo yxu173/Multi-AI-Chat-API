@@ -24,9 +24,11 @@ public class ChatService
         IAiModelServiceFactory aiModelServiceFactory,
         IMediator mediator)
     {
-        _chatSessionRepository = chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
+        _chatSessionRepository =
+            chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
-        _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
+        _aiModelServiceFactory =
+            aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
 
@@ -35,28 +37,29 @@ public class ChatService
         var chatSession = await _chatSessionRepository.GetByIdAsync(chatSessionId);
         if (chatSession == null) throw new Exception("Chat session not found.");
 
-        // Save and broadcast user message
+
         var userMessage = Message.CreateUserMessage(userId, chatSessionId, content);
         await _messageRepository.AddAsync(userMessage);
         chatSession.AddMessage(userMessage);
+        
         await _mediator.Publish(new MessageSentNotification(
-            chatSessionId, 
+            chatSessionId,
             new MessageDto(userMessage.Content, userMessage.IsFromAi, userMessage.Id)
         ));
 
-        // Create AI message and start streaming
         var aiMessage = Message.CreateAiMessage(userId, chatSessionId);
         await _messageRepository.AddAsync(aiMessage);
         chatSession.AddMessage(aiMessage);
+       
         await _mediator.Publish(new MessageSentNotification(
             chatSessionId,
             new MessageDto(aiMessage.Content, aiMessage.IsFromAi, aiMessage.Id)
         ));
 
         var aiService = _aiModelServiceFactory.GetService(chatSession.ModelType);
+        
         try
         {
-            // Project messages to DTO to avoid circular references
             var messages = chatSession.Messages
                 .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id))
                 .ToList();
@@ -67,12 +70,13 @@ public class ChatService
                 await _messageRepository.UpdateAsync(aiMessage);
                 await _mediator.Publish(new MessageChunkReceivedNotification(chatSessionId, aiMessage.Id, chunk));
             }
+
             aiMessage.CompleteMessage();
         }
         catch (Exception)
         {
             aiMessage.FailMessage();
-            throw; // Consider logging the error here in a real application
+            throw;
         }
         finally
         {
