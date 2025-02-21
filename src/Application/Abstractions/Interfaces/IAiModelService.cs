@@ -1,7 +1,9 @@
+using Application.Services;
+using Domain.Aggregates.Chats;
+
 namespace Application.Abstractions.Interfaces;
 
 public interface IAiModelService
 {
-    Task<string> GetResponseAsync(string modelType, string message);
-    IAsyncEnumerable<string> GetStreamingResponseAsync(string modelType, string message);
+    IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history);
 }

@@ -8,11 +8,25 @@ public class ChatSessionConfiguration : IEntityTypeConfiguration<ChatSession>
 {
     public void Configure(EntityTypeBuilder<ChatSession> builder)
     {
-        builder.Property(c => c.ModelType)
-            .HasConversion<string>();
-        
-        builder.HasMany(c => c.Messages)
+        builder.ToTable("ChatSessions");
+
+        builder.HasKey(cs => cs.Id);
+
+        builder.Property(cs => cs.UserId)
+            .IsRequired();
+
+        builder.Property(cs => cs.Title)
+            .IsRequired()
+            .HasMaxLength(200);
+
+        builder.Property(cs => cs.ModelType)
+            .IsRequired();
+         builder.Property(cs => cs.ModelType)
+                .HasConversion<string>();
+
+        builder.HasMany(cs => cs.Messages)
             .WithOne(m => m.ChatSession)
-            .HasForeignKey(m => m.ChatSessionId);
+            .HasForeignKey(m => m.ChatSessionId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

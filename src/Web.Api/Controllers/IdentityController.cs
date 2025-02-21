@@ -13,7 +13,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using SharedKernel;
-using Web.Api.Contracts;
 using Web.Api.Contracts.Identity;
 using Web.Api.Extensions;
 using Web.Api.Infrastructure;

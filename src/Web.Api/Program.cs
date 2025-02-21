@@ -19,7 +19,6 @@ builder.Services.AddSignalR(options =>
     options.HandshakeTimeout = TimeSpan.FromSeconds(15);
 });
 
-// Configure CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("CorsPolicy",

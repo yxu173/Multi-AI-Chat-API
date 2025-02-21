@@ -10,6 +10,7 @@ public interface IApplicationDbContext
     DbSet<Role> Roles { get; }
     DbSet<Message> Messages { get; }
     DbSet<ChatSession> ChatSessions { get; }
+    DbSet<FileAttachment> FileAttachments { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

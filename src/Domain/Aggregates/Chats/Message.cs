@@ -1,56 +1,84 @@
 using System;
 using Domain.Common;
+using Domain.Enums;
 using SharedKernel;
 
 namespace Domain.Aggregates.Chats;
 
 public sealed class Message : BaseAuditableEntity
 {
+    public Guid UserId { get; private set; }
     public string Content { get; private set; }
-    public MessageRole Role { get; private set; }
+    public bool IsFromAi { get; private set; }
     public Guid ChatSessionId { get; private set; }
     public ChatSession ChatSession { get; private set; }
     public MessageStatus Status { get; private set; }
+    private readonly List<FileAttachment> _fileAttachments = new();
+    public IReadOnlyList<FileAttachment> FileAttachments => _fileAttachments.AsReadOnly();
 
     private Message()
     {
     }
 
-    public static Message Create(string content, MessageRole role, Guid chatSessionId)
+    public static Message CreateUserMessage(Guid userId, Guid chatSessionId, string content)
     {
+        if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
+        if (chatSessionId == Guid.Empty)
+            throw new ArgumentException("ChatSessionId cannot be empty.", nameof(chatSessionId));
+        if (string.IsNullOrWhiteSpace(content))
+            throw new ArgumentException("Content cannot be empty.", nameof(content));
+
         return new Message
         {
             Id = Guid.NewGuid(),
+            UserId = userId,
             Content = content,
-            Role = role,
             ChatSessionId = chatSessionId,
-            Status = MessageStatus.Completed
+            IsFromAi = false,
+            Status = MessageStatus.Completed,
+            CreatedAt = DateTime.UtcNow
         };
     }
 
-    public void UpdateContent(string content)
+    public static Message CreateAiMessage(Guid userId, Guid chatSessionId)
     {
-        Content = content;
+        if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
+        if (chatSessionId == Guid.Empty)
+            throw new ArgumentException("ChatSessionId cannot be empty.", nameof(chatSessionId));
+
+        return new Message
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Content = string.Empty,
+            ChatSessionId = chatSessionId,
+            IsFromAi = true,
+            Status = MessageStatus.Streaming,
+            CreatedAt = DateTime.UtcNow
+        };
+    }
+
+    public void AppendContent(string chunk)
+    {
+        Content += chunk;
+        LastModifiedAt = DateTime.UtcNow;
+    }
+
+    public void CompleteMessage()
+    {
         Status = MessageStatus.Completed;
+        LastModifiedAt = DateTime.UtcNow;
     }
 
-    public void UpdateStatus(MessageStatus status)
+    public void FailMessage()
     {
-        Status = status;
+        Status = MessageStatus.Failed;
+        LastModifiedAt = DateTime.UtcNow;
     }
 
-    public enum MessageStatus
+    public void AddFileAttachment(FileAttachment fileAttachment)
     {
-        Pending,
-        Streaming,
-        Completed,
-        Failed
-    }
-
-    public enum MessageRole
-    {
-        User,
-        Assistant,
-        System
+        if (fileAttachment == null) throw new ArgumentNullException(nameof(fileAttachment));
+        _fileAttachments.Add(fileAttachment);
     }
 }

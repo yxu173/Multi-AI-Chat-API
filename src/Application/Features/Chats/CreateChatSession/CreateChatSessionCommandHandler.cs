@@ -8,17 +8,17 @@ namespace Application.Features.Chats.CreateChatSession;
 
 public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSessionCommand, Guid>
 {
-    private readonly IChatRepository _chatRepository;
+    private readonly IChatSessionRepository _chatSessionRepository;
 
-    public CreateChatSessionCommandHandler(IChatRepository chatRepository)
+    public CreateChatSessionCommandHandler(IChatSessionRepository chatSessionRepository)
     {
-        _chatRepository = chatRepository;
+        _chatSessionRepository = chatSessionRepository;
     }
+
     public async Task<Result<Guid>> Handle(CreateChatSessionCommand request, CancellationToken cancellationToken)
     {
-        var modelType = Enum.Parse<ModelType>(request.ModelType);
-        var chatSession = ChatSession.Create(request.UserId,modelType);
-        await _chatRepository.CreateChatSessionAsync(chatSession);
+        var chatSession = ChatSession.Create(request.UserId, request.ModelType);
+        await _chatSessionRepository.AddAsync(chatSession);
         return Result.Success(chatSession.Id);
     }
 }
