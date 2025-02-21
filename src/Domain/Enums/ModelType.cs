@@ -6,6 +6,5 @@ public enum ModelType
     ChatGPT,
     DeepSeek,
     Gemini,
-    
     Custom
 }

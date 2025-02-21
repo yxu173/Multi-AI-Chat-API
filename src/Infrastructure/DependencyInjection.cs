@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<ChatGptService>();
         services.AddScoped<ClaudeService>();
         services.AddScoped<DeepSeekService>();
+        services.AddScoped<GeminiService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IUserContext, UserContext>();
         services.AddSingleton<ITokenProvider, TokenProvider>();

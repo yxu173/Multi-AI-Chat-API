@@ -22,6 +22,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             ModelType.ChatGPT => _serviceProvider.GetService<ChatGptService>(),
             ModelType.Claude => _serviceProvider.GetService<ClaudeService>(),
             ModelType.DeepSeek => _serviceProvider.GetService<DeepSeekService>(),
+            ModelType.Gemini => _serviceProvider.GetService<GeminiService>(),
             _ => throw new NotSupportedException($"Model type {modelType} not supported.")
         };
     }
