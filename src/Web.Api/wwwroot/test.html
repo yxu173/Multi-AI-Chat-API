@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        #messagesList {
+            height: 500px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+            margin-right: 5px;
+        }
+        .ai-message {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+            margin-left: 5px;
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+        #messageInput {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .error {
+            color: #dc3545;
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f8d7da;
+        }
+        .timestamp {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div id="connectionStatus" class="status disconnected">Disconnected</div>
+        <div id="messagesList"></div>
+        <div class="input-container">
+            <input type="text" id="messageInput" placeholder="Type your message here..." />
+            <button id="sendButton" disabled>Send</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
+    <script>
+        const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1MjgyNS1jY2ZmLTdmZWQtOGE4My00ZmRmYjZjMmVlYmUiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3MkBvdXRsb29rLmNvbSIsIm5hbWUiOiJtcngxMTIiLCJqdGkiOiI2ZmQxMmFiOC02NjgwLTRkYjItODJlMy03NzljOTIyZTMzZTUiLCJhdWQiOlsiU3dhZ2dlclVJIiwiU3dhZ2dlclVJIl0sIm5iZiI6MTc0MDE1OTgxNywiZXhwIjoxNzQwNzY0NjE3LCJpYXQiOjE3NDAxNTk4MTcsImlzcyI6IkludGVybnNoaXAtUGxhdGZvcm0ifQ.vMs_MDUtuWSfAiFQwjQeCXqkxo1LyeOmAuOQZWfaoWg';
+        const chatId = 'b8f00f57-5da6-4028-b11c-c2df02260b43';
+        
+        
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/chatHub", { 
+                accessTokenFactory: () => token
+            })
+            .withAutomaticReconnect()
+            .build();
+
+        const messagesList = document.getElementById("messagesList");
+        const messageInput = document.getElementById("messageInput");
+        const sendButton = document.getElementById("sendButton");
+        const connectionStatus = document.getElementById("connectionStatus");
+
+        function formatTimestamp(date) {
+            return date.toLocaleTimeString();
+        }
+
+        function appendMessage(role, content) {
+            const messageDiv = document.createElement("div");
+            messageDiv.className = `message ${role}-message`;
+            
+            const contentDiv = document.createElement("div");
+            contentDiv.textContent = content;
+            messageDiv.appendChild(contentDiv);
+            
+            const timestampDiv = document.createElement("div");
+            timestampDiv.className = "timestamp";
+            timestampDiv.textContent = formatTimestamp(new Date());
+            messageDiv.appendChild(timestampDiv);
+            
+            messagesList.appendChild(messageDiv);
+            messagesList.scrollTop = messagesList.scrollHeight;
+        }
+
+        async function sendMessage() {
+            if (messageInput.value.trim() === "") return;
+
+            sendButton.disabled = true;
+            const message = messageInput.value;
+            messageInput.value = "";
+
+            try {
+                await connection.invoke("JoinChatSession", chatId);
+                await connection.invoke("SendMessage", chatId, message);
+            } catch (err) {
+                console.error(err);
+                const errorDiv = document.createElement("div");
+                errorDiv.className = "error";
+                errorDiv.textContent = "Error sending message: " + err.message;
+                messagesList.appendChild(errorDiv);
+            }
+        }
+
+        let currentAiMessage = null;
+
+        connection.on("ReceiveMessage", (message) => {
+            console.log("Full message received:", message);
+            
+            if (message.role === 'assistant') {
+                // Finalize the streaming message
+                if (currentAiMessage) {
+                    currentAiMessage.querySelector('div').textContent = message.content;
+                    currentAiMessage = null;
+                } else {
+                    appendMessage(message.role, message.content);
+                }
+            } else {
+                appendMessage(message.role, message.content);
+            }
+            
+            sendButton.disabled = false;
+        });
+
+        connection.on("ReceiveMessageChunk", (messageId, chunk) => {
+            console.log("Message chunk:", chunk);
+            
+            if (!currentAiMessage) {
+                // Create new message container for streaming
+                currentAiMessage = document.createElement("div");
+                currentAiMessage.className = "message assistant-message";
+                
+                const contentDiv = document.createElement("div");
+                contentDiv.textContent = chunk;
+                currentAiMessage.appendChild(contentDiv);
+                
+                const timestampDiv = document.createElement("div");
+                timestampDiv.className = "timestamp";
+                timestampDiv.textContent = formatTimestamp(new Date());
+                currentAiMessage.appendChild(timestampDiv);
+                
+                messagesList.appendChild(currentAiMessage);
+            } else {
+                // Append to existing streaming message
+                currentAiMessage.querySelector('div').textContent += chunk;
+            }
+            
+            messagesList.scrollTop = messagesList.scrollHeight;
+        });
+
+        connection.on("ReceiveFile", (fileAttachment) => {
+            console.log("File received:", fileAttachment);
+            appendMessage("system", `File uploaded: ${fileAttachment.fileName}`);
+        });
+
+        connection.on("Error", (error) => {
+            console.error("Error received:", error);
+            const errorDiv = document.createElement("div");
+            errorDiv.className = "error";
+            errorDiv.textContent = typeof error === 'object' ? error.error : error;
+            messagesList.appendChild(errorDiv);
+            messagesList.scrollTop = messagesList.scrollHeight;
+            sendButton.disabled = false;
+        });
+
+        connection.on("JoinChatSessionError", (error) => {
+            console.error("Join session error:", error);
+            const errorDiv = document.createElement("div");
+            errorDiv.className = "error";
+            errorDiv.textContent = `Session error: ${error}`;
+            messagesList.appendChild(errorDiv);
+        });
+
+        messageInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                sendMessage();
+            }
+        });
+
+        sendButton.addEventListener("click", sendMessage);
+
+        connection.onreconnecting(() => {
+            connectionStatus.className = "status disconnected";
+            connectionStatus.textContent = "Reconnecting...";
+            sendButton.disabled = true;
+        });
+
+        connection.onreconnected(() => {
+            connectionStatus.className = "status connected";
+            connectionStatus.textContent = "Connected";
+            sendButton.disabled = false;
+        });
+
+        connection.onclose(() => {
+            connectionStatus.className = "status disconnected";
+            connectionStatus.textContent = "Disconnected";
+            sendButton.disabled = true;
+        });
+
+        connection.start()
+            .then(() => {
+                connectionStatus.className = "status connected";
+                connectionStatus.textContent = "Connected";
+                sendButton.disabled = false;
+                return connection.invoke("JoinChatSession", chatId);
+            })
+            .catch(err => {
+                console.error(err);
+                connectionStatus.textContent = "Connection failed";
+            });
+    </script>
+</body>
+</html>
