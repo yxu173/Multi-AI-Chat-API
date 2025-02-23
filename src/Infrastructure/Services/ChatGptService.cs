@@ -31,7 +31,7 @@ public class ChatGptService : IAiModelService
 
         var requestBody = new
         {
-            model = "gpt-3.5-turbo",
+            model = "gpt-4o",
             messages,
             max_tokens = 1000,
             stream = true

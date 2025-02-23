@@ -6,6 +6,7 @@ using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Users;
 using Domain.Repositories;
+using DotnetGeminiSDK;
 using Infrastructure.Authentication;
 using Infrastructure.Authentication.Options;
 using Infrastructure.Database;
@@ -30,6 +31,12 @@ public static class DependencyInjection
             options.UseNpgsql(
                 configuration.GetConnectionString("Database")));
 
+
+        services.AddGeminiClient(config =>
+        {
+            config.ApiKey = configuration["Gemini:ApiKey"];
+        });
+        
         services.AddHttpContextAccessor();
         services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();

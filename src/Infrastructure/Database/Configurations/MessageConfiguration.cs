@@ -22,11 +22,12 @@ public class MessageConfiguration : IEntityTypeConfiguration<Message>
             .IsRequired();
 
         builder.Property(m => m.Status)
+            .HasConversion<string>()
             .IsRequired();
 
         builder.Property(m => m.ChatSessionId)
             .IsRequired();
-
+        builder.HasIndex(m => m.CreatedAt);
         builder.HasOne(m => m.ChatSession)
             .WithMany(cs => cs.Messages)
             .HasForeignKey(m => m.ChatSessionId)

@@ -1,7 +1,9 @@
+using System.Linq.Expressions;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
+using SharedKernel;
 
 namespace Infrastructure.Repositories;
 
@@ -13,13 +15,16 @@ public class ChatSessionRepository : IChatSessionRepository
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
     }
-
+    
     public async Task<ChatSession> GetByIdAsync(Guid id)
     {
-        return await _context.ChatSessions
-            .Include(cs => cs.Messages)
+        var chat = await _context.ChatSessions
+            .AsNoTracking()
+            .Include(c => c.Messages)
             .ThenInclude(m => m.FileAttachments)
-            .FirstOrDefaultAsync(cs => cs.Id == id);
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(c => c.Id == id);
+        return chat;
     }
 
     public async Task AddAsync(ChatSession chatSession)
@@ -32,5 +37,10 @@ public class ChatSessionRepository : IChatSessionRepository
     {
         _context.ChatSessions.Update(chatSession);
         await _context.SaveChangesAsync();
+    }
+
+    public async Task<IReadOnlyList<ChatSession>> GetAllChatsByUserId(Guid userId)
+    {
+        return await _context.ChatSessions.AsNoTracking().ToListAsync();
     }
 }

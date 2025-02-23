@@ -22,14 +22,12 @@ public class ChatHub : Hub
     public override async Task OnConnectedAsync()
     {
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        //   _logger.LogInformation("User {UserId} connected to hub", userId);
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        // _logger.LogInformation("User {UserId} disconnected from hub", userId);
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -40,7 +38,7 @@ public class ChatHub : Hub
 
     public async Task SendMessage(string chatSessionId, string content)
     {
-        var userId = Guid.Parse(Context.UserIdentifier); // Assumes user authentication
+        var userId = Guid.Parse(Context.UserIdentifier);
         await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content);
     }
 }

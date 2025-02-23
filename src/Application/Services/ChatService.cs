@@ -32,6 +32,7 @@ public class ChatService
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
 
+    //TODO: Make Result Errors 
     public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content)
     {
         var chatSession = await _chatSessionRepository.GetByIdAsync(chatSessionId);
@@ -41,7 +42,7 @@ public class ChatService
         var userMessage = Message.CreateUserMessage(userId, chatSessionId, content);
         await _messageRepository.AddAsync(userMessage);
         chatSession.AddMessage(userMessage);
-        
+
         await _mediator.Publish(new MessageSentNotification(
             chatSessionId,
             new MessageDto(userMessage.Content, userMessage.IsFromAi, userMessage.Id)
@@ -50,14 +51,14 @@ public class ChatService
         var aiMessage = Message.CreateAiMessage(userId, chatSessionId);
         await _messageRepository.AddAsync(aiMessage);
         chatSession.AddMessage(aiMessage);
-       
+
         await _mediator.Publish(new MessageSentNotification(
             chatSessionId,
             new MessageDto(aiMessage.Content, aiMessage.IsFromAi, aiMessage.Id)
         ));
 
         var aiService = _aiModelServiceFactory.GetService(chatSession.ModelType);
-        
+
         try
         {
             var messages = chatSession.Messages
