@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Domain.Common;
+using Domain.DomainErrors;
 using Domain.Enums;
+using SharedKernel;
 
 namespace Domain.Aggregates.Chats;
 
@@ -18,8 +20,8 @@ public sealed class ChatSession : BaseAuditableEntity
     public static ChatSession Create(Guid userId, string modelType)
     {
         var modelTypeResult = Enum.Parse<ModelType>(modelType);
-        if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
-        if (!Enum.IsDefined(typeof(ModelType), modelTypeResult)) throw new ArgumentException("Invalid ModelType.", nameof(modelType));
+        
+        if (userId == Guid.Empty) Result.Failure(ChatErrors.UserIdNotValid);
 
         return new ChatSession
         {
@@ -33,7 +35,6 @@ public sealed class ChatSession : BaseAuditableEntity
 
     public void AddMessage(Message message)
     {
-        if (message == null) throw new ArgumentNullException(nameof(message));
         _messages.Add(message);
     }
 

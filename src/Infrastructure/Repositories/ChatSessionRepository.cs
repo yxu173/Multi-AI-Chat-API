@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Domain.Aggregates.Chats;
+using Domain.DomainErrors;
 using Domain.Repositories;
 using Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,7 @@ public class ChatSessionRepository : IChatSessionRepository
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
     }
-    
+
     public async Task<ChatSession> GetByIdAsync(Guid id)
     {
         var chat = await _context.ChatSessions
@@ -37,6 +38,22 @@ public class ChatSessionRepository : IChatSessionRepository
     {
         _context.ChatSessions.Update(chatSession);
         await _context.SaveChangesAsync();
+    }
+
+    public async Task<Result<bool>> DeleteAsync(Guid id)
+    {
+        var chat = await _context.ChatSessions.FindAsync(id);
+        if (chat == null)
+        {
+            return Result.Failure<bool>(ChatErrors.ChatNotFound);
+        }
+
+        _context.ChatSessions.Remove(chat);
+        var result = await _context.SaveChangesAsync();
+        if (result == 0)
+            return Result.Failure<bool>(ChatErrors.ChatNotFound);
+        
+        return Result.Success(true);
     }
 
     public async Task<IReadOnlyList<ChatSession>> GetAllChatsByUserId(Guid userId)
