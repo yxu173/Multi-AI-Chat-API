@@ -1,5 +1,6 @@
 ﻿using Application.Abstractions.Data;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Prompts;
 using Domain.Aggregates.Users;
 using Infrastructure.Database.Configurations;
 using Microsoft.AspNetCore.Identity;
@@ -14,6 +15,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Message> Messages { get; set; }
     public DbSet<ChatSession> ChatSessions { get; set; }
     public DbSet<FileAttachment> FileAttachments { get; set; }
+
+    public DbSet<PromptTemplate> PromptTemplates { get; set; }
+    public DbSet<PromptTemplateTag> PromptTemplateTags { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

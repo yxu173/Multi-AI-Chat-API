@@ -2,7 +2,7 @@ using SharedKernel;
 
 namespace Domain.DomainErrors;
 
-public class ChatErrors
+public static class ChatErrors
 {
     public static readonly Error ChatNotFound = Error.NotFound(
         "Chats.ChatNotFound",

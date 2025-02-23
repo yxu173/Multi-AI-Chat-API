@@ -22,10 +22,14 @@ public class DeepSeekService : IAiModelService
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
     {
-        var messages = history.Select(m => new DeepSeekMessage(
+        var messages = new List<DeepSeekMessage>
+        {
+            new("system", "Always respond using markdown formatting")
+        };
+        messages.AddRange(history.Select(m => new DeepSeekMessage(
             m.IsFromAi ? "system" : "user",
             m.Content
-        )).ToList();
+        )).ToList());
 
         var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
         request.Headers.Add("Authorization", $"Bearer {_apiKey}");

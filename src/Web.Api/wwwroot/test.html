@@ -106,9 +106,10 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1MjgyNS1jY2ZmLTdmZWQtOGE4My00ZmRmYjZjMmVlYmUiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3MkBvdXRsb29rLmNvbSIsIm5hbWUiOiJtcngxMTIiLCJqdGkiOiI2ZmQxMmFiOC02NjgwLTRkYjItODJlMy03NzljOTIyZTMzZTUiLCJhdWQiOlsiU3dhZ2dlclVJIiwiU3dhZ2dlclVJIl0sIm5iZiI6MTc0MDE1OTgxNywiZXhwIjoxNzQwNzY0NjE3LCJpYXQiOjE3NDAxNTk4MTcsImlzcyI6IkludGVybnNoaXAtUGxhdGZvcm0ifQ.vMs_MDUtuWSfAiFQwjQeCXqkxo1LyeOmAuOQZWfaoWg';
-        const chatId = 'b8f00f57-5da6-4028-b11c-c2df02260b43';
+        const chatId = '3d318c4a-b0ae-4abc-be05-719e2777f3b9';  
         
         
         const connection = new signalR.HubConnectionBuilder()
@@ -132,7 +133,7 @@
             messageDiv.className = `message ${role}-message`;
             
             const contentDiv = document.createElement("div");
-            contentDiv.textContent = content;
+            contentDiv.innerHTML = marked.parse(content);
             messageDiv.appendChild(contentDiv);
             
             const timestampDiv = document.createElement("div");
@@ -171,7 +172,7 @@
             if (message.role === 'assistant') {
                 // Finalize the streaming message
                 if (currentAiMessage) {
-                    currentAiMessage.querySelector('div').textContent = message.content;
+                    currentAiMessage.querySelector('div').innerHTML = marked.parse(message.content);
                     currentAiMessage = null;
                 } else {
                     appendMessage(message.role, message.content);
@@ -192,7 +193,8 @@
                 currentAiMessage.className = "message assistant-message";
                 
                 const contentDiv = document.createElement("div");
-                contentDiv.textContent = chunk;
+                contentDiv.dataset.raw = chunk;
+                contentDiv.innerHTML = marked.parse(chunk);
                 currentAiMessage.appendChild(contentDiv);
                 
                 const timestampDiv = document.createElement("div");
@@ -203,7 +205,10 @@
                 messagesList.appendChild(currentAiMessage);
             } else {
                 // Append to existing streaming message
-                currentAiMessage.querySelector('div').textContent += chunk;
+                const contentDiv = currentAiMessage.querySelector('div');
+                const raw = contentDiv.dataset.raw + chunk;
+                contentDiv.dataset.raw = raw;
+                contentDiv.innerHTML = marked.parse(raw);
             }
             
             messagesList.scrollTop = messagesList.scrollHeight;

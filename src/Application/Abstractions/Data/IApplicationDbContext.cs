@@ -1,4 +1,5 @@
 ﻿using Domain.Aggregates.Chats;
+using Domain.Aggregates.Prompts;
 using Domain.Aggregates.Users;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,6 +12,9 @@ public interface IApplicationDbContext
     DbSet<Message> Messages { get; }
     DbSet<ChatSession> ChatSessions { get; }
     DbSet<FileAttachment> FileAttachments { get; }
+    
+    DbSet<PromptTemplate> PromptTemplates { get; }
+    DbSet<PromptTemplateTag> PromptTemplateTags { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

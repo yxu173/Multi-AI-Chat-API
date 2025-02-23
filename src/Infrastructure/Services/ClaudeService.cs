@@ -21,10 +21,14 @@ public class ClaudeService : IAiModelService
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
     {
-        var messages = history.Select(m => new ClaudeMessage(
+        var messages = new List<ClaudeMessage>
+        {
+            new("system", "Always respond using markdown formatting")
+        };
+        messages.AddRange(history.Select(m => new ClaudeMessage(
             m.IsFromAi ? "assistant" : "user",
             m.Content
-        )).ToList();
+        )).ToList());
 
         var request = new HttpRequestMessage(HttpMethod.Post, "messages");
         request.Headers.Add("anthropic-version", "2023-06-01");
@@ -54,23 +58,23 @@ public class ClaudeService : IAiModelService
             var line = await reader.ReadLineAsync();
             if (string.IsNullOrEmpty(line)) continue;
 
-          
-                if (line.StartsWith("data: ") && line != "data: [DONE]")
+
+            if (line.StartsWith("data: ") && line != "data: [DONE]")
+            {
+                var json = line["data: ".Length..];
+                var chunk = JsonSerializer.Deserialize<ClaudeResponse>(json);
+
+                if (chunk?.delta?.text is { Length: > 0 } textChunk)
                 {
-                    var json = line["data: ".Length..];
-                    var chunk = JsonSerializer.Deserialize<ClaudeResponse>(json);
-                    
-                    if (chunk?.delta?.text is { Length: > 0 } textChunk)
-                    {
-                        yield return textChunk;
-                    }
+                    yield return textChunk;
                 }
-            
+            }
         }
     }
 
     private record ClaudeMessage(string role, string content);
+
     private record ClaudeResponse(string type, ClaudeDelta delta);
+
     private record ClaudeDelta(string text);
-    
 }

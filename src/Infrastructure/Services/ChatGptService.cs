@@ -21,10 +21,14 @@ public class ChatGptService : IAiModelService
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
     {
-        var messages = history.Select(m => new OpenAiMessage(
+        var messages = new List<OpenAiMessage>
+        {
+            new("system", "Always respond using markdown formatting")
+        };
+        messages.AddRange(history.Select(m => new OpenAiMessage(
             m.IsFromAi ? "assistant" : "user",
             m.Content
-        )).ToList();
+        )));
 
         var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
         request.Headers.Add("Authorization", $"Bearer {_apiKey}");

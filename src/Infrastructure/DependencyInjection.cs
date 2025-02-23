@@ -32,15 +32,13 @@ public static class DependencyInjection
                 configuration.GetConnectionString("Database")));
 
 
-        services.AddGeminiClient(config =>
-        {
-            config.ApiKey = configuration["Gemini:ApiKey"];
-        });
-        
+        services.AddGeminiClient(config => { config.ApiKey = configuration["Gemini:ApiKey"]; });
+
         services.AddHttpContextAccessor();
         services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
         services.AddScoped<IFileAttachmentRepository, FileAttachmentRepository>();
+        services.AddScoped<IPromptRepository, PromptRepository>();
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<ChatGptService>();
         services.AddScoped<ClaudeService>();
