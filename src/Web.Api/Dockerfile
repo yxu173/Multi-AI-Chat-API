@@ -25,7 +25,7 @@ FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 
-RUN mkdir -p /home/app/.aspnet/DataProtection-Keys \
-    && chown -R app:app /home/app/.aspnet/DataProtection-Keys
-
 ENTRYPOINT ["dotnet", "Web.Api.dll"]
+
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD curl -f http://localhost:80/healthz || exit 1

@@ -1,6 +1,8 @@
 using Serilog;
 using Application;
 using Infrastructure;
+using Infrastructure.Database;
+using Microsoft.EntityFrameworkCore;
 using Web.Api;
 using Web.Api.Hubs;
 
@@ -44,6 +46,12 @@ if (app.Environment.IsDevelopment())
             "My API V1");
     });
     app.MapOpenApi();
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
 }
 
 app.UseSerilogRequestLogging();

@@ -1,5 +1,4 @@
-﻿
-services:
+﻿services:
   web.api:
     image: web.api
     build:
@@ -7,23 +6,22 @@ services:
       dockerfile: src/Web.Api/Dockerfile
     ports:
       - "5067:8080"
-    volumes:
-      - aspnet_keys:/home/app/.aspnet/DataProtection-Keys
+
     user: "1000:1000"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__Database=Host=db;Port=5432;Database=Multi-Ai-Chat;Username=postgres;Password=postgres
+      - ConnectionStrings__Database=Host=db;Port=5432;Database=Multi-Ai-Chats;Username=postgres;Password=postgres
 
   db:
     image: postgres:17-alpine
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=Multi-Ai-Chat
+      - POSTGRES_DB=Multi-Ai-Chats
     volumes:
-      - ./.containers/intern_db:/var/lib/postgresql/data
+      - ./.containers/AiChat_db:/var/lib/postgresql/data
     ports:
-      - "5431:5432"  
+      - "5430:5432"  
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -32,16 +30,17 @@ services:
 
   migrate:
     image: web.api
-    command: dotnet ef database update
+    command: bash -c "dotnet ef database update --verbose"
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - aspnet_keys:/home/app/.aspnet/DataProtection-Keys
-    user: "1000:1000"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__Database=Host=db;Port=5432;Database=Internship-Platform;Username=postgres;Password=postgres
+      - ConnectionStrings__Database=Host=db;Port=5432;Database=Multi-Ai-Chats;Username=postgres;Password=postgres
+      - DOTNET_ENVIRONMENT=Development
+      - DOTNET_CLI_TELEMETRY_OPTOUT=1
 
 volumes:
   aspnet_keys:
