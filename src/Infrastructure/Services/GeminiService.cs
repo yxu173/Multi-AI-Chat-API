@@ -1,5 +1,11 @@
+using System;
+using System.Buffers;
+using System.Collections.Generic;
+using System.IO.Pipelines;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Microsoft.Extensions.Configuration;
@@ -14,74 +20,86 @@ public class GeminiService : IAiModelService
     public GeminiService(IHttpClientFactory httpClientFactory, IConfiguration configuration)
     {
         _httpClient = httpClientFactory.CreateClient();
-        // Set the correct base address for Google Gemini API
         _httpClient.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
         _apiKey = configuration["AI:Gemini:ApiKey"] ?? throw new ArgumentNullException("API key is missing");
     }
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
     {
-        var validHistory = history.Where(m => !string.IsNullOrWhiteSpace(m.Content));
-        var groupedContents = new List<object>();
-        string? currentRole = null;
-        var currentParts = new List<object>();
+        var validHistory = history
+            .Where(m => !string.IsNullOrWhiteSpace(m.Content))
+            .TakeLast(2)
+            .ToList();
 
-        foreach (var message in validHistory)
+        if (!validHistory.Any())
         {
-            string role = message.IsFromAi ? "model" : "user";
-            if (role != currentRole && currentParts.Any())
-            {
-                groupedContents.Add(new { role = currentRole, parts = currentParts.ToArray() });
-                currentParts.Clear();
-            }
-
-            currentRole = role;
-            currentParts.Add(new { text = message.Content });
+            throw new ArgumentException("No valid messages in conversation history");
         }
 
-        if (currentParts.Any())
+        var contents = validHistory.Select(m => new
         {
-            groupedContents.Add(new { role = currentRole, parts = currentParts.ToArray() });
-        }
-
-        if (!groupedContents.Any())
-        {
-            throw new InvalidOperationException("Conversation history cannot be empty.");
-        }
+            role = m.IsFromAi ? "model" : "user",
+            parts = new[] { new { text = m.Content } }
+        }).ToArray();
 
         var requestBody = new
         {
-            contents = groupedContents.ToArray(),
-            generationConfig = new { temperature = 0.7, maxOutputTokens = 1024 }
+            contents,
+            generationConfig = new
+            {
+                temperature = 0.7,
+                maxOutputTokens = 2048,
+                topP = 0.8,
+                topK = 40
+            }
         };
-
-        Console.WriteLine($"Request body: {JsonSerializer.Serialize(requestBody)}");
 
         var request = new HttpRequestMessage(HttpMethod.Post,
-            $"v1beta/models/gemini-1.5-flash:streamGenerateContent?key={_apiKey}")
+            $"v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key={_apiKey}")
         {
-            Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
+            Content = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json")
         };
 
-        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        var response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
 
-        // Read the entire response stream
-        using var stream = await response.Content.ReadAsStreamAsync();
-        using var reader = new StreamReader(stream);
-        var fullResponse = await reader.ReadToEndAsync();
+        var jsonResponse = await response.Content.ReadAsStringAsync();
+        Console.WriteLine($"Raw response: {jsonResponse}");
 
-        // Parse the complete JSON array
-        using var document = JsonDocument.Parse(fullResponse);
-        bool yieldedAnyText = false;
+      
+            using var document = JsonDocument.Parse(jsonResponse);
+            var root = document.RootElement;
 
-        if (document.RootElement.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var element in document.RootElement.EnumerateArray())
+            if (root.ValueKind == JsonValueKind.Array)
             {
-                if (element.TryGetProperty("candidates", out var candidates) &&
-                    candidates.GetArrayLength() > 0 &&
-                    candidates[0].TryGetProperty("content", out var content) &&
+                foreach (var element in root.EnumerateArray())
+                {
+                    if (element.TryGetProperty("candidates", out var candidates) &&
+                        candidates.GetArrayLength() > 0)
+                    {
+                        var firstCandidate = candidates[0];
+                        if (firstCandidate.TryGetProperty("content", out var content) &&
+                            content.TryGetProperty("parts", out var parts) &&
+                            parts.GetArrayLength() > 0 &&
+                            parts[0].TryGetProperty("text", out var textElement))
+                        {
+                            var text = textElement.GetString();
+                            if (!string.IsNullOrEmpty(text))
+                            {
+                                yield return text;
+                            }
+                        }
+                    }
+                }
+            }
+            else if (root.TryGetProperty("candidates", out var candidates) &&
+                     candidates.GetArrayLength() > 0)
+            {
+                var firstCandidate = candidates[0];
+                if (firstCandidate.TryGetProperty("content", out var content) &&
                     content.TryGetProperty("parts", out var parts) &&
                     parts.GetArrayLength() > 0 &&
                     parts[0].TryGetProperty("text", out var textElement))
@@ -89,20 +107,36 @@ public class GeminiService : IAiModelService
                     var text = textElement.GetString();
                     if (!string.IsNullOrEmpty(text))
                     {
-                        yieldedAnyText = true;
                         yield return text;
                     }
                 }
             }
-        }
-        else
-        {
-            Console.WriteLine("Response is not a JSON array.");
-        }
-
-        if (!yieldedAnyText)
-        {
-            yield return "No response generated by the API.";
-        }
+            else
+            {
+                Console.WriteLine("Unexpected response format");
+                yield return "No valid response from the API.";
+            }
+       
     }
+}
+
+// JSON response structure classes
+public class Response
+{
+    public Candidate[] Candidates { get; set; }
+}
+
+public class Candidate
+{
+    public Content Content { get; set; }
+}
+
+public class Content
+{
+    public Part[] Parts { get; set; }
+}
+
+public class Part
+{
+    public string Text { get; set; }
 }
