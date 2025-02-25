@@ -37,7 +37,7 @@ public class ChatGptService : IAiModelService
         {
             model = "gpt-4o",
             messages,
-            max_tokens = 1000,
+            max_tokens = 2000,
             stream = true
         };
 

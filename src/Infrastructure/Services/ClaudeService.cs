@@ -38,7 +38,7 @@ public class ClaudeService : IAiModelService
         {
             model = "claude-3-opus-20240229",
             messages,
-            max_tokens = 1000,
+            max_tokens = 2000,
             stream = true
         };
 

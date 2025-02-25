@@ -35,6 +35,17 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json",
+            "My API V1");
+    });
+    app.MapOpenApi();
+}
+
 app.UseSerilogRequestLogging();
 
 app.UseCors("CorsPolicy");
