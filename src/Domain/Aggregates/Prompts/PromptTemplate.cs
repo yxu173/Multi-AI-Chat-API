@@ -33,6 +33,13 @@ public sealed class PromptTemplate : BaseEntity
         });
     }
 
+    public void Update(string title, string description, string content)
+    {
+        Title = title;
+        Description = description;
+        Content = content;
+    }
+
     public Result AddTag(string name)
     {
         var tag = Tag.Create(name);

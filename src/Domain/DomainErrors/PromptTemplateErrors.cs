@@ -31,4 +31,8 @@ public static class PromptTemplateErrors
     public static readonly Error TagNotFound = Error.NotFound(
         "PromptTemplates.TagNotFound",
         "The tag was not found");
+
+    public static readonly Error UserIsNotAuthorized = Error.Failure(
+        "PromptTemplates.UserIsNotAuthorized",
+        "The user is not authorized to perform this action");
 }
