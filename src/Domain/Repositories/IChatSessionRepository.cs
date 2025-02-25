@@ -14,4 +14,5 @@ public interface IChatSessionRepository
     Task UpdateAsync(ChatSession chatSession);
     Task<Result<bool>> DeleteAsync(Guid id);
     Task<IReadOnlyList<ChatSession>> GetAllChatsByUserId(Guid userId);
+    Task<IReadOnlyList<ChatSession>> GetChatSearch(Guid userId, string? searchTerm);
 }

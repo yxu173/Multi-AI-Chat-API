@@ -52,12 +52,24 @@ public class ChatSessionRepository : IChatSessionRepository
         var result = await _context.SaveChangesAsync();
         if (result == 0)
             return Result.Failure<bool>(ChatErrors.ChatNotFound);
-        
+
         return Result.Success(true);
     }
 
     public async Task<IReadOnlyList<ChatSession>> GetAllChatsByUserId(Guid userId)
     {
         return await _context.ChatSessions.AsNoTracking().ToListAsync();
+    }
+
+    public async Task<IReadOnlyList<ChatSession>> GetChatSearch(Guid userId, string? searchTerm)
+    {
+        var query = _context.ChatSessions.AsNoTracking();
+
+        if (!string.IsNullOrEmpty(searchTerm))
+        {
+            query = query.Where(c => c.Title.Contains(searchTerm));
+        }
+
+        return await query.ToListAsync();
     }
 }
