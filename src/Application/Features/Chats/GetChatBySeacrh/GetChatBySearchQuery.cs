@@ -4,4 +4,4 @@ using Application.Features.Chats.GetChatById;
 
 namespace Application.Features.Chats.GetChatBySeacrh;
 
-public sealed record GetChatBySearchQuery(Guid UserId, string Search) : IQuery<IEnumerable<GetAllChatsDto>>;
+public sealed record GetChatBySearchQuery(Guid UserId, string Search) : IQuery<IEnumerable<ChatSearchResultDto>>;

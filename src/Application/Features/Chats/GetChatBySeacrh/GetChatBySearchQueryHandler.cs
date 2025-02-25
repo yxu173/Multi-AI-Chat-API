@@ -7,7 +7,7 @@ using SharedKernel;
 
 namespace Application.Features.Chats.GetChatBySeacrh;
 
-public sealed class GetChatBySearchQueryHandler : IQueryHandler<GetChatBySearchQuery, IEnumerable<GetAllChatsDto>>
+public sealed class GetChatBySearchQueryHandler : IQueryHandler<GetChatBySearchQuery, IEnumerable<ChatSearchResultDto>>
 {
     private readonly IChatSessionRepository _chatSessionRepository;
 
@@ -16,11 +16,24 @@ public sealed class GetChatBySearchQueryHandler : IQueryHandler<GetChatBySearchQ
         _chatSessionRepository = chatSessionRepository;
     }
 
-    public async Task<Result<IEnumerable<GetAllChatsDto>>> Handle(GetChatBySearchQuery request,
+    public async Task<Result<IEnumerable<ChatSearchResultDto>>> Handle(GetChatBySearchQuery request,
         CancellationToken cancellationToken)
     {
-        var chatSessions = await _chatSessionRepository.GetChatSearch(request.UserId, request.Search);
+        var chatSessions = await _chatSessionRepository.GetChatSearch(
+            request.UserId, 
+            request.Search,
+            includeMessages: true);
 
-        return Result.Success(chatSessions.Select(c => new GetAllChatsDto(c.Id, c.Title)));
+        var results = chatSessions.Select(c => new ChatSearchResultDto(
+            c.Id,
+            c.Title,
+            c.Messages.Select(m => new MessageSearchResultDto(
+                m.Id,
+                m.Content,
+                m.CreatedAt
+            )).ToList()
+        ));
+
+        return Result.Success(results.AsEnumerable());
     }
 }

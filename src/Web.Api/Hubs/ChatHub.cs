@@ -41,4 +41,9 @@ public class ChatHub : Hub
         var userId = Guid.Parse(Context.UserIdentifier);
         await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content);
     }
+
+    public async Task SubscribeToSearch(string searchTerm)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"search:{searchTerm}");
+    }
 }
