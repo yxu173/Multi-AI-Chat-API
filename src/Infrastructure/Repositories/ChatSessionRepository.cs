@@ -61,15 +61,13 @@ public class ChatSessionRepository : IChatSessionRepository
         return await _context.ChatSessions.AsNoTracking().ToListAsync();
     }
 
-    public async Task<IReadOnlyList<ChatSession>> GetChatSearch(Guid userId, string? searchTerm)
+    public async Task<IReadOnlyList<ChatSession>> GetChatSearch(Guid userId, string searchTerm)
     {
-        var query = _context.ChatSessions.AsNoTracking();
-
-        if (!string.IsNullOrEmpty(searchTerm))
-        {
-            query = query.Where(c => c.Title.Contains(searchTerm));
-        }
-
-        return await query.ToListAsync();
+        var chats = await _context.ChatSessions
+            .Include(c => c.Messages)
+            .Where(c => c.UserId == userId &&
+                        (c.Title.Contains(searchTerm) || c.Messages.Any(m => m.Content.Contains(searchTerm))))
+            .ToListAsync();
+        return chats;
     }
 }
