@@ -124,9 +124,17 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
     const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1MjgyNS1jY2ZmLTdmZWQtOGE4My00ZmRmYjZjMmVlYmUiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3MkBvdXRsb29rLmNvbSIsIm5hbWUiOiJtcngxMTIiLCJqdGkiOiI2ZTA0NTIwMC04ZWJjLTQxYzctYWZmYi1lM2U3ZTU2NzJmMzQiLCJhdWQiOlsiU3dhZ2dlclVJIiwiU3dhZ2dlclVJIl0sIm5iZiI6MTc0MDQ4MzI3NSwiZXhwIjoxNzQxMDg4MDc1LCJpYXQiOjE3NDA0ODMyNzUsImlzcyI6IkludGVybnNoaXAtUGxhdGZvcm0ifQ.SnHIrnrvvsRGmnjZ3yb9-FKmgzfBxVk2kXFOQEUMRuo';
-    const chatId = 'a18d940e-d392-49fb-8a67-adb23f201705';
-
-
+    // Claude
+    //const chatId = 'a06017c0-2f20-482d-ac7a-8824b4ffdb00';
+    
+    // Chatgpt
+    // const chatId = '13a87f98-29d2-4b4d-95b8-3cc94eb1adec';
+    
+    // DeepSeek
+    // const chatId = '3d318c4a-b0ae-4abc-be05-719e2777f3b9';
+    
+    // Gemini 
+     const chatId = 'a18d940e-d392-49fb-8a67-adb23f201705';
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/chatHub", {
             accessTokenFactory: () => token
