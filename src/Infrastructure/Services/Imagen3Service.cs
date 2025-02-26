@@ -42,18 +42,17 @@ namespace Infrastructure.Services
       
         public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
         {
-           
-            var validHistory = history
-                .Where(m => !string.IsNullOrWhiteSpace(m.Content))
-                .TakeLast(2)
-                .ToList();
+            
+            var latestUserMessage = history
+                .Where(m => !string.IsNullOrWhiteSpace(m.Content) && !m.IsFromAi)
+                .LastOrDefault();
 
-            if (!validHistory.Any())
+            if (latestUserMessage == null)
             {
-                throw new ArgumentException("No valid messages in conversation history");
+                throw new ArgumentException("No valid user message found in conversation history");
             }
 
-            var prompt = validHistory.Select(m => m.Content).Aggregate((a, b) => $"{a}\n{b}");
+            var prompt = latestUserMessage.Content;
             
             var requestBody = new
             {
@@ -62,13 +61,12 @@ namespace Infrastructure.Services
                     new
                     {
                         prompt,
-                        num_images = 2, // Number of images to generate
+                        num_images = 2,
                         size = "1024x1024" 
                     }
                 }
             };
 
-          
             var endpoint = $"v1/projects/{_projectId}/locations/{_region}/publishers/google/models/{_modelId}:predict";
             var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
@@ -78,21 +76,21 @@ namespace Infrastructure.Services
                     "application/json")
             };
 
-          
             var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
 
-          
             var jsonResponse = await response.Content.ReadAsStringAsync();
             using var document = JsonDocument.Parse(jsonResponse);
             var root = document.RootElement;
 
-           
             if (root.TryGetProperty("predictions", out var predictions) && predictions.ValueKind == JsonValueKind.Array)
             {
+                int imageCount = 0;
                 foreach (var prediction in predictions.EnumerateArray())
                 {
-                   
+                    if (imageCount >= 2) 
+                        break;
+                    
                     if (prediction.TryGetProperty("bytesBase64Encoded", out var base64Element) &&
                         prediction.TryGetProperty("mimeType", out var mimeTypeElement))
                     {
@@ -101,13 +99,11 @@ namespace Infrastructure.Services
 
                         if (!string.IsNullOrEmpty(base64Image))
                         {
-                          
                             var imageBytes = Convert.FromBase64String(base64Image);
-                           
                             var extension = mimeType.Split('/').Last();
-                           
                             var imageUrl = SaveImageLocally(imageBytes, $"{Guid.NewGuid()}.{extension}");
                             yield return $"![generated image]({imageUrl})";
+                            imageCount++;
                         }
                     }
                 }
