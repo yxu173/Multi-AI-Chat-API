@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<ClaudeService>();
         services.AddScoped<DeepSeekService>();
         services.AddScoped<GeminiService>();
+        services.AddScoped<Imagen3Service>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IUserContext, UserContext>();
         services.AddSingleton<ITokenProvider, TokenProvider>();

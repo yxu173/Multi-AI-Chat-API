@@ -1,49 +1,62 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Chat Test</title>
+    <title>Multi-AI Chat Demo</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f5f5f5;
+            display: flex;
+            gap: 20px;
+        }
+
+        .main-container {
+            display: flex;
+            width: 100%;
+            gap: 20px;
         }
 
         .chat-container {
+            flex: 2;
             max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            padding: 20px;
+        }
+
+        .sidebar {
+            flex: 1;
+            max-width: 300px;
+        }
+
+        .model-selector {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 5px;
         }
 
         #messagesList {
-            height: 500px;
+            height: 600px;
             overflow-y: auto;
-            margin-bottom: 20px;
-            padding: 10px;
             border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
             border-radius: 5px;
         }
 
         .message {
-            margin-bottom: 15px;
+            margin: 10px 0;
             padding: 10px;
             border-radius: 5px;
         }
 
         .user-message {
-            background-color: #e3f2fd;
-            margin-left: 20%;
-            margin-right: 5px;
+            background: #e3f2fd;
+            margin-left: 20px;
         }
 
         .ai-message {
-            background-color: #f5f5f5;
-            margin-right: 20%;
-            margin-left: 5px;
+            background: #f5f5f5;
+            margin-right: 20px;
         }
 
         .input-container {
@@ -52,251 +65,327 @@
         }
 
         #messageInput {
-            flex-grow: 1;
+            flex: 1;
             padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
         }
 
         button {
             padding: 10px 20px;
-            background-color: #007bff;
+            background: #2196f3;
             color: white;
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 16px;
-        }
-
-        button:hover {
-            background-color: #0056b3;
         }
 
         button:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
+            background: #ccc;
+        }
+
+        .generated-image {
+            max-width: 100%;
+            margin: 10px 0;
+            border-radius: 5px;
         }
 
         .status {
+            padding: 5px 10px;
             margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
+            border-radius: 3px;
         }
 
-        .connected {
-            background-color: #d4edda;
-            color: #155724;
-        }
+        .connected { background: #c8e6c9; }
+        .disconnected { background: #ffcdd2; }
 
-        .disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-
-        .error {
-            color: #dc3545;
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 5px;
-            background-color: #f8d7da;
-        }
-
-        .timestamp {
-            font-size: 0.8em;
-            color: #666;
-            margin-top: 5px;
+        /* Keep existing search styles */
+        .search-container, .search-results {
+            margin-top: 20px;
         }
     </style>
 </head>
 <body>
-<div class="chat-container">
-    <div id="connectionStatus" class="status disconnected">Disconnected</div>
-    <div id="messagesList"></div>
-    <div class="input-container">
-        <input type="text" id="messageInput" placeholder="Type your message here..."/>
-        <button id="sendButton" disabled>Send</button>
+    <div class="main-container">
+        <div class="chat-container">
+            <div id="connectionStatus" class="status disconnected">Disconnected</div>
+            <div id="messagesList"></div>
+            <div class="input-container">
+                <input type="text" id="messageInput" placeholder="Type your message here..."/>
+                <button id="sendButton" disabled>Send</button>
+            </div>
+            <div class="search-container">
+                <input type="text" id="searchInput" placeholder="Enter search term...">
+                <button id="subscribeButton">Subscribe to Search</button>
+            </div>
+            <div id="searchResults" class="search-results"></div>
+        </div>
+        
+        <div class="sidebar">
+            <div class="model-selector">
+                <h3>Select AI Model</h3>
+                <select id="modelSelect">
+                    <option value="gemini">Gemini</option>
+                    <option value="claude">Claude</option>
+                    <option value="chatgpt">ChatGPT</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="imagen3">Imagen 3</option>
+                </select>
+            </div>
+            <div id="chatHistory">
+                <h3>Chat History</h3>
+                <div id="chatsList"></div>
+            </div>
+        </div>
     </div>
-</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script>
-    const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1MjgyNS1jY2ZmLTdmZWQtOGE4My00ZmRmYjZjMmVlYmUiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3MkBvdXRsb29rLmNvbSIsIm5hbWUiOiJtcngxMTIiLCJqdGkiOiI2ZTA0NTIwMC04ZWJjLTQxYzctYWZmYi1lM2U3ZTU2NzJmMzQiLCJhdWQiOlsiU3dhZ2dlclVJIiwiU3dhZ2dlclVJIl0sIm5iZiI6MTc0MDQ4MzI3NSwiZXhwIjoxNzQxMDg4MDc1LCJpYXQiOjE3NDA0ODMyNzUsImlzcyI6IkludGVybnNoaXAtUGxhdGZvcm0ifQ.SnHIrnrvvsRGmnjZ3yb9-FKmgzfBxVk2kXFOQEUMRuo';
-    // Claude
-    //const chatId = 'a06017c0-2f20-482d-ac7a-8824b4ffdb00';
-    
-    // Chatgpt
-    // const chatId = '13a87f98-29d2-4b4d-95b8-3cc94eb1adec';
-    
-    // DeepSeek
-    // const chatId = '3d318c4a-b0ae-4abc-be05-719e2777f3b9';
-    
-    // Gemini 
-     const chatId = 'a18d940e-d392-49fb-8a67-adb23f201705';
-    const connection = new signalR.HubConnectionBuilder()
-        .withUrl("/chatHub", {
-            accessTokenFactory: () => token
-        })
-        .withAutomaticReconnect()
-        .build();
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
 
-    const messagesList = document.getElementById("messagesList");
-    const messageInput = document.getElementById("messageInput");
-    const sendButton = document.getElementById("sendButton");
-    const connectionStatus = document.getElementById("connectionStatus");
+        let currentChatId = 'aa49e26a-0b21-40be-a359-ad92c27689ef'; // Set default chat ID
 
-    function formatTimestamp(date) {
-        return date.toLocaleTimeString();
-    }
+        const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1NDJjNC01OGNhLTdlMjEtYWY2OC0xYjRhNTJmZGRmN2MiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3QG91dGxvb2suY29tIiwibmFtZSI6Im1yeCIsImp0aSI6IjIzYmNlNzYzLWQ1ZWMtNDZlZS04ZGMxLTVmZmFlZTVmNzFjMCIsImF1ZCI6WyJTd2FnZ2VyVUkiLCJTd2FnZ2VyVUkiXSwibmJmIjoxNzQwNTgxOTI3LCJleHAiOjE3NDExODY3MjcsImlhdCI6MTc0MDU4MTkyNywiaXNzIjoiSW50ZXJuc2hpcC1QbGF0Zm9ybSJ9.W1ay4Vm90ousUsIObvynInaDbZulmTjpxJEmxQCJl9o';
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/chatHub", {
+                accessTokenFactory: () => token
+            })
+            .withAutomaticReconnect()
+            .build();
 
-    function appendMessage(role, content) {
-        const messageDiv = document.createElement("div");
-        messageDiv.className = `message ${role}-message`;
+        connection.start()
+            .then(() => {
+                console.log("Connected to SignalR");
+                connection.invoke("JoinChatSession", currentChatId);
+            })
+            .catch(err => console.error("Connection failed:", err));
 
-        const contentDiv = document.createElement("div");
-        contentDiv.innerHTML = marked.parse(content);
-        messageDiv.appendChild(contentDiv);
+        const modelSelect = document.getElementById('modelSelect');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const messagesList = document.getElementById('messagesList');
+        const connectionStatus = document.getElementById('connectionStatus');
 
-        const timestampDiv = document.createElement("div");
-        timestampDiv.className = "timestamp";
-        timestampDiv.textContent = formatTimestamp(new Date());
-        messageDiv.appendChild(timestampDiv);
+        // Model-specific chat IDs
+        const chatIds = {
+            gemini: '42c42f7d-bf3c-434a-9f52-f5a7289edb50',
+            claude: '089035b3-d3c0-4cc1-adcc-5b98e9b83e23',
+            chatgpt: 'aa49e26a-0b21-40be-a359-ad92c27689ef',
+            deepseek: 'd948cc51-5f77-467d-8459-9f0b12544a0d',
+            imagen3: '8df1f8cc-850b-48be-9755-86d6d936bf19'
+        };
 
-        messagesList.appendChild(messageDiv);
-        messagesList.scrollTop = messagesList.scrollHeight;
-    }
+        // Connection handling
+        connection.start()
+            .then(() => {
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.className = 'status connected';
+                sendButton.disabled = false;
+                // Join default chat session after connection
+                return connection.invoke("JoinChatSession", currentChatId);
+            })
+            .catch(err => {
+                console.error(err);
+                connectionStatus.textContent = 'Connection failed';
+                connectionStatus.className = 'status disconnected';
+            });
 
-    async function sendMessage() {
-        if (messageInput.value.trim() === "") return;
+        // Model selection handling
+        modelSelect.addEventListener('change', async (e) => {
+            const newChatId = chatIds[e.target.value];
+            if (newChatId) {
+                currentChatId = newChatId;
+                clearMessages();
+                try {
+                    await connection.invoke("JoinChatSession", currentChatId);
+                } catch (err) {
+                    console.error('Error joining chat session:', err);
+                }
+            }
+        });
 
-        sendButton.disabled = true;
-        const message = messageInput.value;
-        messageInput.value = "";
+        // Message sending
+        async function sendMessage() {
+            if (!messageInput.value.trim() || !currentChatId) return;
 
-        try {
-            await connection.invoke("JoinChatSession", chatId);
-            await connection.invoke("SendMessage", chatId, message);
-        } catch (err) {
-            console.error(err);
-            const errorDiv = document.createElement("div");
-            errorDiv.className = "error";
-            errorDiv.textContent = "Error sending message: " + err.message;
-            messagesList.appendChild(errorDiv);
+            sendButton.disabled = true;
+            const message = messageInput.value;
+            messageInput.value = "";
+
+            try {
+                await connection.invoke("SendMessage", currentChatId, message);
+            } catch (err) {
+                console.error(err);
+                const errorDiv = document.createElement("div");
+                errorDiv.className = "error";
+                errorDiv.textContent = "Error sending message: " + err.message;
+                messagesList.appendChild(errorDiv);
+                sendButton.disabled = false;
+            }
         }
-    }
 
-    let currentAiMessage = null;
+        function clearMessages() {
+            document.getElementById('messagesList').innerHTML = '';
+        }
 
-    connection.on("ReceiveMessage", (message) => {
-        console.log("Full message received:", message);
+        function formatTimestamp(date) {
+            return date.toLocaleTimeString();
+        }
 
-        if (message.role === 'assistant') {
-            // Finalize the streaming message
-            if (currentAiMessage) {
-                currentAiMessage.querySelector('div').innerHTML = marked.parse(message.content);
-                currentAiMessage = null;
+        function appendMessage(role, content) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role === 'user' ? 'user-message' : 'ai-message'}`;
+            
+            const parsedContent = marked.parse(content);
+            messageDiv.innerHTML = parsedContent;
+            
+            const images = messageDiv.getElementsByTagName('img');
+            Array.from(images).forEach(img => {
+                img.className = 'generated-image';
+                img.loading = 'lazy';
+            });
+            
+            messagesList.appendChild(messageDiv);
+            messagesList.scrollTop = messagesList.scrollHeight;
+        }
+
+        let currentAiMessage = null;
+
+        connection.on("ReceiveMessage", (message) => {
+            console.log("Full message received:", message);
+
+            if (message.role === 'assistant') {
+                if (currentAiMessage) {
+                    currentAiMessage.querySelector('div').innerHTML = marked.parse(message.content);
+                    currentAiMessage = null;
+                } else {
+                    appendMessage(message.role, message.content);
+                }
             } else {
                 appendMessage(message.role, message.content);
             }
-        } else {
-            appendMessage(message.role, message.content);
-        }
 
-        sendButton.disabled = false;
-    });
+            sendButton.disabled = false;
+        });
 
-    connection.on("ReceiveMessageChunk", (messageId, chunk) => {
-        console.log("Message chunk:", chunk);
+        connection.on("ReceiveMessageChunk", (messageId, chunk) => {
+            console.log("Message chunk:", chunk);
 
-        if (!currentAiMessage) {
-            // Create new message container for streaming
-            currentAiMessage = document.createElement("div");
-            currentAiMessage.className = "message assistant-message";
+            if (!currentAiMessage) {
+                currentAiMessage = document.createElement("div");
+                currentAiMessage.className = "message assistant-message";
 
-            const contentDiv = document.createElement("div");
-            contentDiv.dataset.raw = chunk;
-            contentDiv.innerHTML = marked.parse(chunk);
-            currentAiMessage.appendChild(contentDiv);
+                const contentDiv = document.createElement("div");
+                contentDiv.dataset.raw = chunk;
+                contentDiv.innerHTML = marked.parse(chunk);
+                currentAiMessage.appendChild(contentDiv);
 
-            const timestampDiv = document.createElement("div");
-            timestampDiv.className = "timestamp";
-            timestampDiv.textContent = formatTimestamp(new Date());
-            currentAiMessage.appendChild(timestampDiv);
+                const timestampDiv = document.createElement("div");
+                timestampDiv.className = "timestamp";
+                timestampDiv.textContent = formatTimestamp(new Date());
+                currentAiMessage.appendChild(timestampDiv);
 
-            messagesList.appendChild(currentAiMessage);
-        } else {
-            // Append to existing streaming message
-            const contentDiv = currentAiMessage.querySelector('div');
-            const raw = contentDiv.dataset.raw + chunk;
-            contentDiv.dataset.raw = raw;
-            contentDiv.innerHTML = marked.parse(raw);
-        }
+                messagesList.appendChild(currentAiMessage);
+            } else {
+                const contentDiv = currentAiMessage.querySelector('div');
+                const raw = contentDiv.dataset.raw + chunk;
+                contentDiv.dataset.raw = raw;
+                contentDiv.innerHTML = marked.parse(raw);
+            }
 
-        messagesList.scrollTop = messagesList.scrollHeight;
-    });
+            messagesList.scrollTop = messagesList.scrollHeight;
+        });
 
-    connection.on("ReceiveFile", (fileAttachment) => {
-        console.log("File received:", fileAttachment);
-        appendMessage("system", `File uploaded: ${fileAttachment.fileName}`);
-    });
+        connection.on("ReceiveFile", (fileAttachment) => {
+            console.log("File received:", fileAttachment);
+            appendMessage("system", `File uploaded: ${fileAttachment.fileName}`);
+        });
 
-    connection.on("Error", (error) => {
-        console.error("Error received:", error);
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "error";
-        errorDiv.textContent = typeof error === 'object' ? error.error : error;
-        messagesList.appendChild(errorDiv);
-        messagesList.scrollTop = messagesList.scrollHeight;
-        sendButton.disabled = false;
-    });
+        connection.on("Error", (error) => {
+            console.error("Error received:", error);
+            const errorDiv = document.createElement("div");
+            errorDiv.className = "error";
+            errorDiv.textContent = typeof error === 'object' ? error.error : error;
+            messagesList.appendChild(errorDiv);
+            messagesList.scrollTop = messagesList.scrollHeight;
+            sendButton.disabled = false;
+        });
 
-    connection.on("JoinChatSessionError", (error) => {
-        console.error("Join session error:", error);
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "error";
-        errorDiv.textContent = `Session error: ${error}`;
-        messagesList.appendChild(errorDiv);
-    });
+        connection.on("JoinChatSessionError", (error) => {
+            console.error("Join session error:", error);
+            const errorDiv = document.createElement("div");
+            errorDiv.className = "error";
+            errorDiv.textContent = `Session error: ${error}`;
+            messagesList.appendChild(errorDiv);
+        });
 
-    messageInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-            sendMessage();
-        }
-    });
+        messageInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                sendMessage();
+            }
+        });
 
-    sendButton.addEventListener("click", sendMessage);
+        sendButton.addEventListener("click", sendMessage);
 
-    connection.onreconnecting(() => {
-        connectionStatus.className = "status disconnected";
-        connectionStatus.textContent = "Reconnecting...";
-        sendButton.disabled = true;
-    });
+        connection.onreconnecting(() => {
+            connectionStatus.className = "status disconnected";
+            connectionStatus.textContent = "Reconnecting...";
+            sendButton.disabled = true;
+        });
 
-    connection.onreconnected(() => {
-        connectionStatus.className = "status connected";
-        connectionStatus.textContent = "Connected";
-        sendButton.disabled = false;
-    });
-
-    connection.onclose(() => {
-        connectionStatus.className = "status disconnected";
-        connectionStatus.textContent = "Disconnected";
-        sendButton.disabled = true;
-    });
-
-    connection.start()
-        .then(() => {
+        connection.onreconnected(() => {
             connectionStatus.className = "status connected";
             connectionStatus.textContent = "Connected";
             sendButton.disabled = false;
-            return connection.invoke("JoinChatSession", chatId);
-        })
-        .catch(err => {
-            console.error(err);
-            connectionStatus.textContent = "Connection failed";
         });
-</script>
+
+        connection.onclose(error => {
+            connectionStatus.className = "status disconnected";
+            connectionStatus.textContent = "Disconnected";
+            sendButton.disabled = true;
+            if (error) {
+                console.error('Connection closed with error:', error);
+                if (error.statusCode === 401) {
+                    // Token expired or invalid
+                    localStorage.removeItem('jwtToken');
+                    window.location.href = '/login.html';
+                }
+            }
+        });
+
+        const searchInput = document.getElementById("searchInput");
+        const subscribeButton = document.getElementById("subscribeButton");
+        const searchResults = document.getElementById("searchResults");
+
+        subscribeButton.addEventListener("click", async () => {
+            const searchTerm = searchInput.value.trim().toLowerCase();
+            if (searchTerm.length < 3) {
+                alert("Search term must be at least 3 characters long");
+                return;
+            }
+
+            try {
+                await connection.invoke("SubscribeToSearch", searchTerm);
+                const searchTermDiv = document.createElement("div");
+                searchTermDiv.className = "search-term";
+                searchTermDiv.textContent = `Subscribed to: ${searchTerm}`;
+                searchResults.appendChild(searchTermDiv);
+            } catch (err) {
+                console.error(err);
+                alert("Error subscribing to search term");
+            }
+        });
+
+        connection.on("SearchUpdate", (update) => {
+            const resultDiv = document.createElement("div");
+            resultDiv.className = "search-result";
+            resultDiv.innerHTML = `
+                <div class="search-message">
+                    <strong>Chat ID:</strong> ${update.chatSessionId}<br>
+                    <strong>Message:</strong> ${update.content}<br>
+                    <strong>Time:</strong> ${new Date(update.timestamp).toLocaleString()}
+                </div>
+            `;
+            searchResults.insertBefore(resultDiv, searchResults.firstChild);
+        });
+    </script>
 </body>
 </html>

@@ -23,6 +23,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             ModelType.Claude => _serviceProvider.GetService<ClaudeService>(),
             ModelType.DeepSeek => _serviceProvider.GetService<DeepSeekService>(),
             ModelType.Gemini => _serviceProvider.GetService<GeminiService>(),
+            ModelType.Imagen3 => _serviceProvider.GetService<Imagen3Service>(),
             _ => throw new NotSupportedException($"Model type {modelType} not supported.")
         };
     }
