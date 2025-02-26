@@ -25,10 +25,9 @@ public class ChatGptService : IAiModelService
         {
             new("system", "Always respond using markdown formatting")
         };
-        messages.AddRange(history.Select(m => new OpenAiMessage(
-            m.IsFromAi ? "assistant" : "user",
-            m.Content
-        )));
+        messages.AddRange(history
+            .Where(m => !string.IsNullOrEmpty(m.Content))
+            .Select(m => new OpenAiMessage(m.IsFromAi ? "assistant" : "user", m.Content)));
 
         var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
         request.Headers.Add("Authorization", $"Bearer {_apiKey}");
@@ -40,14 +39,17 @@ public class ChatGptService : IAiModelService
             max_tokens = 2000,
             stream = true
         };
-
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
-            "application/json");
+        Console.WriteLine("Request Body: " + JsonSerializer.Serialize(requestBody));
+        request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
 
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"OpenAI API Error: {response.StatusCode} - {errorContent}");
+            yield return "Sorry, an error occurred while generating the response.";
+            yield break;
+        }
 
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
@@ -55,8 +57,7 @@ public class ChatGptService : IAiModelService
         while (!reader.EndOfStream)
         {
             var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
+            if (string.IsNullOrWhiteSpace(line)) continue;
 
             if (line.StartsWith("data: ") && line.Trim() != "data: [DONE]")
             {

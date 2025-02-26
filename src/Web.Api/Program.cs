@@ -5,6 +5,9 @@ using Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
 using Web.Api;
 using Web.Api.Hubs;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
