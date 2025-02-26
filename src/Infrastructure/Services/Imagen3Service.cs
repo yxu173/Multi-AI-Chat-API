@@ -19,8 +19,7 @@ namespace Infrastructure.Services
         private readonly string _region;
         private readonly string _modelId;
         private readonly string _imageSavePath = "wwwroot/images";
-
-        // Constructor with dependency injection
+        
         public Imagen3Service(IHttpClientFactory httpClientFactory, IConfiguration configuration)
         {
             _region = configuration["AI:Imagen3:Region"] ?? throw new ArgumentNullException("Region is missing");

@@ -27,11 +27,15 @@ public sealed class GetChatBySearchQueryHandler : IQueryHandler<GetChatBySearchQ
         var results = chatSessions.Select(c => new ChatSearchResultDto(
             c.Id,
             c.Title,
-            c.Messages.Select(m => new MessageSearchResultDto(
-                m.Id,
-                m.Content,
-                m.CreatedAt
-            )).ToList()
+            c.Messages
+                .Where(m => string.IsNullOrEmpty(request.Search) || 
+                           m.Content.Contains(request.Search))
+                .Select(m => new MessageSearchResultDto(
+                    m.Id,
+                    m.Content,
+                    m.CreatedAt
+                ))
+                .ToList()
         ));
 
         return Result.Success(results.AsEnumerable());

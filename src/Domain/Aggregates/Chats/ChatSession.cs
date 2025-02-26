@@ -41,7 +41,7 @@ public sealed class ChatSession : BaseAuditableEntity
     public void UpdateTitle(string newTitle)
     {
         if (string.IsNullOrWhiteSpace(newTitle)) throw new ArgumentException("Title cannot be empty.", nameof(newTitle));
-        Title = newTitle.Trim();
+        Title = newTitle;
         LastModifiedAt = DateTime.UtcNow;
     }
 }

@@ -70,14 +70,14 @@ public class ChatSessionRepository : IChatSessionRepository
 
         if (!string.IsNullOrEmpty(searchTerm))
         {
-            query = query.Where(c => c.Title.Contains(searchTerm) ||
-                                     (includeMessages && c.Messages.Any(m => m.Content.Contains(searchTerm))));
+            query = query.Where(c => 
+                c.Title.Contains(searchTerm) ||
+                c.Messages.Any(m => m.Content.Contains(searchTerm)));
         }
 
         if (includeMessages)
         {
             query = query.Include(c => c.Messages
-                    .Where(m => m.Content.Contains(searchTerm))
                     .OrderByDescending(m => m.CreatedAt))
                 .ThenInclude(m => m.FileAttachments);
         }

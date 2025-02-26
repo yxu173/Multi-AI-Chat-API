@@ -38,6 +38,16 @@ public class ChatService
         var chatSession = await _chatSessionRepository.GetByIdAsync(chatSessionId);
         if (chatSession == null) throw new Exception("Chat session not found.");
 
+        
+        if (!chatSession.Messages.Any())
+        {
+            var title = GenerateTitleFromContent(content);
+            chatSession.UpdateTitle(title);
+            await _chatSessionRepository.UpdateAsync(chatSession);
+            
+            
+            await _mediator.Publish(new ChatTitleUpdatedNotification(chatSessionId, title));
+        }
 
         var userMessage = Message.CreateUserMessage(userId, chatSessionId, content);
         await _messageRepository.AddAsync(userMessage);
@@ -83,5 +93,40 @@ public class ChatService
         {
             await _messageRepository.UpdateAsync(aiMessage);
         }
+    }
+
+    public async Task UpdateChatTitleFromFirstMessage(Guid chatSessionId, string content)
+    {
+        var chatSession = await _chatSessionRepository.GetByIdAsync(chatSessionId);
+        if (chatSession == null) throw new Exception("Chat session not found.");
+
+        if (chatSession.Title == "New Chat") // Only update if it's the default title
+        {
+            var title = GenerateTitleFromContent(content);
+            chatSession.UpdateTitle(title);
+            await _chatSessionRepository.UpdateAsync(chatSession);
+        }
+    }
+
+    private string GenerateTitleFromContent(string content)
+    {
+        // Take first sentence or first 50 characters
+        var title = content
+            .Split(new[] { '.', '!', '?' }, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault()
+            ?.Trim();
+
+        if (string.IsNullOrEmpty(title))
+        {
+            title = content;
+        }
+
+        // Truncate and add ellipsis if too long
+        if (title.Length > 50)
+        {
+            title = title.Substring(0, 47) + "...";
+        }
+
+        return title;
     }
 }
