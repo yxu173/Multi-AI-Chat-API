@@ -143,47 +143,6 @@ namespace Infrastructure.Database.Migrations
                     b.ToTable("PromptTemplates", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.Aggregates.Prompts.PromptTemplateTag", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("PromptTemplateId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TagId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PromptTemplateId");
-
-                    b.HasIndex("TagId");
-
-                    b.ToTable("PromptTemplateTags");
-                });
-
-            modelBuilder.Entity("Domain.Aggregates.Prompts.Tag", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("PromptTemplateId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PromptTemplateId");
-
-                    b.ToTable("Tag");
-                });
-
             modelBuilder.Entity("Domain.Aggregates.Users.Role", b =>
                 {
                     b.Property<Guid>("Id")
@@ -407,33 +366,28 @@ namespace Infrastructure.Database.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.OwnsMany("Domain.ValueObjects.Tag", "Tags", b1 =>
+                        {
+                            b1.Property<Guid>("PromptTemplateId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("Name")
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)");
+
+                            b1.HasKey("PromptTemplateId", "Name");
+
+                            b1.HasIndex("Name");
+
+                            b1.ToTable("PromptTemplateTags", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("PromptTemplateId");
+                        });
+
+                    b.Navigation("Tags");
+
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Domain.Aggregates.Prompts.PromptTemplateTag", b =>
-                {
-                    b.HasOne("Domain.Aggregates.Prompts.PromptTemplate", "PromptTemplate")
-                        .WithMany("PromptTemplateTags")
-                        .HasForeignKey("PromptTemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Aggregates.Prompts.Tag", "Tag")
-                        .WithMany("PromptTemplateTags")
-                        .HasForeignKey("TagId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("PromptTemplate");
-
-                    b.Navigation("Tag");
-                });
-
-            modelBuilder.Entity("Domain.Aggregates.Prompts.Tag", b =>
-                {
-                    b.HasOne("Domain.Aggregates.Prompts.PromptTemplate", null)
-                        .WithMany("Tags")
-                        .HasForeignKey("PromptTemplateId");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -495,18 +449,6 @@ namespace Infrastructure.Database.Migrations
             modelBuilder.Entity("Domain.Aggregates.Chats.Message", b =>
                 {
                     b.Navigation("FileAttachments");
-                });
-
-            modelBuilder.Entity("Domain.Aggregates.Prompts.PromptTemplate", b =>
-                {
-                    b.Navigation("PromptTemplateTags");
-
-                    b.Navigation("Tags");
-                });
-
-            modelBuilder.Entity("Domain.Aggregates.Prompts.Tag", b =>
-                {
-                    b.Navigation("PromptTemplateTags");
                 });
 #pragma warning restore 612, 618
         }

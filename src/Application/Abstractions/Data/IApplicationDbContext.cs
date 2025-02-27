@@ -12,9 +12,8 @@ public interface IApplicationDbContext
     DbSet<Message> Messages { get; }
     DbSet<ChatSession> ChatSessions { get; }
     DbSet<FileAttachment> FileAttachments { get; }
-    
+
     DbSet<PromptTemplate> PromptTemplates { get; }
-    DbSet<PromptTemplateTag> PromptTemplateTags { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

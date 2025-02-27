@@ -15,7 +15,8 @@ public class PromptController : BaseController
     [HttpPost("Create")]
     public async Task<IResult> CreatePrompt([FromBody] CreatePromptRequest request)
     {
-        var command = new CreatePromptCommand(UserId, request.Title, request.Description, request.Content);
+        var command =
+            new CreatePromptCommand(UserId, request.Title, request.Description, request.Content, request.Tags);
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
@@ -35,7 +36,7 @@ public class PromptController : BaseController
         var result = await _mediator.Send(query);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
-    
+
     [HttpDelete("{id}")]
     public async Task<IResult> DeletePrompt([FromRoute] Guid id)
     {

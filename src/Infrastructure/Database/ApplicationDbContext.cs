@@ -2,6 +2,7 @@
 using Domain.Aggregates.Chats;
 using Domain.Aggregates.Prompts;
 using Domain.Aggregates.Users;
+using Domain.ValueObjects;
 using Infrastructure.Database.Configurations;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -17,10 +18,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<FileAttachment> FileAttachments { get; set; }
 
     public DbSet<PromptTemplate> PromptTemplates { get; set; }
-    public DbSet<PromptTemplateTag> PromptTemplateTags { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
+        builder.Ignore<Tag>();
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
     }

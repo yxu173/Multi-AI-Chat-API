@@ -1,5 +1,7 @@
 using Application.Abstractions.Messaging;
+using Domain.DomainErrors;
 using Domain.Repositories;
+using Domain.ValueObjects;
 using SharedKernel;
 
 namespace Application.Features.Prompts.UpdatePrompt;
@@ -15,15 +17,23 @@ public sealed class UpdatePromptCommandHandler : ICommandHandler<UpdatePromptCom
 
     public async Task<Result<bool>> Handle(UpdatePromptCommand request, CancellationToken cancellationToken)
     {
-        var prompt = await _promptRepository.GetByIdAsync(request.PromptId);
+        var promptResult = await _promptRepository.GetByIdAsync(request.PromptId);
+        if (promptResult.IsFailure)
+            return Result.Failure<bool>(promptResult.Error);
 
-        prompt.Value.Update(request.Title, request.Description, request.Content);
+        var prompt = promptResult.Value;
 
-        var result = await _promptRepository.UpdateAsync(prompt.Value);
+        if (prompt.UserId != request.UserId)
+            return Result.Failure<bool>(PromptTemplateErrors.UserIsNotAuthorized);
+
+        prompt.Update(request.Title, request.Content);
+
+        var tags = request.Tags.Select(Tag.Create).ToList();
+        prompt.UpdateTags(tags);
+
+        var result = await _promptRepository.UpdateAsync(prompt);
         if (result.IsFailure)
-        {
             return Result.Failure<bool>(result.Error);
-        }
 
         return Result.Success(true);
     }
