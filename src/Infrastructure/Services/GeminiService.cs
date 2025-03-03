@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 
@@ -13,22 +9,14 @@ public class GeminiService : IAiModelService
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
-    private readonly double _inputTokenPricePer1K;
-    private readonly double _outputTokenPricePer1K;
-    private readonly TokenCountingService _tokenCountingService;
 
     public GeminiService(
         IHttpClientFactory httpClientFactory,
-        string apiKey,
-        double inputTokenPricePer1K,
-        double outputTokenPricePer1K)
+        string apiKey)
     {
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
         _apiKey = apiKey;
-        _inputTokenPricePer1K = inputTokenPricePer1K;
-        _outputTokenPricePer1K = outputTokenPricePer1K;
-        _tokenCountingService = new TokenCountingService();
     }
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
@@ -97,20 +85,6 @@ public class GeminiService : IAiModelService
                 }
             }
         }
-    }
-
-    public async Task<TokenUsage> CountTokensAsync(IEnumerable<MessageDto> messages)
-    {
-        var inputTokens = _tokenCountingService.EstimateInputTokens(messages);
-        var outputTokens = inputTokens / 2; // Rough estimate
-
-        var totalCost = _tokenCountingService.CalculateCost(
-            inputTokens,
-            outputTokens,
-            _inputTokenPricePer1K,
-            _outputTokenPricePer1K);
-
-        return new TokenUsage(inputTokens, outputTokens, totalCost);
     }
 
     private record GeminiContent(GeminiPart[] parts, string role);

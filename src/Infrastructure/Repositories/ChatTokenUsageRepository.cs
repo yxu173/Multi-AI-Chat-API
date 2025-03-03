@@ -62,7 +62,65 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
             .ToListAsync();
     }
 
-    
+    public async Task<int> GetTotalInputTokensByUserIdAsync(Guid userId, DateTime? startDate = null, DateTime? endDate = null)
+    {
+        var query = _dbContext.ChatTokenUsages
+            .AsNoTracking()
+            .Include(u => u.Message)
+            .Where(u => u.Message.UserId == userId);
+        
+        if (startDate.HasValue)
+        {
+            query = query.Where(u => u.CreatedAt >= startDate.Value);
+        }
+        
+        if (endDate.HasValue)
+        {
+            query = query.Where(u => u.CreatedAt <= endDate.Value);
+        }
+        
+        return await query.SumAsync(u => u.InputTokens);
+    }
+
+    public async Task<int> GetTotalOutputTokensByUserIdAsync(Guid userId, DateTime? startDate = null, DateTime? endDate = null)
+    {
+        var query = _dbContext.ChatTokenUsages
+            .AsNoTracking()
+            .Include(u => u.Message)
+            .Where(u => u.Message.UserId == userId);
+        
+        if (startDate.HasValue)
+        {
+            query = query.Where(u => u.CreatedAt >= startDate.Value);
+        }
+        
+        if (endDate.HasValue)
+        {
+            query = query.Where(u => u.CreatedAt <= endDate.Value);
+        }
+        
+        return await query.SumAsync(u => u.OutputTokens);
+    }
+
+    public async Task<decimal> GetTotalCostByUserIdAsync(Guid userId, DateTime? startDate = null, DateTime? endDate = null)
+    {
+        var query = _dbContext.ChatTokenUsages
+            .AsNoTracking()
+            .Include(u => u.Message)
+            .Where(u => u.Message.UserId == userId);
+        
+        if (startDate.HasValue)
+        {
+            query = query.Where(u => u.CreatedAt >= startDate.Value);
+        }
+        
+        if (endDate.HasValue)
+        {
+            query = query.Where(u => u.CreatedAt <= endDate.Value);
+        }
+        
+        return await query.SumAsync(u => u.TotalCost);
+    }
   
     public async Task AddAsync(ChatTokenUsage chatTokenUsage)
     {
