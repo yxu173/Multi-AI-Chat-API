@@ -281,6 +281,31 @@
         .message.user {
             background-color: var(--message-user-bg);
         }
+
+        .current-model-indicator {
+            background: #e3f2fd;
+            padding: 8px 12px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-weight: 500;
+            color: var(--primary-color);
+            text-align: center;
+        }
+
+        .model-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .switch-model-btn {
+            flex: 1;
+            background: #ff9800;
+        }
+
+        .switch-model-btn:hover {
+            background: #f57c00;
+        }
     </style>
 </head>
 <body>
@@ -310,6 +335,10 @@
                 <option value="deepseek">DeepSeek</option>
                 <option value="imagen3">Imagen 3</option>
             </select>
+            <div id="currentModelIndicator" class="current-model-indicator">Current Model: Not Selected</div>
+            <div class="model-actions">
+                <button id="switchModelBtn" class="switch-model-btn">Switch Model</button>
+            </div>
         </div>
         <div id="chatHistory">
             <h3>Chat History</h3>
@@ -322,6 +351,7 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
     let currentChatId = null;
+    let searchTerm = ''; // Added to fix search term reference
     const token = 'YOUR_JWT_TOKEN'; // Replace with actual token handling
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/chatHub", {
@@ -376,9 +406,17 @@
         }
     }
 
+    function showError(message) {
+        const errorDiv = document.createElement("div");
+        errorDiv.className = "error";
+        errorDiv.textContent = message;
+        messagesList.appendChild(errorDiv);
+        messagesList.scrollTop = messagesList.scrollHeight;
+    }
+
     // Enhanced search functionality
     async function handleSearch() {
-        const searchTerm = searchInput.value.trim();
+        searchTerm = searchInput.value.trim();
         if (searchTerm.length < 3) {
             alert('Search term must be at least 3 characters long');
             return;
@@ -684,6 +722,14 @@
 
     async function createNewChat() {
         try {
+            const selectedModel = modelSelect.value;
+            const modelId = chatIds[selectedModel];
+            
+            if (!modelId) {
+                alert('Invalid model selection');
+                return;
+            }
+            
             const response = await fetch('/api/Chat/Create', {
                 method: 'POST',
                 headers: {
@@ -691,30 +737,51 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    modelType: modelSelect.value
+                    modelId: modelId
                 })
             });
+            
+            if (!response.ok) {
+                throw new Error('Failed to create new chat');
+            }
+            
             const chatId = await response.json();
             currentChatId = chatId;
             await loadChatHistory();
             clearMessages();
             await connection.invoke("JoinChatSession", currentChatId);
+            
+            // Update model indicator
+            updateModelIndicator(modelSelect.options[modelSelect.selectedIndex].text);
         } catch (err) {
             console.error('Error creating new chat:', err);
+            showError('Failed to create new chat');
         }
     }
 
     async function deleteChat(chatId) {
         try {
-            await fetch(`/api/Chat/${chatId}`, {
+            const response = await fetch(`/api/Chat/${chatId}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
             });
+            
+            if (!response.ok) {
+                throw new Error('Failed to delete chat');
+            }
+            
             await loadChatHistory();
+            
+            // If we deleted the current chat, clear the messages
+            if (chatId === currentChatId) {
+                currentChatId = null;
+                clearMessages();
+            }
         } catch (err) {
             console.error('Error deleting chat:', err);
+            showError('Failed to delete chat');
         }
     }
 
@@ -725,10 +792,11 @@
         chats.forEach(chat => {
             const chatItem = document.createElement('div');
             chatItem.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
+            chatItem.dataset.chatId = chat.id;
             chatItem.innerHTML = `
-                    ${chat.title}
-                    <button class="delete-chat-btn" onclick="deleteChat('${chat.id}')">Delete</button>
-                `;
+                <span class="chat-title">${chat.title}</span>
+                <button class="delete-chat-btn" onclick="event.stopPropagation(); deleteChat('${chat.id}')">Delete</button>
+            `;
             chatItem.onclick = () => switchChat(chat.id);
             chatsList.appendChild(chatItem);
         });
@@ -737,24 +805,59 @@
     async function switchChat(chatId) {
         currentChatId = chatId;
         clearMessages();
-        await connection.invoke("JoinChatSession", chatId);
-
-        // Load chat messages
-        const response = await fetch(`/api/Chat/${chatId}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
+        
+        // Update active chat in UI
+        const chatItems = document.querySelectorAll('.chat-list-item');
+        chatItems.forEach(item => {
+            item.classList.toggle('active', item.dataset.chatId === chatId);
+        });
+        
+        try {
+            await connection.invoke("JoinChatSession", chatId);
+            await loadChatMessages(chatId);
+        } catch (err) {
+            console.error('Error switching chat:', err);
+            showError('Failed to switch chat');
+        }
+    }
+    
+    async function loadChatMessages(chatId) {
+        try {
+            const response = await fetch(`/api/Chat/${chatId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to load chat messages');
             }
-        });
-        const chat = await response.json();
-        chat.messages.forEach(msg => {
-            appendMessage(msg.isFromAi ? 'assistant' : 'user', msg.content);
-        });
+            
+            const chat = await response.json();
+            
+            // Update model indicator based on chat's model
+            const modelEntry = Object.entries(chatIds).find(([key, value]) => value === chat.aiModelId);
+            if (modelEntry) {
+                const [modelKey] = modelEntry;
+                modelSelect.value = modelKey;
+                updateModelIndicator(modelSelect.options[modelSelect.selectedIndex].text);
+            }
+            
+            // Display messages
+            chat.messages.forEach(msg => {
+                appendMessage(msg.isFromAi ? 'assistant' : 'user', msg.content);
+            });
+        } catch (err) {
+            console.error('Error loading chat messages:', err);
+            showError('Failed to load chat messages');
+        }
     }
 
-    // Add to existing initialization code
-    document.addEventListener('DOMContentLoaded', () => {
-        loadChatHistory();
-
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+        await initializeConnection();
+        await loadChatHistory();
+        
         // Add new chat button
         const newChatBtn = document.createElement('button');
         newChatBtn.className = 'new-chat-btn';

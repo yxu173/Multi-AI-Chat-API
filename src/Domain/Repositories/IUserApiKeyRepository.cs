@@ -9,5 +9,5 @@ public interface IUserApiKeyRepository
     Task<IEnumerable<UserApiKey>> GetByUserIdAsync(Guid userId);
     Task AddAsync(UserApiKey userApiKey);
     Task UpdateAsync(UserApiKey userApiKey);
-    Task DeleteAsync(Guid id);
+    Task<bool> DeleteAsync(Guid id);
 }
