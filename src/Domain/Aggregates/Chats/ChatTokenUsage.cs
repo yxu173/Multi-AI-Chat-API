@@ -1,8 +1,9 @@
- namespace Domain.Aggregates.Chats;
+using Domain.Common;
 
-public sealed class ChatTokenUsage
+namespace Domain.Aggregates.Chats;
+
+public sealed class ChatTokenUsage : BaseEntity
 {
-    public Guid Id { get; private set; }
     public Guid MessageId { get; private set; }
     public int InputTokens { get; private set; }
     public int OutputTokens { get; private set; }

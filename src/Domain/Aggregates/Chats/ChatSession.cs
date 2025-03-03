@@ -10,7 +10,6 @@ public sealed class ChatSession : BaseAuditableEntity
     private readonly List<Message> _messages = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
 
-    // Navigation property
     public AiModel AiModel { get; private set; }
 
     private ChatSession()
