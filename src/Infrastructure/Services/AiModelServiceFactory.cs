@@ -1,9 +1,5 @@
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 using Application.Abstractions.Authentication;
 using Application.Abstractions.Interfaces;
-using Application.Services;
 using Domain.Enums;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -94,9 +90,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new ChatGptService(
             httpClientFactory, 
-            apiKey, 
-            aiModel.InputTokenPricePer1K, 
-            aiModel.OutputTokenPricePer1K, 
+             _configuration["AI:OpenAi:ApiKey"]!,
             aiModel.ModelCode);
     }
 
@@ -105,9 +99,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new ClaudeService(
             httpClientFactory, 
-            apiKey, 
-            aiModel.InputTokenPricePer1K, 
-            aiModel.OutputTokenPricePer1K);
+            _configuration["AI:Anthropic:ApiKey"]!);
     }
 
     private DeepSeekService CreateDeepSeekService(AiModel aiModel, string apiKey)
@@ -115,9 +107,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new DeepSeekService(
             httpClientFactory, 
-            apiKey, 
-            aiModel.InputTokenPricePer1K, 
-            aiModel.OutputTokenPricePer1K);
+            _configuration["AI:DeepSeek:ApiKey"]!);
     }
 
     private GeminiService CreateGeminiService(AiModel aiModel, string apiKey)
@@ -125,9 +115,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new GeminiService(
             httpClientFactory, 
-            apiKey, 
-            aiModel.InputTokenPricePer1K, 
-            aiModel.OutputTokenPricePer1K);
+            _configuration["AI:Gemini:ApiKey"]!);
     }
 
     private Imagen3Service CreateImagen3Service(AiModel aiModel, string apiKey)

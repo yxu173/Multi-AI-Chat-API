@@ -82,15 +82,15 @@ public class ChatService
         aiMessage.CompleteMessage();
         await _messageRepository.UpdateAsync(aiMessage);
 
-        var tokenUsage = await aiService.CountTokensAsync(messages);
+      //  var tokenUsage = await aiService.CountTokensAsync(messages);
 
-        var chatTokenUsage = ChatTokenUsage.Create(
-            aiMessage.Id,
-            tokenUsage.InputTokens,
-            tokenUsage.OutputTokens,
-            tokenUsage.TotalCost);
-
-        await _tokenUsageRepository.AddAsync(chatTokenUsage);
+        // var chatTokenUsage = ChatTokenUsage.Create(
+        //     aiMessage.Id,
+        //     tokenUsage.InputTokens,
+        //     tokenUsage.OutputTokens,
+        //     tokenUsage.TotalCost);
+        //
+        // await _tokenUsageRepository.AddAsync(chatTokenUsage);
     }
 
     private string GenerateTitleFromContent(string content)

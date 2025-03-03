@@ -22,21 +22,50 @@ namespace Infrastructure.Database.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("Domain.Aggregates.Chats.ChatSession", b =>
+            modelBuilder.Entity("AiProvider", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("DefaultApiKey")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AiProviders", (string)null);
+                });
+
+            modelBuilder.Entity("ChatSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AiModelId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("CustomApiKey")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModelType")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -48,7 +77,91 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AiModelId");
+
                     b.ToTable("ChatSessions", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.AiModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AiProviderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AiProviderId1")
+                        .HasColumnType("uuid");
+
+                    b.Property<double>("InputTokenPricePer1K")
+                        .HasColumnType("double precision");
+
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<int?>("MaxInputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxOutputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ModelCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ModelType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<double>("OutputTokenPricePer1K")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AiProviderId");
+
+                    b.HasIndex("AiProviderId1");
+
+                    b.ToTable("AiModels", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.ChatTokenUsage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("InputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("OutputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("TotalCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId")
+                        .IsUnique();
+
+                    b.ToTable("ChatTokenUsages", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.FileAttachment", b =>
@@ -235,6 +348,38 @@ namespace Infrastructure.Database.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Users.UserApiKey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AiProviderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ApiKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastUsed")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AiProviderId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserApiKeys", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.Property<int>("Id")
@@ -338,6 +483,43 @@ namespace Infrastructure.Database.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("ChatSession", b =>
+                {
+                    b.HasOne("Domain.Aggregates.Chats.AiModel", "AiModel")
+                        .WithMany()
+                        .HasForeignKey("AiModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AiModel");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.AiModel", b =>
+                {
+                    b.HasOne("AiProvider", "AiProvider")
+                        .WithMany()
+                        .HasForeignKey("AiProviderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AiProvider", null)
+                        .WithMany("Models")
+                        .HasForeignKey("AiProviderId1");
+
+                    b.Navigation("AiProvider");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.ChatTokenUsage", b =>
+                {
+                    b.HasOne("Domain.Aggregates.Chats.Message", "Message")
+                        .WithOne()
+                        .HasForeignKey("Domain.Aggregates.Chats.ChatTokenUsage", "MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Message");
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Chats.FileAttachment", b =>
                 {
                     b.HasOne("Domain.Aggregates.Chats.Message", null)
@@ -349,7 +531,7 @@ namespace Infrastructure.Database.Migrations
 
             modelBuilder.Entity("Domain.Aggregates.Chats.Message", b =>
                 {
-                    b.HasOne("Domain.Aggregates.Chats.ChatSession", "ChatSession")
+                    b.HasOne("ChatSession", "ChatSession")
                         .WithMany("Messages")
                         .HasForeignKey("ChatSessionId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -386,6 +568,25 @@ namespace Infrastructure.Database.Migrations
                         });
 
                     b.Navigation("Tags");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Users.UserApiKey", b =>
+                {
+                    b.HasOne("AiProvider", "AiProvider")
+                        .WithMany()
+                        .HasForeignKey("AiProviderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Aggregates.Users.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AiProvider");
 
                     b.Navigation("User");
                 });
@@ -441,7 +642,12 @@ namespace Infrastructure.Database.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Domain.Aggregates.Chats.ChatSession", b =>
+            modelBuilder.Entity("AiProvider", b =>
+                {
+                    b.Navigation("Models");
+                });
+
+            modelBuilder.Entity("ChatSession", b =>
                 {
                     b.Navigation("Messages");
                 });

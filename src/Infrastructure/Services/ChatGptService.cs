@@ -1,10 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 
@@ -14,26 +9,17 @@ public class ChatGptService : IAiModelService
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
-    private readonly double _inputTokenPricePer1K;
-    private readonly double _outputTokenPricePer1K;
     private readonly string _modelCode;
-    private readonly TokenCountingService _tokenCountingService;
 
     public ChatGptService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
-        double inputTokenPricePer1K,
-        double outputTokenPricePer1K,
         string modelCode)
     {
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://api.openai.com/v1/");
         _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-        _apiKey = apiKey;
-        _inputTokenPricePer1K = inputTokenPricePer1K;
-        _outputTokenPricePer1K = outputTokenPricePer1K;
         _modelCode = modelCode;
-        _tokenCountingService = new TokenCountingService();
     }
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
@@ -94,23 +80,6 @@ public class ChatGptService : IAiModelService
         }
     }
 
-    public Task<TokenUsage> CountTokensAsync(IEnumerable<MessageDto> messages)
-    {
-        // For a more accurate count, you could use the OpenAI tokenizer API
-        // But for simplicity, we'll use our estimation service
-        var inputTokens = _tokenCountingService.EstimateInputTokens(messages);
-
-        // Estimate output tokens (this is just a rough estimate)
-        var outputTokens = inputTokens / 2; // Assuming output is roughly half the input size
-
-        var totalCost = _tokenCountingService.CalculateCost(
-            inputTokens,
-            outputTokens,
-            _inputTokenPricePer1K,
-            _outputTokenPricePer1K);
-
-        return Task.FromResult(new TokenUsage(inputTokens, outputTokens, totalCost));
-    }
 
     private record OpenAiMessage(string role, string content);
 
