@@ -3,7 +3,6 @@ namespace Application.Features.Chats.GetChatById;
 public record ChatDto(
     Guid Id,
     string Title,
-    string ModelType,
     DateTime CreatedAt,
     IReadOnlyList<MessageDto> Messages
 );

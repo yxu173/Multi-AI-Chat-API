@@ -15,5 +15,9 @@ public interface IApplicationDbContext
 
     DbSet<PromptTemplate> PromptTemplates { get; }
 
+    DbSet<AiProvider> AiProviders { get; }
+    DbSet<AiModel> AiModels { get; }
+    DbSet<ChatTokenUsage> ChatTokenUsages { get; }
+    DbSet<UserApiKey> UserApiKeys { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

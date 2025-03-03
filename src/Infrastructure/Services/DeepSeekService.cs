@@ -1,10 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Application.Abstractions.Interfaces;
 using Application.Services;
-using Domain.Aggregates.Chats;
-using Microsoft.Extensions.Configuration;
-using System.Text.Json.Serialization;
 
 namespace Infrastructure.Services;
 
@@ -12,43 +13,57 @@ public class DeepSeekService : IAiModelService
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
+    private readonly double _inputTokenPricePer1K;
+    private readonly double _outputTokenPricePer1K;
+    private readonly TokenCountingService _tokenCountingService;
 
-    public DeepSeekService(IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public DeepSeekService(
+        IHttpClientFactory httpClientFactory, 
+        string apiKey, 
+        double inputTokenPricePer1K, 
+        double outputTokenPricePer1K)
     {
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://api.deepseek.com/v1/");
-        _apiKey = configuration["AI:DeepSeek:ApiKey"]!;
+        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+        _apiKey = apiKey;
+        _inputTokenPricePer1K = inputTokenPricePer1K;
+        _outputTokenPricePer1K = outputTokenPricePer1K;
+        _tokenCountingService = new TokenCountingService();
     }
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
     {
         var messages = new List<DeepSeekMessage>
         {
-            new("system", "Always respond using markdown formatting")
+            new("system", "You are a helpful AI assistant.")
         };
-        messages.AddRange(history.Select(m => new DeepSeekMessage(
-            m.IsFromAi ? "system" : "user",
-            m.Content
-        )).ToList());
+        
+        messages.AddRange(history
+            .Where(m => !string.IsNullOrEmpty(m.Content))
+            .Select(m => new DeepSeekMessage(m.IsFromAi ? "assistant" : "user", m.Content)));
 
         var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
-        request.Headers.Add("Authorization", $"Bearer {_apiKey}");
-
+        
         var requestBody = new
         {
             model = "deepseek-chat",
             messages,
-            temperature = 1.5,
+            max_tokens = 2000,
             stream = true
         };
-
+        
         request.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
+            JsonSerializer.Serialize(requestBody), 
+            Encoding.UTF8, 
             "application/json");
 
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync();
+            throw new Exception($"DeepSeek API Error: {response.StatusCode} - {errorContent}");
+        }
 
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
@@ -56,43 +71,53 @@ public class DeepSeekService : IAiModelService
         while (!reader.EndOfStream)
         {
             var line = await reader.ReadLineAsync();
-            if (string.IsNullOrEmpty(line)) continue;
+            if (string.IsNullOrWhiteSpace(line)) continue;
 
             if (line.StartsWith("data: "))
             {
-                var json = line["data: ".Length..].Trim();
-                if (json == "[DONE]")
-                {
-                    break;
-                }
-                else
-                {
-                    var chunk = JsonSerializer.Deserialize<DeepSeekResponse>(json);
-                    var content = chunk?.choices?.FirstOrDefault()?.delta?.content;
+                var json = line["data: ".Length..];
+                if (json == "[DONE]") break;
 
-                    if (!string.IsNullOrEmpty(content))
+              
+                    var chunk = JsonSerializer.Deserialize<DeepSeekResponse>(json);
+                    if (chunk?.choices is { Length: > 0 } choices)
                     {
-                        yield return content;
+                        var delta = choices[0].delta;
+                        if (!string.IsNullOrEmpty(delta?.content))
+                        {
+                            yield return delta.content;
+                        }
                     }
-                }
+                
             }
         }
     }
-
+    
+    public async Task<TokenUsage> CountTokensAsync(IEnumerable<MessageDto> messages)
+    {
+        var inputTokens = _tokenCountingService.EstimateInputTokens(messages);
+        var outputTokens = inputTokens / 2; // Rough estimate
+        
+        var totalCost = _tokenCountingService.CalculateCost(
+            inputTokens,
+            outputTokens,
+            _inputTokenPricePer1K,
+            _outputTokenPricePer1K);
+            
+        return new TokenUsage(inputTokens, outputTokens, totalCost);
+    }
 
     private record DeepSeekMessage(string role, string content);
-
+    
     private record DeepSeekResponse(
-        [property: JsonPropertyName("choices")]
-        IEnumerable<DeepSeekChoice> choices
+        string id,
+        string @object,
+        int created,
+        string model,
+        DeepSeekChoice[] choices
     );
-
-    private record DeepSeekChoice(
-        [property: JsonPropertyName("delta")] DeepSeekDelta delta
-    );
-
-    private record DeepSeekDelta(
-        [property: JsonPropertyName("content")]
-        string content
-    );
+    
+    private record DeepSeekChoice(DeepSeekDelta delta, int index, string finish_reason);
+    
+    private record DeepSeekDelta(string content);
 }

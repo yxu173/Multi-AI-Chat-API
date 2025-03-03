@@ -1,34 +1,34 @@
-using System;
-using System.Collections.Generic;
+using Domain.Aggregates.Chats;
 using Domain.Common;
-using Domain.DomainErrors;
-using Domain.Enums;
-using SharedKernel;
-
-namespace Domain.Aggregates.Chats;
 
 public sealed class ChatSession : BaseAuditableEntity
 {
     public Guid UserId { get; private set; }
     public string Title { get; private set; }
-    public ModelType ModelType { get; private set; }
+    public Guid AiModelId { get; private set; } 
+    public string? CustomApiKey { get; private set; } 
     private readonly List<Message> _messages = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
 
-    private ChatSession() { }
+    // Navigation property
+    public AiModel AiModel { get; private set; }
 
-    public static ChatSession Create(Guid userId, string modelType)
+    private ChatSession()
     {
-        var modelTypeResult = Enum.Parse<ModelType>(modelType);
-        
-        if (userId == Guid.Empty) Result.Failure(ChatErrors.UserIdNotValid);
+    }
+
+    public static ChatSession Create(Guid userId, Guid aiModelId, string? customApiKey = null)
+    {
+        if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
+        if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
 
         return new ChatSession
         {
             Id = Guid.NewGuid(),
             UserId = userId,
             Title = "New Chat",
-            ModelType = modelTypeResult,
+            AiModelId = aiModelId,
+            CustomApiKey = customApiKey,
             CreatedAt = DateTime.UtcNow
         };
     }
@@ -40,8 +40,15 @@ public sealed class ChatSession : BaseAuditableEntity
 
     public void UpdateTitle(string newTitle)
     {
-        if (string.IsNullOrWhiteSpace(newTitle)) throw new ArgumentException("Title cannot be empty.", nameof(newTitle));
+        if (string.IsNullOrWhiteSpace(newTitle))
+            throw new ArgumentException("Title cannot be empty.", nameof(newTitle));
         Title = newTitle;
+        LastModifiedAt = DateTime.UtcNow;
+    }
+
+    public void UpdateApiKey(string apiKey)
+    {
+        CustomApiKey = apiKey;
         LastModifiedAt = DateTime.UtcNow;
     }
 }

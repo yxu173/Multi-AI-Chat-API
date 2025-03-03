@@ -1,6 +1,4 @@
-using System.Linq.Expressions;
 using Domain.Aggregates.Chats;
-using Domain.Enums;
 using SharedKernel;
 
 namespace Domain.Repositories;
@@ -8,8 +6,7 @@ namespace Domain.Repositories;
 public interface IChatSessionRepository
 {
     Task<ChatSession> GetByIdAsync(Guid id);
-
-    //Task<Result<T>> GetByIdAsync<T>(Guid id, Expression<Func<ChatSession, T>> selector); 
+    Task<ChatSession> GetByIdWithModelAsync(Guid id);
     Task AddAsync(ChatSession chatSession);
     Task UpdateAsync(ChatSession chatSession);
     Task<Result<bool>> DeleteAsync(Guid id);

@@ -19,6 +19,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<PromptTemplate> PromptTemplates { get; set; }
 
+    public DbSet<AiProvider> AiProviders { get; set; }
+
+    public DbSet<AiModel> AiModels { get; set; }
+    public DbSet<ChatTokenUsage> ChatTokenUsages { get; set; }
+    public DbSet<UserApiKey> UserApiKeys { get; set; }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         builder.Ignore<Tag>();

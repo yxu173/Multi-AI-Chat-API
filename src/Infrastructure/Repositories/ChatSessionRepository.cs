@@ -28,6 +28,20 @@ public class ChatSessionRepository : IChatSessionRepository
         return chat;
     }
 
+
+    public async Task<ChatSession> GetByIdWithModelAsync(Guid id)
+    {
+        var chat = await _context.ChatSessions
+            .AsNoTracking()
+            .Include(c => c.Messages)
+            .ThenInclude(m => m.FileAttachments)
+            .Include(c => c.AiModel)
+                .ThenInclude(m => m.AiProvider)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(c => c.Id == id);
+        return chat;
+    }
+
     public async Task AddAsync(ChatSession chatSession)
     {
         await _context.ChatSessions.AddAsync(chatSession);

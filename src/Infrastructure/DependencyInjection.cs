@@ -41,6 +41,9 @@ public static class DependencyInjection
         services.AddScoped<DeepSeekService>();
         services.AddScoped<GeminiService>();
         services.AddScoped<Imagen3Service>();
+        services.AddSingleton<TokenCountingService>();
+       // services.AddScoped<IChatTokenUsageRepository, ChatTokenUsageRepository>();
+        //services.AddScoped<IUserApiKeyRepository, UserApiKeyRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IUserContext, UserContext>();
         services.AddSingleton<ITokenProvider, TokenProvider>();

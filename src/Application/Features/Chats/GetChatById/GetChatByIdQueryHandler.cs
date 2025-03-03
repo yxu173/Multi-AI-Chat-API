@@ -23,7 +23,6 @@ public class GetChatByIdQueryHandler : IQueryHandler<GetChatByIdQuery, ChatDto>
         var response = new ChatDto(
             chatSession.Id,
             chatSession.Title,
-            chatSession.ModelType.ToString(),
             chatSession.CreatedAt,
             chatSession.Messages.OrderBy(m => m.CreatedAt)
                 .Select(m => new MessageDto

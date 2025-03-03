@@ -321,10 +321,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-
-    let currentChatId = 'aa49e26a-0b21-40be-a359-ad92c27689ef'; // Set default chat ID
-
-    const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1NDJjNC01OGNhLTdlMjEtYWY2OC0xYjRhNTJmZGRmN2MiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3QG91dGxvb2suY29tIiwibmFtZSI6Im1yeCIsImp0aSI6IjIzYmNlNzYzLWQ1ZWMtNDZlZS04ZGMxLTVmZmFlZTVmNzFjMCIsImF1ZCI6WyJTd2FnZ2VyVUkiLCJTd2FnZ2VyVUkiXSwibmJmIjoxNzQwNTgxOTI3LCJleHAiOjE3NDExODY3MjcsImlhdCI6MTc0MDU4MTkyNywiaXNzIjoiSW50ZXJuc2hpcC1QbGF0Zm9ybSJ9.W1ay4Vm90ousUsIObvynInaDbZulmTjpxJEmxQCJl9o';
+    let currentChatId = null;
+    const token = 'YOUR_JWT_TOKEN'; // Replace with actual token handling
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/chatHub", {
             accessTokenFactory: () => token
@@ -332,12 +330,117 @@
         .withAutomaticReconnect()
         .build();
 
-    connection.start()
-        .then(() => {
-            console.log("Connected to SignalR");
-            connection.invoke("JoinChatSession", currentChatId);
-        })
-        .catch(err => console.error("Connection failed:", err));
+    // Initialize connection
+    async function initializeConnection() {
+        try {
+            await connection.start();
+            connectionStatus.textContent = 'Connected';
+            connectionStatus.className = 'status connected';
+            sendButton.disabled = false;
+            
+            if (currentChatId) {
+                await connection.invoke("JoinChatSession", currentChatId);
+            }
+        } catch (err) {
+            console.error("Connection failed:", err);
+            connectionStatus.textContent = 'Connection failed';
+            connectionStatus.className = 'status disconnected';
+            sendButton.disabled = true;
+        }
+    }
+
+    // Improved chat history management
+    async function loadChatHistory() {
+        try {
+            const response = await fetch('/api/Chat/GetAll', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to load chat history');
+            }
+            
+            const chats = await response.json();
+            displayChatHistory(chats);
+            
+            // Set current chat if none is selected
+            if (!currentChatId && chats.length > 0) {
+                currentChatId = chats[0].id;
+                await switchChat(currentChatId);
+            }
+        } catch (err) {
+            console.error('Error loading chat history:', err);
+            showError('Failed to load chat history');
+        }
+    }
+
+    // Enhanced search functionality
+    async function handleSearch() {
+        const searchTerm = searchInput.value.trim();
+        if (searchTerm.length < 3) {
+            alert('Search term must be at least 3 characters long');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/Chat/Search?search=${encodeURIComponent(searchTerm)}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Search failed');
+            }
+
+            const results = await response.json();
+            displaySearchResults(results);
+        } catch (error) {
+            console.error('Search error:', error);
+            showError('Search failed. Please try again.');
+        }
+    }
+
+    function displaySearchResults(results) {
+        const searchResults = document.getElementById('searchResults');
+        searchResults.innerHTML = '';
+
+        if (results.length === 0) {
+            searchResults.innerHTML = '<div class="no-results">No results found</div>';
+            return;
+        }
+
+        results.forEach(chat => {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'search-result';
+            resultDiv.onclick = () => switchChat(chat.id);
+
+            const matchingMessages = chat.messages.filter(msg => 
+                msg.content.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            const messagesHtml = matchingMessages.map(msg => `
+                <div class="message ${msg.isFromAi ? 'ai' : 'user'}">
+                    <div class="message-content">${msg.content}</div>
+                    <div class="message-time">${new Date(msg.createdAt).toLocaleString()}</div>
+                </div>
+            `).join('');
+
+            resultDiv.innerHTML = `
+                <div class="chat-title">${chat.title}</div>
+                <div class="messages">${messagesHtml}</div>
+            `;
+            searchResults.appendChild(resultDiv);
+        });
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+        await initializeConnection();
+        await loadChatHistory();
+    });
 
     const modelSelect = document.getElementById('modelSelect');
     const messageInput = document.getElementById('messageInput');
@@ -353,21 +456,6 @@
         deepseek: 'd948cc51-5f77-467d-8459-9f0b12544a0d',
         imagen3: '8df1f8cc-850b-48be-9755-86d6d936bf19'
     };
-
-    // Connection handling
-    connection.start()
-        .then(() => {
-            connectionStatus.textContent = 'Connected';
-            connectionStatus.className = 'status connected';
-            sendButton.disabled = false;
-            // Join default chat session after connection
-            return connection.invoke("JoinChatSession", currentChatId);
-        })
-        .catch(err => {
-            console.error(err);
-            connectionStatus.textContent = 'Connection failed';
-            connectionStatus.className = 'status disconnected';
-        });
 
     // Model selection handling
     modelSelect.addEventListener('change', async (e) => {
@@ -674,82 +762,6 @@
         newChatBtn.onclick = createNewChat;
         document.querySelector('.chat-history').insertBefore(newChatBtn, document.getElementById('chatsList'));
     });
-
-    async function handleSearch() {
-        const searchInput = document.getElementById('searchInput');
-        const searchTerm = searchInput.value.trim();
-        const searchResults = document.getElementById('searchResults');
-        
-        if (searchTerm.length < 3) {
-            alert('Search term must be at least 3 characters long');
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/Chat/Search?search=${encodeURIComponent(searchTerm)}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Search failed');
-            }
-
-            const results = await response.json();
-            searchResults.innerHTML = ''; // Clear previous results
-
-            if (results.length === 0) {
-                searchResults.innerHTML = '<div class="no-results">No results found</div>';
-                return;
-            }
-
-            results.forEach(chat => {
-                const resultDiv = document.createElement('div');
-                resultDiv.className = 'search-result';
-                resultDiv.onclick = () => loadChat(chat.id);
-
-                // Find messages that match the search term
-                const matchingMessages = chat.messages.filter(msg => 
-                    msg.content.toLowerCase().includes(searchTerm.toLowerCase())
-                );
-
-                const messagesHtml = matchingMessages
-                    .map(msg => `
-                        <div class="message ${msg.isFromAi ? 'ai' : 'user'}">
-                            <div class="message-content">${msg.content}</div>
-                            <div class="message-time">${new Date(msg.createdAt).toLocaleString()}</div>
-                        </div>
-                    `).join('');
-
-                resultDiv.innerHTML = `
-                    <div class="chat-title">${chat.title}</div>
-                    <div class="messages">${messagesHtml}</div>
-                `;
-                searchResults.appendChild(resultDiv);
-            });
-        } catch (error) {
-            console.error('Search error:', error);
-            alert('Search failed. Please try again.');
-        }
-    }
-
-    function displayChatHistory(chats) {
-        const chatsList = document.getElementById('chatsList');
-        chatsList.innerHTML = '';
-
-        chats.forEach(chat => {
-            const chatItem = document.createElement('div');
-            chatItem.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
-            chatItem.setAttribute('data-chat-id', chat.id);
-            chatItem.innerHTML = `
-            <span class="chat-title">${chat.title}</span>
-            <button class="delete-chat-btn" onclick="deleteChat('${chat.id}')">Delete</button>
-        `;
-            chatItem.onclick = () => switchChat(chat.id);
-            chatsList.appendChild(chatItem);
-        });
-    }
 </script>
 </body>
 </html>

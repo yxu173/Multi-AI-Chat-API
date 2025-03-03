@@ -18,15 +18,30 @@ public class AiModelConfiguration : IEntityTypeConfiguration<AiModel>
 
         builder.Property(am => am.ModelType)
             .IsRequired()
-            .HasConversion<string>(); 
-
-        builder.Property(am => am.ApiKey)
-            .IsRequired();
+            .HasConversion<string>();
 
         builder.Property(am => am.InputTokenPricePer1K)
             .IsRequired();
 
         builder.Property(am => am.OutputTokenPricePer1K)
             .IsRequired();
+
+        builder.Property(am => am.ModelCode)
+            .IsRequired()
+            .HasMaxLength(100);
+
+        builder.Property(am => am.MaxInputTokens);
+
+        builder.Property(am => am.MaxOutputTokens);
+
+        builder.Property(am => am.IsEnabled)
+            .IsRequired()
+            .HasDefaultValue(true);
+
+        builder.HasOne(am => am.AiProvider)
+            .WithMany()
+            .HasForeignKey(am => am.AiProviderId)
+            .IsRequired()
+            .OnDelete(DeleteBehavior.Cascade);
     }
 } 
