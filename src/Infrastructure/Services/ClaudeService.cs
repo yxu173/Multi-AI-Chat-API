@@ -26,12 +26,16 @@ public class ClaudeService : IAiModelService
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
     {
+        var systemMessage =
+            "Format your responses in markdown.";
+
         var messages = history
-            .Where(m => !string.IsNullOrEmpty(m.Content))
+            .Where(m => !string.IsNullOrWhiteSpace(m.Content))
             .Select(m => new ClaudeMessage(
                 m.IsFromAi ? "assistant" : "user",
-                m.Content
+                m.Content.Trim()
             ))
+            .TakeLast(10)
             .ToList();
 
         var request = new HttpRequestMessage(HttpMethod.Post, "messages");
@@ -68,7 +72,6 @@ public class ClaudeService : IAiModelService
             {
                 var json = line["data: ".Length..];
                 if (json == "[DONE]") break;
-
 
                 var chunk = JsonSerializer.Deserialize<ClaudeResponse>(json);
                 if (chunk?.delta?.text is { Length: > 0 } textChunk)
