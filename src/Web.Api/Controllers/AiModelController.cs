@@ -1,4 +1,5 @@
 using Application.Features.AiModels.CreateAiModel;
+using Application.Features.AiModels.EnableAiModel;
 using Application.Features.AiModels.GetAllAiModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -31,6 +32,14 @@ public class AiModelController : BaseController
     {
         var query = new GetAllAiModelsQuery();
         var result = await _mediator.Send(query);
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [HttpPatch("{id:guid}")]
+    public async Task<IResult> SetEnabledAiModel([FromRoute] Guid id)
+    {
+        var command = new EnableAiModelCommand(id);
+        var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }
