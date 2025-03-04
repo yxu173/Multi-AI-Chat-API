@@ -1,870 +1,122 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Multi-AI Chat Demo</title>
+    <title>AI Chat Demo</title>
     <style>
-        :root {
-            --primary-color: #2196f3;
-            --secondary-color: #f5f5f5;
-            --border-color: #ddd;
-            --text-color: #333;
-            --success-color: #4caf50;
-            --error-color: #f44336;
-            --hover-color: #e3f2fd;
-            --text-secondary: #666;
-        }
-
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            gap: 20px;
-            background-color: #f9f9f9;
-            color: var(--text-color);
-        }
-
         .main-container {
-            display: flex;
-            width: 100%;
-            gap: 20px;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        .chat-container {
-            flex: 2;
             max-width: 800px;
-            background: white;
+            margin: 20px auto;
             padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
-
-        .sidebar {
-            flex: 1;
-            max-width: 300px;
-        }
-
-        .model-selector, .chat-history {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-
-        .model-selector h3, .chat-history h3 {
-            margin-top: 0;
-            color: var(--primary-color);
-            border-bottom: 2px solid var(--border-color);
-            padding-bottom: 10px;
-        }
-
         #messagesList {
-            height: 600px;
+            height: 400px;
             overflow-y: auto;
-            border: 1px solid var(--border-color);
-            padding: 15px;
-            margin-bottom: 15px;
-            border-radius: 8px;
-            background: #fff;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 20px;
         }
-
         .message {
             margin: 10px 0;
-            padding: 12px;
+            padding: 10px;
             border-radius: 8px;
-            max-width: 80%;
         }
-
         .user-message {
             background: #e3f2fd;
-            margin-left: auto;
-            color: #1565c0;
+            margin-left: 20px;
         }
-
         .ai-message {
             background: #f5f5f5;
-            margin-right: auto;
-            color: #37474f;
+            margin-right: 20px;
         }
-
         .input-container {
             display: flex;
             gap: 10px;
-            margin-top: 15px;
         }
-
         #messageInput {
             flex: 1;
-            padding: 12px;
-            border: 2px solid var(--border-color);
-            border-radius: 8px;
-            font-size: 14px;
-        }
-
-        button {
-            padding: 12px 24px;
-            background: var(--primary-color);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-            font-weight: 500;
-        }
-
-        button:hover {
-            background: #1976d2;
-        }
-
-        button:disabled {
-            background: #bdbdbd;
-            cursor: not-allowed;
-        }
-
-        .chat-list-item {
-            padding: 10px;
-            margin: 5px 0;
-            border: 1px solid var(--border-color);
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        .chat-list-item:hover {
-            background: #e3f2fd;
-        }
-
-        .chat-list-item.active {
-            background: #bbdefb;
-            border-color: var(--primary-color);
-        }
-
-        .status {
-            padding: 8px 12px;
-            margin-bottom: 15px;
-            border-radius: 5px;
-            font-weight: 500;
-        }
-
-        .connected {
-            background: #c8e6c9;
-            color: #2e7d32;
-        }
-
-        .disconnected {
-            background: #ffcdd2;
-            color: #c62828;
-        }
-
-        #modelSelect {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }
-
-        .new-chat-btn {
-            width: 100%;
-            margin-bottom: 15px;
-            background: #4caf50;
-        }
-
-        .new-chat-btn:hover {
-            background: #43a047;
-        }
-
-        .delete-chat-btn {
-            background: #f44336;
-            padding: 5px 10px;
-            font-size: 12px;
-            float: right;
-        }
-
-        .delete-chat-btn:hover {
-            background: #e53935;
-        }
-
-        .search-container {
-            padding: 15px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            gap: 10px;
-        }
-
-        .search-container input {
-            flex: 1;
             padding: 8px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-        }
-
-        .search-container button {
-            padding: 8px 15px;
-            background: var(--primary-color);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        .search-results {
-            padding: 15px;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .search-result-item {
-            margin-bottom: 15px;
-            padding: 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        .search-result-item:hover {
-            background-color: var(--hover-color);
-        }
-
-        .search-message {
-            margin-top: 8px;
-            padding-left: 10px;
-            border-left: 3px solid var(--primary-color);
-        }
-
-        .message-content {
-            margin-bottom: 4px;
-        }
-
-        .message-time {
-            font-size: 0.8em;
-            color: var(--text-secondary);
-        }
-
-        .search-result {
-            padding: 10px;
-            border: 1px solid var(--border-color);
-            margin: 10px 0;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-
-        .search-result:hover {
-            background-color: var(--hover-color);
-        }
-
-        .chat-title {
-            font-weight: bold;
-            margin-bottom: 8px;
-        }
-
-        .no-results {
-            text-align: center;
-            padding: 20px;
-            color: var(--text-secondary);
-        }
-
-        .message {
-            padding: 4px 8px;
-            margin: 4px 0;
-            border-radius: 4px;
-        }
-
-        .message.ai {
-            background-color: var(--message-ai-bg);
-        }
-
-        .message.user {
-            background-color: var(--message-user-bg);
-        }
-
-        .current-model-indicator {
-            background: #e3f2fd;
-            padding: 8px 12px;
-            border-radius: 5px;
-            margin-bottom: 10px;
-            font-weight: 500;
-            color: var(--primary-color);
-            text-align: center;
-        }
-
-        .model-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .switch-model-btn {
-            flex: 1;
-            background: #ff9800;
-        }
-
-        .switch-model-btn:hover {
-            background: #f57c00;
         }
     </style>
 </head>
 <body>
-<div class="main-container">
-    <div class="chat-container">
-        <div id="connectionStatus" class="status disconnected">Disconnected</div>
+    <div class="main-container">
         <div id="messagesList"></div>
         <div class="input-container">
             <input type="text" id="messageInput" placeholder="Type your message here..."/>
-            <button id="sendButton" disabled>Send</button>
-        </div>
-        <div class="search-container">
-            <input type="text" id="searchInput" placeholder="Enter search term...">
-            <button onclick="handleSearch()">Search</button>
-            <button id="subscribeButton">Subscribe to Search</button>
-        </div>
-        <div id="searchResults" class="search-results"></div>
-    </div>
-
-    <div class="sidebar">
-        <div class="model-selector">
-            <h3>Select AI Model</h3>
-            <select id="modelSelect">
-                <option value="gemini">Gemini</option>
-                <option value="claude">Claude</option>
-                <option value="chatgpt">ChatGPT</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="imagen3">Imagen 3</option>
-            </select>
-            <div id="currentModelIndicator" class="current-model-indicator">Current Model: Not Selected</div>
-            <div class="model-actions">
-                <button id="switchModelBtn" class="switch-model-btn">Switch Model</button>
-            </div>
-        </div>
-        <div id="chatHistory">
-            <h3>Chat History</h3>
-            <div id="chatsList"></div>
+            <button onclick="sendMessage()">Send</button>
         </div>
     </div>
-</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script>
-    let currentChatId = null;
-    let searchTerm = ''; // Added to fix search term reference
-    const token = 'YOUR_JWT_TOKEN'; // Replace with actual token handling
-    const connection = new signalR.HubConnectionBuilder()
-        .withUrl("/chatHub", {
-            accessTokenFactory: () => token
-        })
-        .withAutomaticReconnect()
-        .build();
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        // Set your token and chat ID here
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1NjEwYi0wNTFmLTcyNmQtYWVkYy1jMmU5MWJlZTA5ZGYiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3QG91dGxvb2suY29tIiwibmFtZSI6Im1yeCIsImp0aSI6ImNkNDBhN2RhLTBmZTgtNDZiYi05ZDhkLWIwYjBjMTYwNDIyNCIsImF1ZCI6WyJTd2FnZ2VyVUkiLCJTd2FnZ2VyVUkiXSwibmJmIjoxNzQxMDg5ODc0LCJleHAiOjE3NDE2OTQ2NzQsImlhdCI6MTc0MTA4OTg3NCwiaXNzIjoiSW50ZXJuc2hpcC1QbGF0Zm9ybSJ9.8Txe5EHMPjSuQ8QjlPOb03aJeefzUDlomGVNdiu8mHI";
+        const chatId = "7907d13a-5041-4649-852d-481791dcaa6f";
 
-    // Initialize connection
-    async function initializeConnection() {
-        try {
-            await connection.start();
-            connectionStatus.textContent = 'Connected';
-            connectionStatus.className = 'status connected';
-            sendButton.disabled = false;
-            
-            if (currentChatId) {
-                await connection.invoke("JoinChatSession", currentChatId);
-            }
-        } catch (err) {
-            console.error("Connection failed:", err);
-            connectionStatus.textContent = 'Connection failed';
-            connectionStatus.className = 'status disconnected';
-            sendButton.disabled = true;
-        }
-    }
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/chatHub", { 
+                accessTokenFactory: () => token 
+            })
+            .withAutomaticReconnect()
+            .build();
 
-    // Improved chat history management
-    async function loadChatHistory() {
-        try {
-            const response = await fetch('/api/Chat/GetAll', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('Failed to load chat history');
-            }
-            
-            const chats = await response.json();
-            displayChatHistory(chats);
-            
-            // Set current chat if none is selected
-            if (!currentChatId && chats.length > 0) {
-                currentChatId = chats[0].id;
-                await switchChat(currentChatId);
-            }
-        } catch (err) {
-            console.error('Error loading chat history:', err);
-            showError('Failed to load chat history');
-        }
-    }
-
-    function showError(message) {
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "error";
-        errorDiv.textContent = message;
-        messagesList.appendChild(errorDiv);
-        messagesList.scrollTop = messagesList.scrollHeight;
-    }
-
-    // Enhanced search functionality
-    async function handleSearch() {
-        searchTerm = searchInput.value.trim();
-        if (searchTerm.length < 3) {
-            alert('Search term must be at least 3 characters long');
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/Chat/Search?search=${encodeURIComponent(searchTerm)}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Search failed');
-            }
-
-            const results = await response.json();
-            displaySearchResults(results);
-        } catch (error) {
-            console.error('Search error:', error);
-            showError('Search failed. Please try again.');
-        }
-    }
-
-    function displaySearchResults(results) {
-        const searchResults = document.getElementById('searchResults');
-        searchResults.innerHTML = '';
-
-        if (results.length === 0) {
-            searchResults.innerHTML = '<div class="no-results">No results found</div>';
-            return;
-        }
-
-        results.forEach(chat => {
-            const resultDiv = document.createElement('div');
-            resultDiv.className = 'search-result';
-            resultDiv.onclick = () => switchChat(chat.id);
-
-            const matchingMessages = chat.messages.filter(msg => 
-                msg.content.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-
-            const messagesHtml = matchingMessages.map(msg => `
-                <div class="message ${msg.isFromAi ? 'ai' : 'user'}">
-                    <div class="message-content">${msg.content}</div>
-                    <div class="message-time">${new Date(msg.createdAt).toLocaleString()}</div>
-                </div>
-            `).join('');
-
-            resultDiv.innerHTML = `
-                <div class="chat-title">${chat.title}</div>
-                <div class="messages">${messagesHtml}</div>
-            `;
-            searchResults.appendChild(resultDiv);
-        });
-    }
-
-    // Initialize on page load
-    document.addEventListener('DOMContentLoaded', async () => {
-        await initializeConnection();
-        await loadChatHistory();
-    });
-
-    const modelSelect = document.getElementById('modelSelect');
-    const messageInput = document.getElementById('messageInput');
-    const sendButton = document.getElementById('sendButton');
-    const messagesList = document.getElementById('messagesList');
-    const connectionStatus = document.getElementById('connectionStatus');
-
-    // Model-specific chat IDs
-    const chatIds = {
-        gemini: '42c42f7d-bf3c-434a-9f52-f5a7289edb50',
-        claude: '089035b3-d3c0-4cc1-adcc-5b98e9b83e23',
-        chatgpt: 'aa49e26a-0b21-40be-a359-ad92c27689ef',
-        deepseek: 'd948cc51-5f77-467d-8459-9f0b12544a0d',
-        imagen3: '8df1f8cc-850b-48be-9755-86d6d936bf19'
-    };
-
-    // Model selection handling
-    modelSelect.addEventListener('change', async (e) => {
-        const newChatId = chatIds[e.target.value];
-        if (newChatId) {
-            currentChatId = newChatId;
-            clearMessages();
+        async function start() {
             try {
-                await connection.invoke("JoinChatSession", currentChatId);
+                await connection.start();
+                console.log("Connected to hub");
+                await connection.invoke('JoinChatSession', chatId);
             } catch (err) {
-                console.error('Error joining chat session:', err);
+                console.error(err);
+                setTimeout(start, 5000);
             }
         }
-    });
 
-    // Message sending
-    async function sendMessage() {
-        if (!messageInput.value.trim() || !currentChatId) return;
-
-        sendButton.disabled = true;
-        const message = messageInput.value;
-        messageInput.value = "";
-
-        try {
-            await connection.invoke("SendMessage", currentChatId, message);
-        } catch (err) {
-            console.error(err);
-            const errorDiv = document.createElement("div");
-            errorDiv.className = "error";
-            errorDiv.textContent = "Error sending message: " + err.message;
-            messagesList.appendChild(errorDiv);
-            sendButton.disabled = false;
+        async function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const content = messageInput.value.trim();
+            
+            if (!content) return;
+            
+            try {
+                await connection.invoke('SendMessage', chatId, content);
+                messageInput.value = '';
+            } catch (error) {
+                console.error('Error sending message:', error);
+            }
         }
-    }
 
-    function clearMessages() {
-        document.getElementById('messagesList').innerHTML = '';
-    }
-
-    function formatTimestamp(date) {
-        return date.toLocaleTimeString();
-    }
-
-    function appendMessage(role, content) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${role === 'user' ? 'user-message' : 'ai-message'}`;
-
-        const parsedContent = marked.parse(content);
-        messageDiv.innerHTML = parsedContent;
-
-        const images = messageDiv.getElementsByTagName('img');
-        Array.from(images).forEach(img => {
-            img.className = 'generated-image';
-            img.loading = 'lazy';
+        // Handle received messages
+        connection.on('ReceiveMessage', (message) => {
+            const messagesList = document.getElementById('messagesList');
+            const messageClass = message.isFromAi ? 'ai-message' : 'user-message';
+            messagesList.innerHTML += `<div class="message ${messageClass}">${marked.parse(message.content)}</div>`;
+            messagesList.scrollTop = messagesList.scrollHeight;
         });
 
-        messagesList.appendChild(messageDiv);
-        messagesList.scrollTop = messagesList.scrollHeight;
-    }
-
-    let currentAiMessage = null;
-
-    connection.on("ReceiveMessage", (message) => {
-        console.log("Full message received:", message);
-
-        if (message.role === 'assistant') {
-            if (currentAiMessage) {
-                currentAiMessage.querySelector('div').innerHTML = marked.parse(message.content);
-                currentAiMessage = null;
-            } else {
-                appendMessage(message.role, message.content);
-            }
-        } else {
-            appendMessage(message.role, message.content);
-        }
-
-        sendButton.disabled = false;
-    });
-
-    connection.on("ReceiveMessageChunk", (messageId, chunk) => {
-        console.log("Message chunk:", chunk);
-
-        if (!currentAiMessage) {
-            currentAiMessage = document.createElement("div");
-            currentAiMessage.className = "message assistant-message";
-
-            const contentDiv = document.createElement("div");
-            contentDiv.dataset.raw = chunk;
-            contentDiv.innerHTML = marked.parse(chunk);
-            currentAiMessage.appendChild(contentDiv);
-
-            const timestampDiv = document.createElement("div");
-            timestampDiv.className = "timestamp";
-            timestampDiv.textContent = formatTimestamp(new Date());
-            currentAiMessage.appendChild(timestampDiv);
-
-            messagesList.appendChild(currentAiMessage);
-        } else {
-            const contentDiv = currentAiMessage.querySelector('div');
-            const raw = contentDiv.dataset.raw + chunk;
-            contentDiv.dataset.raw = raw;
-            contentDiv.innerHTML = marked.parse(raw);
-        }
-
-        messagesList.scrollTop = messagesList.scrollHeight;
-    });
-
-    connection.on("ReceiveFile", (fileAttachment) => {
-        console.log("File received:", fileAttachment);
-        appendMessage("system", `File uploaded: ${fileAttachment.fileName}`);
-    });
-
-    connection.on("Error", (error) => {
-        console.error("Error received:", error);
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "error";
-        errorDiv.textContent = typeof error === 'object' ? error.error : error;
-        messagesList.appendChild(errorDiv);
-        messagesList.scrollTop = messagesList.scrollHeight;
-        sendButton.disabled = false;
-    });
-
-    connection.on("JoinChatSessionError", (error) => {
-        console.error("Join session error:", error);
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "error";
-        errorDiv.textContent = `Session error: ${error}`;
-        messagesList.appendChild(errorDiv);
-    });
-
-    messageInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-            sendMessage();
-        }
-    });
-
-    sendButton.addEventListener("click", sendMessage);
-
-    connection.onreconnecting(() => {
-        connectionStatus.className = "status disconnected";
-        connectionStatus.textContent = "Reconnecting...";
-        sendButton.disabled = true;
-    });
-
-    connection.onreconnected(() => {
-        connectionStatus.className = "status connected";
-        connectionStatus.textContent = "Connected";
-        sendButton.disabled = false;
-    });
-
-    connection.onclose(error => {
-        connectionStatus.className = "status disconnected";
-        connectionStatus.textContent = "Disconnected";
-        sendButton.disabled = true;
-        if (error) {
-            console.error('Connection closed with error:', error);
-            if (error.statusCode === 401) {
-                // Token expired or invalid
-                localStorage.removeItem('jwtToken');
-                window.location.href = '/login.html';
-            }
-        }
-    });
-
-    const searchInput = document.getElementById("searchInput");
-    const subscribeButton = document.getElementById("subscribeButton");
-    const searchResults = document.getElementById("searchResults");
-
-    subscribeButton.addEventListener("click", async () => {
-        const searchTerm = searchInput.value.trim().toLowerCase();
-        if (searchTerm.length < 3) {
-            alert("Search term must be at least 3 characters long");
-            return;
-        }
-
-        try {
-            await connection.invoke("SubscribeToSearch", searchTerm);
-            const searchTermDiv = document.createElement("div");
-            searchTermDiv.className = "search-term";
-            searchTermDiv.textContent = `Subscribed to: ${searchTerm}`;
-            searchResults.appendChild(searchTermDiv);
-        } catch (err) {
-            console.error(err);
-            alert("Error subscribing to search term");
-        }
-    });
-
-    connection.on("SearchUpdate", (update) => {
-        const resultDiv = document.createElement("div");
-        resultDiv.className = "search-result";
-        resultDiv.innerHTML = `
-                <div class="search-message">
-                    <strong>Chat ID:</strong> ${update.chatSessionId}<br>
-                    <strong>Message:</strong> ${update.content}<br>
-                    <strong>Time:</strong> ${new Date(update.timestamp).toLocaleString()}
-                </div>
-            `;
-        searchResults.insertBefore(resultDiv, searchResults.firstChild);
-    });
-
-    connection.on("ChatTitleUpdated", (chatId, newTitle) => {
-        const chatsList = document.getElementById('chatsList');
-        const chatItem = chatsList.querySelector(`[data-chat-id="${chatId}"]`);
-        if (chatItem) {
-            const titleSpan = chatItem.querySelector('.chat-title');
-            if (titleSpan) {
-                titleSpan.textContent = newTitle;
-            }
-        }
-    });
-
-    // Initialize chat history management
-    async function loadChatHistory() {
-        try {
-            const response = await fetch('/api/Chat/GetAll', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            const chats = await response.json();
-            displayChatHistory(chats);
-        } catch (err) {
-            console.error('Error loading chat history:', err);
-        }
-    }
-
-    async function createNewChat() {
-        try {
-            const selectedModel = modelSelect.value;
-            const modelId = chatIds[selectedModel];
+        // Handle streaming message chunks
+        connection.on('ReceiveMessageChunk', (messageId, chunk) => {
+            const messagesList = document.getElementById('messagesList');
+            let messageElement = messagesList.querySelector(`[data-message-id="${messageId}"]`);
             
-            if (!modelId) {
-                alert('Invalid model selection');
-                return;
+            if (!messageElement) {
+                messageElement = document.createElement('div');
+                messageElement.className = 'message ai-message';
+                messageElement.setAttribute('data-message-id', messageId);
+                messagesList.appendChild(messageElement);
             }
             
-            const response = await fetch('/api/Chat/Create', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    modelId: modelId
-                })
-            });
-            
-            if (!response.ok) {
-                throw new Error('Failed to create new chat');
-            }
-            
-            const chatId = await response.json();
-            currentChatId = chatId;
-            await loadChatHistory();
-            clearMessages();
-            await connection.invoke("JoinChatSession", currentChatId);
-            
-            // Update model indicator
-            updateModelIndicator(modelSelect.options[modelSelect.selectedIndex].text);
-        } catch (err) {
-            console.error('Error creating new chat:', err);
-            showError('Failed to create new chat');
-        }
-    }
-
-    async function deleteChat(chatId) {
-        try {
-            const response = await fetch(`/api/Chat/${chatId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('Failed to delete chat');
-            }
-            
-            await loadChatHistory();
-            
-            // If we deleted the current chat, clear the messages
-            if (chatId === currentChatId) {
-                currentChatId = null;
-                clearMessages();
-            }
-        } catch (err) {
-            console.error('Error deleting chat:', err);
-            showError('Failed to delete chat');
-        }
-    }
-
-    function displayChatHistory(chats) {
-        const chatsList = document.getElementById('chatsList');
-        chatsList.innerHTML = '';
-
-        chats.forEach(chat => {
-            const chatItem = document.createElement('div');
-            chatItem.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
-            chatItem.dataset.chatId = chat.id;
-            chatItem.innerHTML = `
-                <span class="chat-title">${chat.title}</span>
-                <button class="delete-chat-btn" onclick="event.stopPropagation(); deleteChat('${chat.id}')">Delete</button>
-            `;
-            chatItem.onclick = () => switchChat(chat.id);
-            chatsList.appendChild(chatItem);
+            messageElement.innerHTML = marked.parse(messageElement.textContent + chunk);
+            messagesList.scrollTop = messagesList.scrollHeight;
         });
-    }
 
-    async function switchChat(chatId) {
-        currentChatId = chatId;
-        clearMessages();
-        
-        // Update active chat in UI
-        const chatItems = document.querySelectorAll('.chat-list-item');
-        chatItems.forEach(item => {
-            item.classList.toggle('active', item.dataset.chatId === chatId);
+        // Start the connection
+        start();
+
+        // Add enter key support
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
         });
-        
-        try {
-            await connection.invoke("JoinChatSession", chatId);
-            await loadChatMessages(chatId);
-        } catch (err) {
-            console.error('Error switching chat:', err);
-            showError('Failed to switch chat');
-        }
-    }
-    
-    async function loadChatMessages(chatId) {
-        try {
-            const response = await fetch(`/api/Chat/${chatId}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('Failed to load chat messages');
-            }
-            
-            const chat = await response.json();
-            
-            // Update model indicator based on chat's model
-            const modelEntry = Object.entries(chatIds).find(([key, value]) => value === chat.aiModelId);
-            if (modelEntry) {
-                const [modelKey] = modelEntry;
-                modelSelect.value = modelKey;
-                updateModelIndicator(modelSelect.options[modelSelect.selectedIndex].text);
-            }
-            
-            // Display messages
-            chat.messages.forEach(msg => {
-                appendMessage(msg.isFromAi ? 'assistant' : 'user', msg.content);
-            });
-        } catch (err) {
-            console.error('Error loading chat messages:', err);
-            showError('Failed to load chat messages');
-        }
-    }
-
-    // Initialize on page load
-    document.addEventListener('DOMContentLoaded', async () => {
-        await initializeConnection();
-        await loadChatHistory();
-        
-        // Add new chat button
-        const newChatBtn = document.createElement('button');
-        newChatBtn.className = 'new-chat-btn';
-        newChatBtn.textContent = 'New Chat';
-        newChatBtn.onclick = createNewChat;
-        document.querySelector('.chat-history').insertBefore(newChatBtn, document.getElementById('chatsList'));
-    });
-</script>
+    </script>
 </body>
 </html>

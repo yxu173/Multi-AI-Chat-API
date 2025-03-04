@@ -9,16 +9,19 @@ public class ClaudeService : IAiModelService
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
+    private readonly string _modelCode;
 
     public ClaudeService(
         IHttpClientFactory httpClientFactory,
-        string apiKey)
+        string apiKey,
+        string modelCode)
     {
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://api.anthropic.com/v1/");
         _httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
         _httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
         _apiKey = apiKey;
+        _modelCode = modelCode;
     }
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
@@ -32,18 +35,18 @@ public class ClaudeService : IAiModelService
             .ToList();
 
         var request = new HttpRequestMessage(HttpMethod.Post, "messages");
-        
+
         var requestBody = new
         {
-            model = "claude-3-sonnet-20240229",
+            model = _modelCode,
             messages,
             max_tokens = 2000,
             stream = true
         };
-        
+
         request.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody), 
-            Encoding.UTF8, 
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
             "application/json");
 
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -66,20 +69,19 @@ public class ClaudeService : IAiModelService
                 var json = line["data: ".Length..];
                 if (json == "[DONE]") break;
 
-              
-                    var chunk = JsonSerializer.Deserialize<ClaudeResponse>(json);
-                    if (chunk?.delta?.text is { Length: > 0 } textChunk)
-                    {
-                        yield return textChunk;
-                    }
-               
+
+                var chunk = JsonSerializer.Deserialize<ClaudeResponse>(json);
+                if (chunk?.delta?.text is { Length: > 0 } textChunk)
+                {
+                    yield return textChunk;
+                }
             }
         }
     }
 
-        private record ClaudeMessage(string role, string content);
-    
+    private record ClaudeMessage(string role, string content);
+
     private record ClaudeResponse(string type, ClaudeDelta delta);
-    
+
     private record ClaudeDelta(string text);
 }

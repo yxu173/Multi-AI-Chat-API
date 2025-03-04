@@ -17,7 +17,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
     private readonly IConfiguration _configuration;
 
     public AiModelServiceFactory(
-        IServiceProvider serviceProvider, 
+        IServiceProvider serviceProvider,
         IApplicationDbContext dbContext,
         IUserContext userContext,
         IConfiguration configuration)
@@ -28,7 +28,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
-    public async Task<IAiModelService> GetServiceAsync(Guid modelId, string customApiKey = null)
+    public async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string customApiKey = null)
     {
         var aiModel = await _dbContext.AiModels
             .Include(m => m.AiProvider)
@@ -38,17 +38,14 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         {
             throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
         }
-        
-        // Determine which API key to use (priority: custom > user > default)
+
         string apiKey = customApiKey;
-        
+
         if (string.IsNullOrEmpty(apiKey))
         {
-            // Try to get user's API key for this provider
-            var userId = _userContext.UserId;
             var userApiKey = await _dbContext.UserApiKeys
                 .FirstOrDefaultAsync(k => k.UserId == userId && k.AiProviderId == aiModel.AiProviderId);
-                
+
             if (userApiKey != null)
             {
                 apiKey = userApiKey.ApiKey;
@@ -62,7 +59,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
                 apiKey = aiModel.AiProvider.DefaultApiKey;
             }
         }
-        
+
         if (string.IsNullOrEmpty(apiKey))
         {
             throw new InvalidOperationException($"No API key available for provider: {aiModel.AiProvider.Name}");
@@ -70,8 +67,8 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
         return aiModel.ModelType switch
         {
-            ModelType.ChatGPT => CreateChatGptService(aiModel, apiKey),
-            ModelType.Claude => CreateClaudeService(aiModel, apiKey),
+            ModelType.OpenAi => CreateChatGptService(aiModel, apiKey),
+            ModelType.Anthropic => CreateClaudeService(aiModel, apiKey),
             ModelType.DeepSeek => CreateDeepSeekService(aiModel, apiKey),
             ModelType.Gemini => CreateGeminiService(aiModel, apiKey),
             ModelType.Imagen3 => CreateImagen3Service(aiModel, apiKey),
@@ -79,18 +76,17 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         };
     }
 
-    // For backward compatibility, provide a synchronous version that calls the async method
-    public IAiModelService GetService(Guid modelId, string customApiKey = null)
+    public IAiModelService GetService(Guid userId, Guid modelId, string customApiKey = null)
     {
-        return GetServiceAsync(modelId, customApiKey).GetAwaiter().GetResult();
+        return GetServiceAsync(userId, modelId, customApiKey).GetAwaiter().GetResult();
     }
 
     private ChatGptService CreateChatGptService(AiModel aiModel, string apiKey)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new ChatGptService(
-            httpClientFactory, 
-             _configuration["AI:OpenAi:ApiKey"]!,
+            httpClientFactory,
+            apiKey,
             aiModel.ModelCode);
     }
 
@@ -98,46 +94,48 @@ public class AiModelServiceFactory : IAiModelServiceFactory
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new ClaudeService(
-            httpClientFactory, 
-            _configuration["AI:Anthropic:ApiKey"]!);
+            httpClientFactory,
+            apiKey,
+            aiModel.ModelCode);
     }
 
     private DeepSeekService CreateDeepSeekService(AiModel aiModel, string apiKey)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new DeepSeekService(
-            httpClientFactory, 
-            _configuration["AI:DeepSeek:ApiKey"]!);
+            httpClientFactory,
+            apiKey,
+            aiModel.ModelCode);
     }
 
     private GeminiService CreateGeminiService(AiModel aiModel, string apiKey)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new GeminiService(
-            httpClientFactory, 
-            _configuration["AI:Gemini:ApiKey"]!);
+            httpClientFactory,
+            apiKey,
+            aiModel.ModelCode);
     }
 
     private Imagen3Service CreateImagen3Service(AiModel aiModel, string apiKey)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
-        
-        // For Imagen3, we need to get additional configuration
+
         var projectId = _configuration["AI:Imagen3:ProjectId"];
         var region = _configuration["AI:Imagen3:Region"];
         var publisher = _configuration["AI:Imagen3:Publisher"];
-        
+
         if (string.IsNullOrEmpty(projectId))
             throw new InvalidOperationException("Missing configuration: AI:Imagen3:ProjectId");
-            
+
         if (string.IsNullOrEmpty(region))
             throw new InvalidOperationException("Missing configuration: AI:Imagen3:Region");
-            
+
         if (string.IsNullOrEmpty(publisher))
             throw new InvalidOperationException("Missing configuration: AI:Imagen3:Publisher");
-        
+
         return new Imagen3Service(
-            httpClientFactory, 
+            httpClientFactory,
             apiKey,
             projectId,
             region,

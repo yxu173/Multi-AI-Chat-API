@@ -63,7 +63,8 @@ public class ChatService
             new MessageDto(aiMessage.Content, aiMessage.IsFromAi, aiMessage.Id)
         ));
 
-        var aiService = _aiModelServiceFactory.GetService(chatSession.AiModelId, chatSession.CustomApiKey);
+        var aiService =
+            _aiModelServiceFactory.GetService(chatSession.UserId, chatSession.AiModelId, chatSession.CustomApiKey);
 
         var messages = chatSession.Messages
             .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id))
@@ -82,7 +83,7 @@ public class ChatService
         aiMessage.CompleteMessage();
         await _messageRepository.UpdateAsync(aiMessage);
 
-      //  var tokenUsage = await aiService.CountTokensAsync(messages);
+        //  var tokenUsage = await aiService.CountTokensAsync(messages);
 
         // var chatTokenUsage = ChatTokenUsage.Create(
         //     aiMessage.Id,

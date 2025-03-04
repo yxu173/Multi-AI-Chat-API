@@ -9,14 +9,17 @@ public class GeminiService : IAiModelService
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
+    private readonly string _modelCode;
 
     public GeminiService(
         IHttpClientFactory httpClientFactory,
-        string apiKey)
+        string apiKey,
+        string modelCode)
     {
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
         _apiKey = apiKey;
+        _modelCode = modelCode;
     }
 
     public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
@@ -44,8 +47,7 @@ public class GeminiService : IAiModelService
             }
         };
 
-        var model = "gemini-1.5-pro"; // This should come from the AiModel.ModelCode
-        var endpoint = $"v1beta/models/{model}:streamGenerateContent?key={_apiKey}";
+        var endpoint = $"v1beta/models/{_modelCode}:streamGenerateContent?key={_apiKey}";
 
         var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
