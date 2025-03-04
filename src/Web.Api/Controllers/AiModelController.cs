@@ -1,4 +1,5 @@
 using Application.Features.AiModels.CreateAiModel;
+using Application.Features.AiModels.GetAllAiModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.AiModels;
@@ -22,6 +23,14 @@ public class AiModelController : BaseController
             request.ModelCode
         );
         var result = await _mediator.Send(command);
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [HttpGet("GetAll")]
+    public async Task<IResult> GetAll()
+    {
+        var query = new GetAllAiModelsQuery();
+        var result = await _mediator.Send(query);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }
