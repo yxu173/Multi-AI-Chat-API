@@ -91,9 +91,6 @@ namespace Infrastructure.Database.Migrations
                     b.Property<Guid>("AiProviderId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("AiProviderId1")
-                        .HasColumnType("uuid");
-
                     b.Property<double>("InputTokenPricePer1K")
                         .HasColumnType("double precision");
 
@@ -128,8 +125,6 @@ namespace Infrastructure.Database.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AiProviderId");
-
-                    b.HasIndex("AiProviderId1");
 
                     b.ToTable("AiModels", (string)null);
                 });
@@ -497,14 +492,10 @@ namespace Infrastructure.Database.Migrations
             modelBuilder.Entity("Domain.Aggregates.Chats.AiModel", b =>
                 {
                     b.HasOne("AiProvider", "AiProvider")
-                        .WithMany()
+                        .WithMany("Models")
                         .HasForeignKey("AiProviderId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.HasOne("AiProvider", null)
-                        .WithMany("Models")
-                        .HasForeignKey("AiProviderId1");
 
                     b.Navigation("AiProvider");
                 });

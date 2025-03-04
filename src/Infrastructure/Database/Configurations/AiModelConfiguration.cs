@@ -39,9 +39,9 @@ public class AiModelConfiguration : IEntityTypeConfiguration<AiModel>
             .HasDefaultValue(true);
 
         builder.HasOne(am => am.AiProvider)
-            .WithMany()
+            .WithMany(ap => ap.Models)
             .HasForeignKey(am => am.AiProviderId)
             .IsRequired()
             .OnDelete(DeleteBehavior.Cascade);
     }
-} 
+}
