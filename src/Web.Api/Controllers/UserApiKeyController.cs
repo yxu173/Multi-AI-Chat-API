@@ -1,4 +1,5 @@
 using Application.Features.UserApiKey.CreateUserApiKey;
+using Application.Features.UserApiKey.UpdateUserApiKey;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.UserApiKeys;
@@ -18,6 +19,14 @@ public class UserApiKeyController : BaseController
             request.AiProviderId,
             request.ApiKey
         );
+        var result = await _mediator.Send(command);
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [HttpPut("update/{id}")]
+    public async Task<IResult> UpdateUserApiKey([FromRoute] Guid id, [FromBody] string UserApiKey)
+    {
+        var command = new UpdateUserApiKeyCommand(UserId, id, UserApiKey);
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
