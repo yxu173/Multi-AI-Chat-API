@@ -19,5 +19,7 @@ public interface IApplicationDbContext
     DbSet<AiModel> AiModels { get; }
     DbSet<ChatTokenUsage> ChatTokenUsages { get; }
     DbSet<UserApiKey> UserApiKeys { get; }
+
+    DbSet<UserAiModel> UserAiModels { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

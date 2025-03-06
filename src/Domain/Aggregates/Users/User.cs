@@ -1,14 +1,19 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Domain.DomainErrors;
+using Microsoft.AspNetCore.Identity;
 using SharedKernel;
 
 namespace Domain.Aggregates.Users;
 
 public sealed class User : IdentityUser<Guid>
 {
+    private readonly List<UserAiModel> _userAiModels = new();
+
+    public IReadOnlyList<UserAiModel> UserAiModels => _userAiModels.AsReadOnly();
+
     private User()
     {
     }
-    
+
     private User(string email, string userName)
     {
         Email = email;
@@ -26,5 +31,14 @@ public sealed class User : IdentityUser<Guid>
         {
             return Result.Failure<User>(Error.Validation("User.Create", ex.Message));
         }
+    }
+
+    public Result AddAiModel(UserAiModel userAiModel)
+    {
+        if (_userAiModels.Any(x => x.AiModelId == userAiModel.AiModelId))
+            return Result.Failure(UserErrors.AiModelIsAlreadyExist);
+
+        _userAiModels.Add(userAiModel);
+        return Result.Success();
     }
 }

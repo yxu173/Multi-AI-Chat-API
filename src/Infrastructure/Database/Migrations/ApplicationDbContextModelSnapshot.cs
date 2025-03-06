@@ -343,6 +343,30 @@ namespace Infrastructure.Database.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Users.UserAiModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AiModelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AiModelId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserAiModels", (string)null);
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Users.UserApiKey", b =>
                 {
                     b.Property<Guid>("Id")
@@ -563,6 +587,25 @@ namespace Infrastructure.Database.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Users.UserAiModel", b =>
+                {
+                    b.HasOne("Domain.Aggregates.Chats.AiModel", "AiModel")
+                        .WithMany("UserAiModels")
+                        .HasForeignKey("AiModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Aggregates.Users.User", "User")
+                        .WithMany("UserAiModels")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AiModel");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Users.UserApiKey", b =>
                 {
                     b.HasOne("AiProvider", "AiProvider")
@@ -643,9 +686,19 @@ namespace Infrastructure.Database.Migrations
                     b.Navigation("Messages");
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Chats.AiModel", b =>
+                {
+                    b.Navigation("UserAiModels");
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Chats.Message", b =>
                 {
                     b.Navigation("FileAttachments");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Users.User", b =>
+                {
+                    b.Navigation("UserAiModels");
                 });
 #pragma warning restore 612, 618
         }

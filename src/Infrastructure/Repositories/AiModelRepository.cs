@@ -53,6 +53,16 @@ public class AiModelRepository : IAiModelRepository
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<AiModel>> GetEnabledByUserIdAsync(Guid userId)
+    {
+        return await _dbContext.UserAiModels
+            .AsNoTracking()
+            .Include(m => m.AiModel)
+            .Where(x => x.UserId == userId && x.IsEnabled && x.AiModel.IsEnabled)
+            .Select(x => x.AiModel)
+            .ToListAsync();
+    }
+
     public async Task AddAsync(AiModel aiModel)
     {
         await _dbContext.AiModels.AddAsync(aiModel);

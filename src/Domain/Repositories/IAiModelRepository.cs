@@ -10,6 +10,8 @@ public interface IAiModelRepository
     Task<IReadOnlyList<AiModel>> GetByProviderIdAsync(Guid providerId);
     Task<IReadOnlyList<AiModel>> GetByModelTypeAsync(ModelType modelType);
     Task<IReadOnlyList<AiModel>> GetEnabledAsync();
+    Task<IReadOnlyList<AiModel>> GetEnabledByUserIdAsync(Guid userId);
+
     Task AddAsync(AiModel aiModel);
     Task UpdateAsync(AiModel aiModel);
     Task<bool> DeleteAsync(Guid id);
