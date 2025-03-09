@@ -1,4 +1,5 @@
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Users;
 using Domain.Enums;
 using Domain.Repositories;
 using Infrastructure.Database;
@@ -55,12 +56,34 @@ public class AiModelRepository : IAiModelRepository
 
     public async Task<IReadOnlyList<AiModel>> GetEnabledByUserIdAsync(Guid userId)
     {
-        return await _dbContext.UserAiModels
-            .AsNoTracking()
-            .Include(m => m.AiModel)
-            .Where(x => x.UserId == userId && x.IsEnabled && x.AiModel.IsEnabled)
-            .Select(x => x.AiModel)
+        var enabledModels = await _dbContext.AiModels
+            .Where(m => m.IsEnabled)
             .ToListAsync();
+
+        var disabledModelIds = await _dbContext.UserAiModels
+            .Where(x => x.UserId == userId && !x.IsEnabled)
+            .Select(x => x.AiModelId)
+            .ToListAsync();
+
+        var userEnabledModels = enabledModels
+            .Where(m => !disabledModelIds.Contains(m.Id))
+            .ToList();
+
+        return userEnabledModels;
+    }
+
+    public async Task<IReadOnlyList<AiModel>> GetUserAiModelsAsync(Guid userId)
+    {
+        var allModels = await _dbContext.AiModels
+            .Where(m => m.IsEnabled)
+            .ToListAsync();
+
+        var disabledModelIds = await _dbContext.UserAiModels
+            .Where(x => x.UserId == userId && !x.IsEnabled)
+            .Select(x => x.AiModelId)
+            .ToListAsync();
+
+        return allModels.Where(m => !disabledModelIds.Contains(m.Id)).ToList();
     }
 
     public async Task AddAsync(AiModel aiModel)
@@ -91,5 +114,23 @@ public class AiModelRepository : IAiModelRepository
     public async Task<bool> ExistsAsync(Guid id)
     {
         return await _dbContext.AiModels.AnyAsync(m => m.Id == id);
+    }
+
+    public async Task<UserAiModel> GetUserAiModelAsync(Guid userId, Guid aiModelId)
+    {
+        return await _dbContext.UserAiModels
+            .FirstOrDefaultAsync(x => x.UserId == userId && x.AiModelId == aiModelId);
+    }
+
+    public async Task AddUserAiModelAsync(UserAiModel userAiModel)
+    {
+        await _dbContext.UserAiModels.AddAsync(userAiModel);
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task UpdateUserAiModelAsync(UserAiModel userAiModel)
+    {
+        _dbContext.UserAiModels.Update(userAiModel);
+        await _dbContext.SaveChangesAsync();
     }
 }

@@ -11,8 +11,7 @@ namespace Application.Features.Identity.Register;
 
 internal sealed class RegisterUserCommandHandler(
     UserManager<User> userManager,
-    IUserRepository userRepository,
-    IAiModelRepository aiModelRepository)
+    IUserRepository userRepository)
     : ICommandHandler<RegisterUserCommand, Guid>
 {
     public async Task<Result<Guid>> Handle(RegisterUserCommand command, CancellationToken cancellationToken)
@@ -34,20 +33,6 @@ internal sealed class RegisterUserCommandHandler(
             return Result.Failure<Guid>(UserErrors.RegisterUserError);
         }
 
-        var createdUser = await userManager.FindByIdAsync(user.Value.Id.ToString());
-        if (createdUser is null)
-        {
-            return Result.Failure<Guid>(UserErrors.UserNotFound);
-        }
-
-        var aiModels = await aiModelRepository.GetEnabledAsync();
-        foreach (var aiModel in aiModels)
-        {
-            var aiModelUser = UserAiModel.Create(createdUser.Id, aiModel.Id);
-            createdUser.AddAiModel(aiModelUser);
-        }
-
-        await userManager.UpdateAsync(createdUser);
-        return createdUser.Id;
+        return user.Value.Id;
     }
 }
