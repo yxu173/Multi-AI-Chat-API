@@ -23,7 +23,8 @@ public class DeepSeekService : IAiModelService
         _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,Action<int, int>? tokenCallback = null)
+    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,
+        Action<int, int>? tokenCallback = null)
     {
         var messages = new List<DeepSeekMessage>
         {
@@ -59,6 +60,10 @@ public class DeepSeekService : IAiModelService
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
 
+        DeepSeekUsage? finalUsage = null;
+        var inputTokens = 0;
+        var outputTokens = 0;
+
         while (!reader.EndOfStream)
         {
             var line = await reader.ReadLineAsync();
@@ -69,7 +74,6 @@ public class DeepSeekService : IAiModelService
                 var json = line["data: ".Length..];
                 if (json == "[DONE]") break;
 
-
                 var chunk = JsonSerializer.Deserialize<DeepSeekResponse>(json);
                 if (chunk?.choices is { Length: > 0 } choices)
                 {
@@ -78,8 +82,22 @@ public class DeepSeekService : IAiModelService
                     {
                         yield return delta.content;
                     }
+
+
+                    if (choices[0].finish_reason != null && chunk.usage != null)
+                    {
+                        finalUsage = chunk.usage;
+                        inputTokens = finalUsage.prompt_tokens;
+                        outputTokens = finalUsage.completion_tokens;
+                    }
                 }
             }
+        }
+
+
+        if (tokenCallback != null && finalUsage != null)
+        {
+            tokenCallback(finalUsage.prompt_tokens, finalUsage.completion_tokens);
         }
     }
 
@@ -91,10 +109,13 @@ public class DeepSeekService : IAiModelService
         string @object,
         int created,
         string model,
-        DeepSeekChoice[] choices
+        DeepSeekChoice[] choices,
+        DeepSeekUsage? usage = null
     );
 
     private record DeepSeekChoice(DeepSeekDelta delta, int index, string finish_reason);
 
     private record DeepSeekDelta(string content);
+
+    private record DeepSeekUsage(int prompt_tokens, int completion_tokens, int total_tokens);
 }
