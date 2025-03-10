@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Tiktoken;
 
 namespace Infrastructure.Services;
 
@@ -34,6 +35,15 @@ public class ChatGptService : IAiModelService
             .Where(m => !string.IsNullOrEmpty(m.Content))
             .Select(m => new OpenAiMessage(m.IsFromAi ? "assistant" : "user", m.Content)));
 
+        var tokenizer = Tiktoken.ModelToEncoder.For(_modelCode);
+
+        int inputTokens = 0;
+        foreach (var msg in messages)
+        {
+            inputTokens += tokenizer.Encode(msg.content).Count;
+        }
+        tokenCallback?.Invoke(inputTokens, 0);
+
         var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
 
         var requestBody = new
@@ -59,10 +69,12 @@ public class ChatGptService : IAiModelService
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
 
+        int outputTokens = 0;
         while (!reader.EndOfStream)
         {
             var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
 
             if (line.StartsWith("data: ") && line.Trim() != "data: [DONE]")
             {
@@ -74,13 +86,14 @@ public class ChatGptService : IAiModelService
                     var delta = choices[0].delta;
                     if (!string.IsNullOrEmpty(delta?.content))
                     {
+                        outputTokens += tokenizer.Encode(delta.content).Count;
+                        tokenCallback?.Invoke(inputTokens, outputTokens);
                         yield return delta.content;
                     }
                 }
             }
         }
     }
-
 
     private record OpenAiMessage(string role, string content);
 
