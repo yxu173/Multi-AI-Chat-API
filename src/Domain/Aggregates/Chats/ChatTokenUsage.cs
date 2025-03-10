@@ -9,17 +9,19 @@ public sealed class ChatTokenUsage : BaseEntity
     public int OutputTokens { get; private set; }
     public decimal TotalCost { get; private set; }
     public DateTime CreatedAt { get; private set; }
-     public DateTime LastUpdatedAt { get; private set; }
-    
-   
+    public DateTime LastUpdatedAt { get; private set; }
+
+
     public ChatSession ChatSession { get; private set; }
-    
-    private ChatTokenUsage() { } 
-    
+
+    private ChatTokenUsage()
+    {
+    }
+
     public static ChatTokenUsage Create(Guid chatId, int inputTokens, int outputTokens, decimal totalCost)
     {
         if (chatId == Guid.Empty) throw new ArgumentException("chatId cannot be empty.", nameof(chatId));
-        
+
         return new ChatTokenUsage
         {
             Id = Guid.NewGuid(),
@@ -31,18 +33,18 @@ public sealed class ChatTokenUsage : BaseEntity
         };
     }
 
-     public void UpdateTokenCounts(int inputTokens, int outputTokens)
+    public void UpdateTokenCounts(int inputTokens, int outputTokens)
     {
-        InputTokens = inputTokens;
-        OutputTokens = outputTokens;
+        InputTokens += inputTokens;
+        OutputTokens += outputTokens;
         LastUpdatedAt = DateTime.UtcNow;
     }
-    
+
     public void UpdateTokenCountsAndCost(int inputTokens, int outputTokens, decimal totalCost)
     {
-        InputTokens = inputTokens;
-        OutputTokens = outputTokens;
-        TotalCost = totalCost;
+        InputTokens += inputTokens;
+        OutputTokens += outputTokens;
+        TotalCost += totalCost;
         LastUpdatedAt = DateTime.UtcNow;
     }
 }
