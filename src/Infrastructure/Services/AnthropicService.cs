@@ -66,6 +66,11 @@ public class AnthropicService : IAiModelService
 
         int inputTokens = 0;
         int outputTokens = 0;
+        int estimatedOutputTokens = 0;
+
+        // Track total response text for token estimation
+        StringBuilder fullResponse = new StringBuilder();
+        HashSet<string> sentChunks = new HashSet<string>(); // Track chunks we've already sent
 
         while (!reader.EndOfStream)
         {
@@ -88,7 +93,7 @@ public class AnthropicService : IAiModelService
                             .GetProperty("usage")
                             .GetProperty("input_tokens")
                             .GetInt32();
-                        tokenCallback?.Invoke(inputTokens, outputTokens);
+                        tokenCallback?.Invoke(inputTokens, 0);
                         break;
 
                     case "content_block_delta":
@@ -98,22 +103,43 @@ public class AnthropicService : IAiModelService
                             .GetString();
                         if (!string.IsNullOrEmpty(text))
                         {
-                           yield return new StreamResponse(text, inputTokens, outputTokens);
+                            fullResponse.Append(text);
+
+
+                            estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
+
+                            yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
+
+                            sentChunks.Add(text);
+
+                            if (outputTokens == 0)
+                            {
+                                tokenCallback?.Invoke(inputTokens, estimatedOutputTokens);
+                            }
                         }
 
                         break;
 
                     case "message_delta":
-                        outputTokens = doc.RootElement
-                            .GetProperty("usage")
-                            .GetProperty("output_tokens")
-                            .GetInt32();
-                        tokenCallback?.Invoke(inputTokens, outputTokens);
+                        if (doc.RootElement.TryGetProperty("usage", out var usageElement) &&
+                            usageElement.TryGetProperty("output_tokens", out var outputTokenElement))
+                        {
+                            outputTokens = outputTokenElement.GetInt32();
+                            tokenCallback?.Invoke(inputTokens, outputTokens);
+                        }
+
                         break;
                 }
             }
         }
+
+        // If we never got the final token count, use our best estimate
+        if (outputTokens == 0 && estimatedOutputTokens > 0)
+        {
+            tokenCallback?.Invoke(inputTokens, estimatedOutputTokens);
+        }
     }
+
 
     private record ClaudeMessage(string role, string content);
 

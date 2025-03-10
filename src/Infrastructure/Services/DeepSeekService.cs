@@ -60,9 +60,8 @@ public class DeepSeekService : IAiModelService
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
 
+        var contentBuffer = new List<string>();
         DeepSeekUsage? finalUsage = null;
-        var inputTokens = 0;
-        var outputTokens = 0;
 
         while (!reader.EndOfStream)
         {
@@ -78,26 +77,43 @@ public class DeepSeekService : IAiModelService
                 if (chunk?.choices is { Length: > 0 } choices)
                 {
                     var delta = choices[0].delta;
-                    if (!string.IsNullOrEmpty(delta?.content))
-                    {
-                       yield return new StreamResponse(delta.content, inputTokens, outputTokens);
-                    }
-
 
                     if (choices[0].finish_reason != null && chunk.usage != null)
                     {
                         finalUsage = chunk.usage;
-                        inputTokens = finalUsage.prompt_tokens;
-                        outputTokens = finalUsage.completion_tokens;
+
+                        foreach (var bufferedContent in contentBuffer)
+                        {
+                            yield return new StreamResponse(bufferedContent, finalUsage.prompt_tokens,
+                                finalUsage.completion_tokens);
+                        }
+
+                        contentBuffer.Clear();
+                    }
+
+                    if (!string.IsNullOrEmpty(delta?.content))
+                    {
+                        if (finalUsage != null)
+                        {
+                            yield return new StreamResponse(delta.content, finalUsage.prompt_tokens,
+                                finalUsage.completion_tokens);
+                        }
+                        else
+                        {
+                            contentBuffer.Add(delta.content);
+                        }
                     }
                 }
             }
         }
 
-
-        if (tokenCallback != null && finalUsage != null)
+        if (finalUsage != null && contentBuffer.Count > 0)
         {
-            tokenCallback(finalUsage.prompt_tokens, finalUsage.completion_tokens);
+            foreach (var bufferedContent in contentBuffer)
+            {
+                yield return new StreamResponse(bufferedContent, finalUsage.prompt_tokens,
+                    finalUsage.completion_tokens);
+            }
         }
     }
 
