@@ -30,28 +30,20 @@ public static class DependencyInjection
                 configuration.GetConnectionString("Database")));
 
         services.AddHttpContextAccessor();
-        
+
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
         services.AddScoped<IFileAttachmentRepository, FileAttachmentRepository>();
         services.AddScoped<IPromptRepository, PromptRepository>();
-        services.AddScoped<IChatTokenUsageRepository, ChatTokenUsageRepository>();
+      //  services.AddScoped<IChatTokenUsageRepository, ChatTokenUsageRepository>();
         services.AddScoped<IUserApiKeyRepository, UserApiKeyRepository>();
-        services.AddScoped<IAiModelRepository,AiModelRepository>();
-        services.AddScoped<IAiProviderRepository,AiProviderRepository>();
+        services.AddScoped<IAiModelRepository, AiModelRepository>();
+        services.AddScoped<IAiProviderRepository, AiProviderRepository>();
 
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
-        /*
-        services.AddScoped<ChatGptService>();
-        services.AddScoped<ClaudeService>();
-        services.AddScoped<DeepSeekService>();
-        services.AddScoped<GeminiService>();
-        services.AddScoped<Imagen3Service>();
-        */
 
-        services.AddSingleton<TokenCountingService>();
 
         services.AddScoped<IUserContext, UserContext>();
         services.AddSingleton<ITokenProvider, TokenProvider>();

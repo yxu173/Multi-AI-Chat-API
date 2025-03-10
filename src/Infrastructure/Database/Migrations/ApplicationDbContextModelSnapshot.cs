@@ -91,7 +91,7 @@ namespace Infrastructure.Database.Migrations
                     b.Property<Guid>("AiProviderId")
                         .HasColumnType("uuid");
 
-                    b.Property<double>("InputTokenPricePer1K")
+                    b.Property<double>("InputTokenPricePer1M")
                         .HasColumnType("double precision");
 
                     b.Property<bool>("IsEnabled")
@@ -119,7 +119,7 @@ namespace Infrastructure.Database.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<double>("OutputTokenPricePer1K")
+                    b.Property<double>("OutputTokenPricePer1M")
                         .HasColumnType("double precision");
 
                     b.HasKey("Id");
@@ -135,14 +135,14 @@ namespace Infrastructure.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("ChatId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("InputTokens")
                         .HasColumnType("integer");
-
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
 
                     b.Property<int>("OutputTokens")
                         .HasColumnType("integer");
@@ -153,7 +153,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MessageId")
+                    b.HasIndex("ChatId")
                         .IsUnique();
 
                     b.ToTable("ChatTokenUsages", (string)null);
@@ -526,13 +526,13 @@ namespace Infrastructure.Database.Migrations
 
             modelBuilder.Entity("Domain.Aggregates.Chats.ChatTokenUsage", b =>
                 {
-                    b.HasOne("Domain.Aggregates.Chats.Message", "Message")
+                    b.HasOne("ChatSession", "ChatSession")
                         .WithOne()
-                        .HasForeignKey("Domain.Aggregates.Chats.ChatTokenUsage", "MessageId")
+                        .HasForeignKey("Domain.Aggregates.Chats.ChatTokenUsage", "ChatId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Message");
+                    b.Navigation("ChatSession");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.FileAttachment", b =>

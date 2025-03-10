@@ -1,4 +1,4 @@
- using Domain.Aggregates.Chats;
+using Domain.Aggregates.Chats;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -12,7 +12,7 @@ public class ChatTokenUsageConfiguration : IEntityTypeConfiguration<ChatTokenUsa
 
         builder.HasKey(tu => tu.Id);
 
-        builder.Property(tu => tu.MessageId)
+        builder.Property(tu => tu.ChatId)
             .IsRequired();
 
         builder.Property(tu => tu.InputTokens)
@@ -28,9 +28,9 @@ public class ChatTokenUsageConfiguration : IEntityTypeConfiguration<ChatTokenUsa
         builder.Property(tu => tu.CreatedAt)
             .IsRequired();
 
-        builder.HasOne(tu => tu.Message)
+        builder.HasOne(tu => tu.ChatSession)
             .WithOne()
-            .HasForeignKey<ChatTokenUsage>(tu => tu.MessageId)
+            .HasForeignKey<ChatTokenUsage>(tu => tu.ChatId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

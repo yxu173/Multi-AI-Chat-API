@@ -32,7 +32,7 @@ public class Imagen3Service : IAiModelService
         _modelId = modelId;
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
+    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,Action<int, int>? tokenCallback = null)
     {
         var latestUserMessage = history
             .Where(m => !string.IsNullOrWhiteSpace(m.Content) && !m.IsFromAi)

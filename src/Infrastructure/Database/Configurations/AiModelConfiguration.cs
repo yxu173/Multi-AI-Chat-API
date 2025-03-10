@@ -20,10 +20,10 @@ public class AiModelConfiguration : IEntityTypeConfiguration<AiModel>
             .IsRequired()
             .HasConversion<string>();
 
-        builder.Property(am => am.InputTokenPricePer1K)
+        builder.Property(am => am.InputTokenPricePer1M)
             .IsRequired();
 
-        builder.Property(am => am.OutputTokenPricePer1K)
+        builder.Property(am => am.OutputTokenPricePer1M)
             .IsRequired();
 
         builder.Property(am => am.ModelCode)

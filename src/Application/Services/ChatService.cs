@@ -15,20 +15,21 @@ public class ChatService
     private readonly IMessageRepository _messageRepository;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IMediator _mediator;
-    private readonly IChatTokenUsageRepository _tokenUsageRepository;
+  //  private readonly IChatTokenUsageRepository _tokenUsageRepository;
 
     public ChatService(
         IChatSessionRepository chatSessionRepository,
         IMessageRepository messageRepository,
         IAiModelServiceFactory aiModelServiceFactory,
-        IMediator mediator,
-        IChatTokenUsageRepository tokenUsageRepository)
+        IMediator mediator
+        //IChatTokenUsageRepository tokenUsageRepository
+        )
     {
         _chatSessionRepository = chatSessionRepository;
         _messageRepository = messageRepository;
         _aiModelServiceFactory = aiModelServiceFactory;
         _mediator = mediator;
-        _tokenUsageRepository = tokenUsageRepository;
+//        _tokenUsageRepository = tokenUsageRepository;
     }
 
     public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content)

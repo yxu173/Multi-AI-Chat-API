@@ -22,7 +22,8 @@ public class ChatGptService : IAiModelService
         _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
+    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,
+        Action<int, int>? tokenCallback = null)
     {
         var messages = new List<OpenAiMessage>
         {

@@ -24,10 +24,11 @@ public class ClaudeService : IAiModelService
         _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history)
+    public async IAsyncEnumerable<string> StreamResponseAsync(
+        IEnumerable<MessageDto> history,
+        Action<int, int>? tokenCallback = null)
     {
-        var systemMessage =
-            "Format your responses in markdown.";
+        var systemMessage = "Format your responses in markdown.";
 
         var messages = history
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
@@ -43,6 +44,7 @@ public class ClaudeService : IAiModelService
         var requestBody = new
         {
             model = _modelCode,
+            system = systemMessage,
             messages,
             max_tokens = 2000,
             stream = true
@@ -63,6 +65,9 @@ public class ClaudeService : IAiModelService
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
 
+        int inputTokens = 0;
+        int outputTokens = 0;
+
         while (!reader.EndOfStream)
         {
             var line = await reader.ReadLineAsync();
@@ -73,10 +78,39 @@ public class ClaudeService : IAiModelService
                 var json = line["data: ".Length..];
                 if (json == "[DONE]") break;
 
-                var chunk = JsonSerializer.Deserialize<ClaudeResponse>(json);
-                if (chunk?.delta?.text is { Length: > 0 } textChunk)
+                using var doc = JsonDocument.Parse(json);
+                var type = doc.RootElement.GetProperty("type").GetString();
+
+                switch (type)
                 {
-                    yield return textChunk;
+                    case "message_start":
+                        inputTokens = doc.RootElement
+                            .GetProperty("message")
+                            .GetProperty("usage")
+                            .GetProperty("input_tokens")
+                            .GetInt32();
+                        tokenCallback?.Invoke(inputTokens, outputTokens);
+                        break;
+
+                    case "content_block_delta":
+                        var text = doc.RootElement
+                            .GetProperty("delta")
+                            .GetProperty("text")
+                            .GetString();
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            yield return text;
+                        }
+
+                        break;
+
+                    case "message_delta":
+                        outputTokens = doc.RootElement
+                            .GetProperty("usage")
+                            .GetProperty("output_tokens")
+                            .GetInt32();
+                        tokenCallback?.Invoke(inputTokens, outputTokens);
+                        break;
                 }
             }
         }
@@ -84,7 +118,13 @@ public class ClaudeService : IAiModelService
 
     private record ClaudeMessage(string role, string content);
 
-    private record ClaudeResponse(string type, ClaudeDelta delta);
+    private record ClaudeUsage(int input_tokens, int output_tokens);
+
+    private record ClaudeResponse(
+        string type,
+        ClaudeDelta? delta,
+        ClaudeUsage? usage
+    );
 
     private record ClaudeDelta(string text);
 }
