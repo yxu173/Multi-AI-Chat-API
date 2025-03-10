@@ -36,11 +36,81 @@
             flex: 1;
             padding: 8px;
         }
+        
+        /* Token stats styles */
+        .token-stats-container {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        
+        .token-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        
+        .stat-box {
+            padding: 10px;
+            border-radius: 6px;
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            min-width: 120px;
+        }
+        
+        .stat-label {
+            display: block;
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .stat-value.updated {
+            animation: highlight 0.5s ease-out;
+        }
+        
+        @keyframes highlight {
+            0% { background-color: rgba(255, 251, 0, 0.3); }
+            100% { background-color: transparent; }
+        }
     </style>
 </head>
 <body>
     <div class="main-container">
         <div id="messagesList"></div>
+        
+        <!-- Token Stats Container -->
+        <div class="token-stats-container">
+            <h3>Token Usage</h3>
+            <div class="token-stats">
+                <div class="stat-box">
+                    <span class="stat-label">Input Tokens:</span>
+                    <span id="input-tokens" class="stat-value">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Output Tokens:</span>
+                    <span id="output-tokens" class="stat-value">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Total Tokens:</span>
+                    <span id="total-tokens" class="stat-value">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Estimated Cost:</span>
+                    <span id="token-cost" class="stat-value">$0.00</span>
+                </div>
+            </div>
+        </div>
+        
         <div class="input-container">
             <input type="text" id="messageInput" placeholder="Type your message here..."/>
             <button onclick="sendMessage()">Send</button>
@@ -52,7 +122,7 @@
     <script>
         // Set your token and chat ID here
         const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1NjEwYi0wNTFmLTcyNmQtYWVkYy1jMmU5MWJlZTA5ZGYiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3QG91dGxvb2suY29tIiwibmFtZSI6Im1yeCIsImp0aSI6IjQ2MTE4MWQzLTkxNzktNGMwYi1hNTc2LTMxYmNlNTU5MTg3NyIsImF1ZCI6WyJTd2FnZ2VyVUkiLCJTd2FnZ2VyVUkiXSwibmJmIjoxNzQxNTUzMDY0LCJleHAiOjE3NDIxNTc4NjQsImlhdCI6MTc0MTU1MzA2NCwiaXNzIjoiSW50ZXJuc2hpcC1QbGF0Zm9ybSJ9.IA01GL9nYlD0O6aJZJYpgOR4djShSf6dmEDtZUzXPps";
-        const chatId = "e70ceceb-d995-4677-9432-5bffb0c400f6";
+        const chatId = "a7d06b24-6a9f-4c1b-8983-6503dba27411";
 
         const connection = new signalR.HubConnectionBuilder()
             .withUrl("/chatHub", { 
@@ -106,8 +176,61 @@
                 messagesList.appendChild(messageElement);
             }
             
-            messageElement.innerHTML = marked.parse(messageElement.textContent + chunk);
+            // Check if chunk is an object with content property (StreamResponse)
+            let content = chunk;
+            if (typeof chunk === 'object' && chunk !== null && 'content' in chunk) {
+                content = chunk.content;
+                
+                // Update token information if available in chunk
+                if ('inputTokens' in chunk && 'outputTokens' in chunk) {
+                    updateTokenDisplay(chunk.inputTokens, chunk.outputTokens);
+                }
+            }
+            
+            // Append content and render markdown
+            messageElement.innerHTML = marked.parse(messageElement.textContent + content);
             messagesList.scrollTop = messagesList.scrollHeight;
+        });
+
+        // Function to update token displays
+        function updateTokenDisplay(inputTokens, outputTokens) {
+            document.getElementById("input-tokens").textContent = inputTokens.toLocaleString();
+            document.getElementById("output-tokens").textContent = outputTokens.toLocaleString();
+            document.getElementById("total-tokens").textContent = (inputTokens + outputTokens).toLocaleString();
+            
+            // Add visual indication that values have updated
+            const statElements = document.querySelectorAll('.stat-value');
+            statElements.forEach(el => {
+                el.classList.add('updated');
+                setTimeout(() => el.classList.remove('updated'), 500);
+            });
+        }
+
+        // Handle token usage updates
+        connection.on("TokenUsageUpdated", function (tokenData) {
+            // Update token displays
+            document.getElementById("input-tokens").textContent = tokenData.inputTokens.toLocaleString();
+            document.getElementById("output-tokens").textContent = tokenData.outputTokens.toLocaleString();
+            document.getElementById("total-tokens").textContent = (tokenData.inputTokens + tokenData.outputTokens).toLocaleString();
+            
+            // Format cost as currency
+            const formattedCost = new Intl.NumberFormat('en-US', { 
+                style: 'currency', 
+                currency: 'USD',
+                minimumFractionDigits: 4,
+                maximumFractionDigits: 4 
+            }).format(tokenData.totalCost);
+            
+            document.getElementById("token-cost").textContent = formattedCost;
+            
+            // Add visual indication that values have updated
+            const statElements = document.querySelectorAll('.stat-value');
+            statElements.forEach(el => {
+                el.classList.add('updated');
+                setTimeout(() => el.classList.remove('updated'), 500);
+            });
+            
+            console.log("Token usage updated:", tokenData);
         });
 
         // Start the connection

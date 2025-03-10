@@ -22,8 +22,7 @@ namespace Infrastructure.Services
             _modelCode = modelCode;
         }
 
-        public async IAsyncEnumerable<string> StreamResponseAsync(
-            IEnumerable<MessageDto> history,
+        public async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
             Action<int, int>? tokenCallback = null)
         {
             var validHistory = history
@@ -112,7 +111,7 @@ namespace Infrastructure.Services
 
                     if (!string.IsNullOrEmpty(text))
                     {
-                        yield return text;
+                       yield return new StreamResponse(text, promptTokens, outputTokens);
                     }
                 }
             }

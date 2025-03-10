@@ -36,7 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IMessageRepository, MessageRepository>();
         services.AddScoped<IFileAttachmentRepository, FileAttachmentRepository>();
         services.AddScoped<IPromptRepository, PromptRepository>();
-      //  services.AddScoped<IChatTokenUsageRepository, ChatTokenUsageRepository>();
+        services.AddScoped<IChatTokenUsageRepository, ChatTokenUsageRepository>();
         services.AddScoped<IUserApiKeyRepository, UserApiKeyRepository>();
         services.AddScoped<IAiModelRepository, AiModelRepository>();
         services.AddScoped<IAiProviderRepository, AiProviderRepository>();

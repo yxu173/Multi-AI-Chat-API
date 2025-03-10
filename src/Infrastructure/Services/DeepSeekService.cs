@@ -23,7 +23,7 @@ public class DeepSeekService : IAiModelService
         _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,
+    public async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
         Action<int, int>? tokenCallback = null)
     {
         var messages = new List<DeepSeekMessage>
@@ -80,7 +80,7 @@ public class DeepSeekService : IAiModelService
                     var delta = choices[0].delta;
                     if (!string.IsNullOrEmpty(delta?.content))
                     {
-                        yield return delta.content;
+                       yield return new StreamResponse(delta.content, inputTokens, outputTokens);
                     }
 
 

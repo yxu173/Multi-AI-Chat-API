@@ -24,8 +24,7 @@ public class AnthropicService : IAiModelService
         _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(
-        IEnumerable<MessageDto> history,
+    public async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
         Action<int, int>? tokenCallback = null)
     {
         var systemMessage = "Format your responses in markdown.";
@@ -99,7 +98,7 @@ public class AnthropicService : IAiModelService
                             .GetString();
                         if (!string.IsNullOrEmpty(text))
                         {
-                            yield return text;
+                           yield return new StreamResponse(text, inputTokens, outputTokens);
                         }
 
                         break;

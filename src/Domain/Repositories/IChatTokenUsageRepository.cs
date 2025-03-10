@@ -7,7 +7,9 @@ namespace Domain.Repositories;
 
 public interface IChatTokenUsageRepository
 {
-    Task AddAsync(ChatTokenUsage chatTokenUsage);
-    Task<ChatTokenUsage?> GetByIdAsync(Guid chatId);
-    Task UpdateAsync(ChatTokenUsage chatTokenUsage);
+    Task<ChatTokenUsage> AddAsync(ChatTokenUsage tokenUsage);
+    Task<ChatTokenUsage?> GetByChatSessionIdAsync(Guid chatSessionId);
+    Task UpdateAsync(ChatTokenUsage tokenUsage);
+    Task<int> GetTotalInputTokensForUserAsync(Guid userId);
+    Task<int> GetTotalOutputTokensForUserAsync(Guid userId);
 }

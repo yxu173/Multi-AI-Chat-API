@@ -144,6 +144,9 @@ namespace Infrastructure.Database.Migrations
                     b.Property<int>("InputTokens")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("OutputTokens")
                         .HasColumnType("integer");
 

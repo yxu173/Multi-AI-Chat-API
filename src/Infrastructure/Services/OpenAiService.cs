@@ -23,7 +23,8 @@ public class OpenAiService : IAiModelService
         _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,
+
+    public async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
         Action<int, int>? tokenCallback = null)
     {
         var messages = new List<OpenAiMessage>
@@ -88,7 +89,7 @@ public class OpenAiService : IAiModelService
                     {
                         outputTokens += tokenizer.Encode(delta.content).Count;
                         tokenCallback?.Invoke(inputTokens, outputTokens);
-                        yield return delta.content;
+                        yield return new StreamResponse(delta.content, inputTokens, outputTokens);
                     }
                 }
             }

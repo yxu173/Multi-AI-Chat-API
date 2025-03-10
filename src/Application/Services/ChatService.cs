@@ -15,21 +15,21 @@ public class ChatService
     private readonly IMessageRepository _messageRepository;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IMediator _mediator;
-  //  private readonly IChatTokenUsageRepository _tokenUsageRepository;
+    private readonly IChatTokenUsageRepository _tokenUsageRepository;
 
     public ChatService(
         IChatSessionRepository chatSessionRepository,
         IMessageRepository messageRepository,
         IAiModelServiceFactory aiModelServiceFactory,
-        IMediator mediator
-        //IChatTokenUsageRepository tokenUsageRepository
-        )
+        IMediator mediator,
+        IChatTokenUsageRepository tokenUsageRepository
+    )
     {
         _chatSessionRepository = chatSessionRepository;
         _messageRepository = messageRepository;
         _aiModelServiceFactory = aiModelServiceFactory;
         _mediator = mediator;
-//        _tokenUsageRepository = tokenUsageRepository;
+        _tokenUsageRepository = tokenUsageRepository;
     }
 
     public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content)
@@ -73,8 +73,37 @@ public class ChatService
 
         var responseContent = new StringBuilder();
 
-        await foreach (var chunk in aiService.StreamResponseAsync(messages))
+        var tokenUsage = await _tokenUsageRepository.GetByChatSessionIdAsync(chatSessionId) ??
+                         await _tokenUsageRepository.AddAsync(ChatTokenUsage.Create(chatSessionId, 0, 0, 0));
+
+
+        int currentInputTokens = 0;
+        int currentOutputTokens = 0;
+
+
+        await foreach (var response in aiService.StreamResponseAsync(messages))
         {
+            var chunk = response.Content;
+            currentInputTokens = response.InputTokens;
+            currentOutputTokens = response.OutputTokens;
+
+
+            tokenUsage.UpdateTokenCounts(
+                currentInputTokens,
+                currentOutputTokens
+            );
+
+            await _tokenUsageRepository.UpdateAsync(tokenUsage);
+
+
+            await _mediator.Publish(new TokenUsageUpdatedNotification(
+                chatSessionId,
+                currentInputTokens,
+                currentOutputTokens,
+                CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens)
+            ));
+
+
             responseContent.Append(chunk);
             aiMessage.AppendContent(chunk);
             await _messageRepository.UpdateAsync(aiMessage);
@@ -84,15 +113,18 @@ public class ChatService
         aiMessage.CompleteMessage();
         await _messageRepository.UpdateAsync(aiMessage);
 
-        //  var tokenUsage = await aiService.CountTokensAsync(messages);
+        decimal totalCost = CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens);
 
-        // var chatTokenUsage = ChatTokenUsage.Create(
-        //     aiMessage.Id,
-        //     tokenUsage.InputTokens,
-        //     tokenUsage.OutputTokens,
-        //     tokenUsage.TotalCost);
-        //
-        // await _tokenUsageRepository.AddAsync(chatTokenUsage);
+
+        tokenUsage.UpdateTokenCountsAndCost(currentInputTokens, currentOutputTokens, totalCost);
+        await _tokenUsageRepository.UpdateAsync(tokenUsage);
+    }
+
+    private decimal CalculateCost(AiModel model, int inputTokens, int outputTokens)
+    {
+        var inputCost = (decimal)(inputTokens * model.InputTokenPricePer1M / 1_000_000);
+        var outputCost = (decimal)(outputTokens * model.OutputTokenPricePer1M / 1_000_000);
+        return inputCost + outputCost;
     }
 
     private string GenerateTitleFromContent(string content)

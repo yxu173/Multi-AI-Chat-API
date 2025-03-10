@@ -9,6 +9,7 @@ public sealed class ChatTokenUsage : BaseEntity
     public int OutputTokens { get; private set; }
     public decimal TotalCost { get; private set; }
     public DateTime CreatedAt { get; private set; }
+     public DateTime LastUpdatedAt { get; private set; }
     
    
     public ChatSession ChatSession { get; private set; }
@@ -28,5 +29,20 @@ public sealed class ChatTokenUsage : BaseEntity
             TotalCost = totalCost,
             CreatedAt = DateTime.UtcNow
         };
+    }
+
+     public void UpdateTokenCounts(int inputTokens, int outputTokens)
+    {
+        InputTokens = inputTokens;
+        OutputTokens = outputTokens;
+        LastUpdatedAt = DateTime.UtcNow;
+    }
+    
+    public void UpdateTokenCountsAndCost(int inputTokens, int outputTokens, decimal totalCost)
+    {
+        InputTokens = inputTokens;
+        OutputTokens = outputTokens;
+        TotalCost = totalCost;
+        LastUpdatedAt = DateTime.UtcNow;
     }
 }

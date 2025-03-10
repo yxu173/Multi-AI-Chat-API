@@ -7,7 +7,7 @@ using Google.Apis.Auth.OAuth2;
 
 namespace Infrastructure.Services;
 
-public class Imagen3Service : IAiModelService
+public class Imagen3Service 
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;

@@ -66,7 +66,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             ModelType.Anthropic => CreateClaudeService(aiModel, apiKey),
             ModelType.DeepSeek => CreateDeepSeekService(aiModel, apiKey),
             ModelType.Gemini => CreateGeminiService(aiModel, apiKey),
-            ModelType.Imagen3 => CreateImagen3Service(aiModel),
+          //  ModelType.Imagen3 => CreateImagen3Service(aiModel),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
     }
