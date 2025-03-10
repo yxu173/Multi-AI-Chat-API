@@ -22,34 +22,34 @@ public class GeminiService : IAiModelService
         _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,Action<int, int>? tokenCallback = null)
+    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,
+        Action<int, int>? tokenCallback = null)
     {
-        var contents = new List<GeminiContent>();
+        var validHistory = history
+            .Where(m => !string.IsNullOrWhiteSpace(m.Content))
+            .TakeLast(2)
+            .ToList();
 
-        foreach (var message in history.Where(m => !string.IsNullOrEmpty(m.Content)))
+        var contents = validHistory.Select(m => new
         {
-            contents.Add(new GeminiContent(
-                parts: new[] { new GeminiPart(text: message.Content) },
-                role: message.IsFromAi ? "model" : "user"
-            ));
-        }
+            role = m.IsFromAi ? "model" : "user",
+            parts = new[] { new { text = m.Content } }
+        }).ToArray();
 
         var requestBody = new
         {
             contents,
             generationConfig = new
             {
+                temperature = 0.7,
                 maxOutputTokens = 2048,
-            },
-            streamGenerationConfig = new
-            {
-                streamContentTokens = true
+                topP = 0.8,
+                topK = 40
             }
         };
-
-        var endpoint = $"v1beta/models/{_modelCode}:streamGenerateContent?key={_apiKey}";
-
-        var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        
+        var request = new HttpRequestMessage(HttpMethod.Post,
+            $"v1beta/models/{_modelCode}:streamGenerateContent?key={_apiKey}")
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(requestBody),
@@ -57,43 +57,73 @@ public class GeminiService : IAiModelService
                 "application/json")
         };
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-        if (!response.IsSuccessStatusCode)
+
+        using var response = await _httpClient.SendAsync(
+            request, 
+            HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+
+        var jsonResponse = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(jsonResponse);
+        var root = document.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array)
         {
-            var errorContent = await response.Content.ReadAsStringAsync();
-            throw new Exception($"Gemini API Error: {response.StatusCode} - {errorContent}");
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync();
-        using var reader = new StreamReader(stream);
-
-        while (!reader.EndOfStream)
-        {
-            var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-
-            var chunk = JsonSerializer.Deserialize<GeminiResponse>(line);
-            if (chunk?.candidates is { Length: > 0 } candidates)
+            foreach (var element in root.EnumerateArray())
             {
-                var content = candidates[0].content;
-                if (content?.parts is { Length: > 0 } parts)
+                if (element.TryGetProperty("candidates", out var candidates) &&
+                    candidates.GetArrayLength() > 0)
                 {
-                    var text = parts[0].text;
-                    if (!string.IsNullOrEmpty(text))
+                    var firstCandidate = candidates[0];
+                    if (firstCandidate.TryGetProperty("content", out var content) &&
+                        content.TryGetProperty("parts", out var parts) &&
+                        parts.GetArrayLength() > 0 &&
+                        parts[0].TryGetProperty("text", out var textElement))
                     {
-                        yield return text;
+                        var text = textElement.GetString();
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            yield return text;
+                        }
                     }
+                }
+            }
+        }
+        else if (root.TryGetProperty("candidates", out var candidates) &&
+                 candidates.GetArrayLength() > 0)
+        {
+            var firstCandidate = candidates[0];
+            if (firstCandidate.TryGetProperty("content", out var content) &&
+                content.TryGetProperty("parts", out var parts) &&
+                parts.GetArrayLength() > 0 &&
+                parts[0].TryGetProperty("text", out var textElement))
+            {
+                var text = textElement.GetString();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    yield return text;
                 }
             }
         }
     }
 
-    private record GeminiContent(GeminiPart[] parts, string role);
+    public class Response
+    {
+        public Candidate[] Candidates { get; set; }
+    }
 
-    private record GeminiPart(string text);
+    public class Candidate
+    {
+        public Content Content { get; set; }
+    }
 
-    private record GeminiResponse(GeminiCandidate[] candidates);
+    public class Content
+    {
+        public Part[] Parts { get; set; }
+    }
 
-    private record GeminiCandidate(GeminiContent content, string finishReason);
+    public class Part
+    {
+        public string Text { get; set; }
+    }
 }
