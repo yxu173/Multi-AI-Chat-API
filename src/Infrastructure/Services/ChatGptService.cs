@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+// Make sure to include the Tiktoken package namespace (this may vary based on the package you use)
+using Tiktoken;  
 
 namespace Infrastructure.Services;
 
@@ -34,6 +36,20 @@ public class ChatGptService : IAiModelService
             .Where(m => !string.IsNullOrEmpty(m.Content))
             .Select(m => new OpenAiMessage(m.IsFromAi ? "assistant" : "user", m.Content)));
 
+        // Initialize the tokenizer for your model.
+        // This assumes that the Tiktoken package offers a method like EncodingForModel.
+        var tokenizer = Tiktoken.ModelToEncoder.For(_modelCode); // e.g., returns an encoding for "cl100k_base"
+
+        // Count input tokens from all messages.
+        int inputTokens = 0;
+        foreach (var msg in messages)
+        {
+            // Assume Encode returns a list/array of tokens for the given string.
+            inputTokens += tokenizer.Encode(msg.content).Count;
+        }
+        // Notify initial token usage: input tokens and zero output tokens so far.
+        tokenCallback?.Invoke(inputTokens, 0);
+
         var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
 
         var requestBody = new
@@ -59,10 +75,13 @@ public class ChatGptService : IAiModelService
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
 
+        // Variable to accumulate output tokens.
+        int outputTokens = 0;
         while (!reader.EndOfStream)
         {
             var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
 
             if (line.StartsWith("data: ") && line.Trim() != "data: [DONE]")
             {
@@ -74,13 +93,16 @@ public class ChatGptService : IAiModelService
                     var delta = choices[0].delta;
                     if (!string.IsNullOrEmpty(delta?.content))
                     {
+                        // Count tokens in this output chunk.
+                        outputTokens += tokenizer.Encode(delta.content).Count;
+                        // Update the callback with current counts.
+                        tokenCallback?.Invoke(inputTokens, outputTokens);
                         yield return delta.content;
                     }
                 }
             }
         }
     }
-
 
     private record OpenAiMessage(string role, string content);
 
