@@ -6,13 +6,13 @@ using Tiktoken;
 
 namespace Infrastructure.Services;
 
-public class ChatGptService : IAiModelService
+public class OpenAiService : IAiModelService
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
     private readonly string _modelCode;
 
-    public ChatGptService(
+    public OpenAiService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
         string modelCode)

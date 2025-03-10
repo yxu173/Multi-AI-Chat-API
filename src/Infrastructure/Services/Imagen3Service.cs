@@ -1,7 +1,9 @@
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Google.Apis.Auth.OAuth2;
 
 namespace Infrastructure.Services;
 
@@ -13,10 +15,10 @@ public class Imagen3Service : IAiModelService
     private readonly string _region;
     private readonly string _publisher;
     private readonly string _modelId;
+    private readonly string _imageSavePath = "wwwroot/images";
 
     public Imagen3Service(
-        IHttpClientFactory httpClientFactory, 
-        string apiKey,
+        IHttpClientFactory httpClientFactory,
         string projectId,
         string region,
         string publisher,
@@ -24,15 +26,23 @@ public class Imagen3Service : IAiModelService
     {
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://us-central1-aiplatform.googleapis.com/");
-        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-        _apiKey = apiKey;
         _projectId = projectId;
         _region = region;
         _publisher = publisher;
         _modelId = modelId;
+        Directory.CreateDirectory(_imageSavePath);
+        var credential = GoogleCredential.GetApplicationDefault();
+        if (credential.IsCreateScopedRequired)
+        {
+            credential = credential.CreateScoped(new[] { "https://www.googleapis.com/auth/cloud-platform" });
+        }
+
+        var token = credential.UnderlyingCredential.GetAccessTokenForRequestAsync().Result;
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
     }
 
-    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,Action<int, int>? tokenCallback = null)
+    public async IAsyncEnumerable<string> StreamResponseAsync(IEnumerable<MessageDto> history,
+        Action<int, int>? tokenCallback = null)
     {
         var latestUserMessage = history
             .Where(m => !string.IsNullOrWhiteSpace(m.Content) && !m.IsFromAi)
@@ -44,7 +54,7 @@ public class Imagen3Service : IAiModelService
         }
 
         var prompt = latestUserMessage.Content;
-        
+
         var requestBody = new
         {
             instances = new[]
@@ -53,12 +63,13 @@ public class Imagen3Service : IAiModelService
                 {
                     prompt,
                     num_images = 2,
-                    size = "1024x1024" 
+                    size = "1024x1024"
                 }
             }
         };
 
-        var endpoint = $"v1/projects/{_projectId}/locations/{_region}/publishers/{_publisher}/models/{_modelId}:predict";
+        var endpoint =
+            $"v1/projects/{_projectId}/locations/{_region}/publishers/{_publisher}/models/{_modelId}:predict";
         var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
             Content = new StringContent(
@@ -76,18 +87,41 @@ public class Imagen3Service : IAiModelService
 
         if (root.TryGetProperty("predictions", out var predictions) && predictions.ValueKind == JsonValueKind.Array)
         {
-            for (int i = 0; i < predictions.GetArrayLength(); i++)
+            int imageCount = 0;
+            foreach (var prediction in predictions.EnumerateArray())
             {
-                if (predictions[i].TryGetProperty("bytesBase64Encoded", out var imageData))
+                if (imageCount >= 2)
+                    break;
+
+                if (prediction.TryGetProperty("bytesBase64Encoded", out var base64Element) &&
+                    prediction.TryGetProperty("mimeType", out var mimeTypeElement))
                 {
-                    var imageUrl = $"data:image/png;base64,{imageData.GetString()}";
-                    yield return $"![Generated Image {i+1}]({imageUrl})";
+                    var base64Image = base64Element.GetString();
+                    var mimeType = mimeTypeElement.GetString();
+
+                    if (!string.IsNullOrEmpty(base64Image))
+                    {
+                        var imageBytes = Convert.FromBase64String(base64Image);
+
+                        var extension = mimeType.Split('/').Last();
+
+                        var imageUrl = SaveImageLocally(imageBytes, $"{Guid.NewGuid()}.{extension}");
+                        yield return $"![generated image]({imageUrl})";
+                        imageCount++;
+                    }
                 }
             }
         }
         else
         {
-            yield return "Sorry, I couldn't generate any images.";
+            yield return "Error: No valid predictions found in the response.";
         }
+    }
+
+    private string SaveImageLocally(byte[] imageBytes, string fileName)
+    {
+        var filePath = Path.Combine(_imageSavePath, fileName);
+        File.WriteAllBytes(filePath, imageBytes);
+        return $"/images/{fileName}";
     }
 }

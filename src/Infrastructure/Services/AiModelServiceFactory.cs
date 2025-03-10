@@ -49,21 +49,16 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             if (userApiKey != null)
             {
                 apiKey = userApiKey.ApiKey;
-                // Update last used timestamp
                 userApiKey.UpdateLastUsed();
                 await _dbContext.SaveChangesAsync();
             }
             else
             {
-                // Fall back to default API key
                 apiKey = aiModel.AiProvider.DefaultApiKey;
             }
         }
 
-        if (string.IsNullOrEmpty(apiKey))
-        {
-            throw new InvalidOperationException($"No API key available for provider: {aiModel.AiProvider.Name}");
-        }
+      
 
         return aiModel.ModelType switch
         {
@@ -71,7 +66,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             ModelType.Anthropic => CreateClaudeService(aiModel, apiKey),
             ModelType.DeepSeek => CreateDeepSeekService(aiModel, apiKey),
             ModelType.Gemini => CreateGeminiService(aiModel, apiKey),
-            ModelType.Imagen3 => CreateImagen3Service(aiModel, apiKey),
+            ModelType.Imagen3 => CreateImagen3Service(aiModel),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
     }
@@ -81,19 +76,19 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         return GetServiceAsync(userId, modelId, customApiKey).GetAwaiter().GetResult();
     }
 
-    private ChatGptService CreateChatGptService(AiModel aiModel, string apiKey)
+    private OpenAiService CreateChatGptService(AiModel aiModel, string apiKey)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
-        return new ChatGptService(
+        return new OpenAiService(
             httpClientFactory,
             apiKey,
             aiModel.ModelCode);
     }
 
-    private ClaudeService CreateClaudeService(AiModel aiModel, string apiKey)
+    private AnthropicService CreateClaudeService(AiModel aiModel, string apiKey)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
-        return new ClaudeService(
+        return new AnthropicService(
             httpClientFactory,
             apiKey,
             aiModel.ModelCode);
@@ -117,7 +112,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             aiModel.ModelCode);
     }
 
-    private Imagen3Service CreateImagen3Service(AiModel aiModel, string apiKey)
+    private Imagen3Service CreateImagen3Service(AiModel aiModel)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
 
@@ -136,7 +131,6 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
         return new Imagen3Service(
             httpClientFactory,
-            apiKey,
             projectId,
             region,
             publisher,

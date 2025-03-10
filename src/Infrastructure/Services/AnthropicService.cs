@@ -5,13 +5,13 @@ using Application.Services;
 
 namespace Infrastructure.Services;
 
-public class ClaudeService : IAiModelService
+public class AnthropicService : IAiModelService
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
     private readonly string _modelCode;
 
-    public ClaudeService(
+    public AnthropicService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
         string modelCode)
