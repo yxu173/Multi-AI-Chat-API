@@ -11,6 +11,7 @@ using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Infrastructure.Services;
 using Infrastructure.Services.AiProvidersServices;
+using Infrastructure.Services.Plugins;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
@@ -18,6 +19,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Infrastructure;
@@ -44,6 +46,21 @@ public static class DependencyInjection
 
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
+
+
+        services.AddScoped<IChatPlugin, WebSearchPlugin>(sp =>
+            new WebSearchPlugin(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                configuration["Plugins:WebSearch:ApiKey"]
+            )
+        );
+
+        services.AddScoped<IChatPlugin, PerplexityPlugin>(sp =>
+            new PerplexityPlugin(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                configuration["Plugins:Perplexity:ApiKey"]
+            )
+        );
 
 
         services.AddScoped<IUserContext, UserContext>();
