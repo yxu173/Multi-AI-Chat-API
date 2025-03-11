@@ -76,33 +76,39 @@ public class ChatService
         var tokenUsage = await _tokenUsageRepository.GetByChatSessionIdAsync(chatSessionId) ??
                          await _tokenUsageRepository.AddAsync(ChatTokenUsage.Create(chatSessionId, 0, 0, 0));
 
-
-        int currentInputTokens = 0;
-        int currentOutputTokens = 0;
-
+        int previousInputTokens = tokenUsage.InputTokens;
+        int previousOutputTokens = tokenUsage.OutputTokens;
+        decimal previousCost = tokenUsage.TotalCost;
 
         await foreach (var response in aiService.StreamResponseAsync(messages))
         {
             var chunk = response.Content;
-            currentInputTokens = response.InputTokens;
-            currentOutputTokens = response.OutputTokens;
+            var currentInputTokens = response.InputTokens;
+            var currentOutputTokens = response.OutputTokens;
 
+            // Calculate the total tokens (previous + current)
+            var totalInputTokens = previousInputTokens + currentInputTokens;
+            var totalOutputTokens = previousOutputTokens + currentOutputTokens;
 
+            // Update token usage with accumulated totals
             tokenUsage.UpdateTokenCounts(
-                currentInputTokens,
+                currentInputTokens, // The UpdateTokenCounts method already uses +=
                 currentOutputTokens
             );
 
             await _tokenUsageRepository.UpdateAsync(tokenUsage);
 
+            // Calculate current total cost
+            decimal currentTotalCost = previousCost +
+                                       CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens);
 
+            // Send notification with accumulated totals
             await _mediator.Publish(new TokenUsageUpdatedNotification(
                 chatSessionId,
-                currentInputTokens,
-                currentOutputTokens,
-                CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens)
+                totalInputTokens,
+                totalOutputTokens,
+                currentTotalCost // Send the accumulated cost
             ));
-
 
             responseContent.Append(chunk);
             aiMessage.AppendContent(chunk);
@@ -113,12 +119,21 @@ public class ChatService
         aiMessage.CompleteMessage();
         await _messageRepository.UpdateAsync(aiMessage);
 
-        decimal totalCost = CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens);
+        // Final cost calculation
+        decimal finalCost = previousCost +
+                            CalculateCost(chatSession.AiModel, tokenUsage.InputTokens - previousInputTokens,
+                                tokenUsage.OutputTokens - previousOutputTokens);
 
+        // Update with final accumulated values
+        tokenUsage.UpdateTokenCountsAndCost(
+            tokenUsage.InputTokens - previousInputTokens,
+            tokenUsage.OutputTokens - previousOutputTokens,
+            finalCost
+        );
 
-        tokenUsage.UpdateTokenCountsAndCost(currentInputTokens, currentOutputTokens, totalCost);
         await _tokenUsageRepository.UpdateAsync(tokenUsage);
     }
+
 
     private decimal CalculateCost(AiModel model, int inputTokens, int outputTokens)
     {
