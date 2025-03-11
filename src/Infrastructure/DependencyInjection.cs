@@ -10,6 +10,7 @@ using Infrastructure.Authentication.Options;
 using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Infrastructure.Services;
+using Infrastructure.Services.AiProvidersServices;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;

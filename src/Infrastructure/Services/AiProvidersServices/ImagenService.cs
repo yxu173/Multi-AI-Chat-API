@@ -1,13 +1,12 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using Application.Abstractions.Interfaces;
 using Application.Services;
 using Google.Apis.Auth.OAuth2;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.Services.AiProvidersServices;
 
-public class Imagen3Service 
+public class ImagenService 
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
@@ -17,7 +16,7 @@ public class Imagen3Service
     private readonly string _modelId;
     private readonly string _imageSavePath = "wwwroot/images";
 
-    public Imagen3Service(
+    public ImagenService(
         IHttpClientFactory httpClientFactory,
         string projectId,
         string region,

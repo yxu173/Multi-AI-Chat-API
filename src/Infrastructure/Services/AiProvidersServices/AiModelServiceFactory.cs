@@ -1,13 +1,13 @@
 using Application.Abstractions.Authentication;
-using Application.Abstractions.Interfaces;
-using Domain.Enums;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.EntityFrameworkCore;
-using Domain.Aggregates.Chats;
-using Microsoft.Extensions.Configuration;
 using Application.Abstractions.Data;
+using Application.Abstractions.Interfaces;
+using Domain.Aggregates.Chats;
+using Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.Services.AiProvidersServices;
 
 public class AiModelServiceFactory : IAiModelServiceFactory
 {
@@ -112,7 +112,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             aiModel.ModelCode);
     }
 
-    private Imagen3Service CreateImagen3Service(AiModel aiModel)
+    private ImagenService CreateImagen3Service(AiModel aiModel)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
 
@@ -129,7 +129,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         if (string.IsNullOrEmpty(publisher))
             throw new InvalidOperationException("Missing configuration: AI:Imagen3:Publisher");
 
-        return new Imagen3Service(
+        return new ImagenService(
             httpClientFactory,
             projectId,
             region,

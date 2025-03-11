@@ -3,7 +3,7 @@ using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 
-namespace Infrastructure.Services
+namespace Infrastructure.Services.AiProvidersServices
 {
     public class GeminiService : IAiModelService
     {

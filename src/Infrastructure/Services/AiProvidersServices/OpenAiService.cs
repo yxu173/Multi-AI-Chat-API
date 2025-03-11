@@ -2,9 +2,8 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
-using Tiktoken;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.Services.AiProvidersServices;
 
 public class OpenAiService : IAiModelService
 {

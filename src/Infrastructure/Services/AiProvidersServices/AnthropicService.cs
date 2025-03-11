@@ -3,7 +3,7 @@ using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.Services.AiProvidersServices;
 
 public class AnthropicService : IAiModelService
 {
@@ -68,9 +68,9 @@ public class AnthropicService : IAiModelService
         int outputTokens = 0;
         int estimatedOutputTokens = 0;
 
-        // Track total response text for token estimation
+    
         StringBuilder fullResponse = new StringBuilder();
-        HashSet<string> sentChunks = new HashSet<string>(); // Track chunks we've already sent
+        HashSet<string> sentChunks = new HashSet<string>(); 
 
         while (!reader.EndOfStream)
         {
@@ -133,7 +133,6 @@ public class AnthropicService : IAiModelService
             }
         }
 
-        // If we never got the final token count, use our best estimate
         if (outputTokens == 0 && estimatedOutputTokens > 0)
         {
             tokenCallback?.Invoke(inputTokens, estimatedOutputTokens);
