@@ -43,7 +43,7 @@ public static class DependencyInjection
         services.AddScoped<IUserApiKeyRepository, UserApiKeyRepository>();
         services.AddScoped<IAiModelRepository, AiModelRepository>();
         services.AddScoped<IAiProviderRepository, AiProviderRepository>();
-
+        services.AddScoped<IUserPluginPreferenceRepository, UserPluginPreferenceRepository>();
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
 
@@ -51,7 +51,8 @@ public static class DependencyInjection
         services.AddScoped<IChatPlugin, WebSearchPlugin>(sp =>
             new WebSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                configuration["Plugins:WebSearch:ApiKey"]
+                configuration["Plugins:WebSearch:ApiKey"],
+                configuration["Plugins:WebSearch:SearchEngine"]
             )
         );
 

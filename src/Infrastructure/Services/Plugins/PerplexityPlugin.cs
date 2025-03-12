@@ -1,98 +1,106 @@
-using Application.Abstractions.Interfaces;
-using Microsoft.Extensions.Logging;
-using System.Net.Http;
 using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
+using Application.Abstractions.Interfaces;
+using Newtonsoft.Json;
 
-namespace Infrastructure.Services.Plugins;
-
-public class PerplexityPlugin : IChatPlugin
+namespace Infrastructure.Services.Plugins
 {
-    private readonly HttpClient _httpClient;
-    private readonly string _perplexityApiKey;
-
-    public string Id => "perplexity";
-    public string Name => "Perplexity";
-    public string Description => "Uses Perplexity AI for enhanced information retrieval";
-
-    public PerplexityPlugin(HttpClient httpClient,  string perplexityApiKey)
+    public class PerplexityPlugin : IChatPlugin
     {
-        _httpClient = httpClient;
-        _perplexityApiKey = perplexityApiKey;
-    }
+        public string Id => "perplexity-ai";
+        public string Name => "Perplexity AI";
+        public string Description => "Provides answers using Perplexity AI's streaming API";
 
-    public bool CanHandle(string userMessage)
-    {
-     
-        return userMessage.ToLower().Contains("perplexity") ||
-               (userMessage.ToLower().Contains("research") && userMessage.Length > 50);
-    }
+        private readonly HttpClient _httpClient;
+        private readonly string _apiKey;
 
-    public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
-    {
-        try
+        public PerplexityPlugin(HttpClient httpClient, string apiKey)
         {
-            var query = ExtractQuery(userMessage);
-            var perplexityResponse = await QueryPerplexityApi(query, cancellationToken);
-
-            return new PluginResult(
-                $"Perplexity AI Research Results:\n\n{perplexityResponse}",
-                true,
-                Name
-            );
+            _httpClient = httpClient;
+            _apiKey = apiKey;
         }
-        catch (Exception ex)
+
+        public bool CanHandle(string userMessage)
         {
-            return new PluginResult(
-                "Unable to retrieve information from Perplexity at this time.",
-                false,
-                ex.Message
-            );
+            // Example: Handle all messages starting with "/pplx"
+            return userMessage?.StartsWith("/pplx") ?? false;
+        }
+
+        public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var cleanMessage = userMessage.Replace("/pplx", "").Trim();
+                var resultBuilder = new StringBuilder();
+
+                var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+                {
+                    Headers = { { "Authorization", $"Bearer {_apiKey}" } },
+                    Content = new StringContent(
+                        JsonConvert.SerializeObject(new
+                        {
+                            model = "sonar-deep-research",
+                            messages = new[] { new { role = "user", content = cleanMessage } },
+                            stream = true
+                        }),
+                        Encoding.UTF8,
+                        "application/json")
+                };
+
+                using var response = await _httpClient.SendAsync(
+                    request, 
+                    HttpCompletionOption.ResponseHeadersRead, 
+                    cancellationToken
+                );
+
+                response.EnsureSuccessStatusCode();
+
+                await using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
+
+                while (!reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync();
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    if (line.StartsWith("data: "))
+                    {
+                        var json = line[6..];
+                        var responseData = JsonConvert.DeserializeObject<PerplexityResponse>(json);
+                        resultBuilder.Append(responseData?.Choices[0].Message.Content);
+                    }
+                }
+
+                return new PluginResult(
+                    resultBuilder.ToString(),
+                    true,
+                    Name
+                );
+            }
+            catch (Exception ex)
+            {
+                return new PluginResult(
+                    $"Perplexity AI Error: {ex.Message}",
+                    false,
+                    Name,
+                    ex.Message
+                );
+            }
         }
     }
 
-    private string ExtractQuery(string userMessage)
+    // Response DTOs
+    public class PerplexityResponse
     {
-        // Remove any explicit references to Perplexity
-        var query = Regex.Replace(userMessage, @"(?i)using perplexity|with perplexity|perplexity|research", "",
-            RegexOptions.IgnoreCase).Trim();
-        return query;
+        public List<PerplexityChoice> Choices { get; set; }
     }
 
-    private async Task<string> QueryPerplexityApi(string query, CancellationToken cancellationToken)
+    public class PerplexityChoice
     {
-       
-        var requestData = new
-        {
-            query = query,
-            max_tokens = 2000
-        };
+        public PerplexityMessage Message { get; set; }
+    }
 
-        var content = new StringContent(
-            JsonSerializer.Serialize(requestData),
-            Encoding.UTF8,
-            "application/json"
-        );
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.perplexity.ai/v1/query")
-        {
-            Content = content
-        };
-
-        request.Headers.Add("Authorization", $"Bearer {_perplexityApiKey}");
-
-        var response = await _httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
-        var result = JsonDocument.Parse(jsonResponse);
-
-      
-        var responseText = result.RootElement.GetProperty("response").GetString();
-
-        return responseText;
+    public class PerplexityMessage
+    {
+        public string Content { get; set; }
     }
 }

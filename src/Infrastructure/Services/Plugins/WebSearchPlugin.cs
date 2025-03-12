@@ -1,112 +1,107 @@
-using Application.Abstractions.Interfaces;
-using Microsoft.Extensions.Logging;
-using System.Net.Http;
 using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
+using Application.Abstractions.Interfaces;
+using Newtonsoft.Json;
 
-namespace Infrastructure.Services.Plugins;
-
-public class WebSearchPlugin : IChatPlugin
+namespace Infrastructure.Services.Plugins
 {
-    private readonly HttpClient _httpClient;
-    private readonly string _searchApiKey;
-
-    public string Id => "web-search";
-    public string Name => "Web Search";
-    public string Description => "Searches the web for real-time information";
-
-    public WebSearchPlugin(HttpClient httpClient, string searchApiKey)
+    public class WebSearchPlugin : IChatPlugin
     {
-        _httpClient = httpClient;
-        _searchApiKey = searchApiKey;
-    }
+        public string Id => "google-web-search";
+        public string Name => "Google Search";
+        public string Description => "Performs web searches using Google Custom Search API";
 
-    public bool CanHandle(string userMessage)
-    {
-        // Check if the message contains search-related keywords
-        var searchTerms = new[] { "search", "find", "look up", "google", "information about" };
-        return searchTerms.Any(term => userMessage.ToLower().Contains(term));
-    }
+        private readonly HttpClient _httpClient;
+        private readonly string _apiKey;
+        private readonly string _cx;
 
-    public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
-    {
-        try
+        public WebSearchPlugin(HttpClient httpClient, string apiKey, string cx)
         {
-            var searchQuery = ExtractSearchQuery(userMessage);
-
-
-            var searchResults = await PerformWebSearch(searchQuery, cancellationToken);
-
-            return new PluginResult(
-                $"Web Search Results for '{searchQuery}':\n\n{searchResults}",
-                true,
-                Name
-            );
+            _httpClient = httpClient;
+            _apiKey = apiKey;
+            _cx = cx;
         }
-        catch (Exception ex)
-        {
-            return new PluginResult(
-                "Unable to perform web search at this time.",
-                false,
-                ex.Message
-            );
-        }
-    }
 
-    private string ExtractSearchQuery(string userMessage)
-    {
-        foreach (var term in new[] { "search", "find", "look up", "google", "information about" })
+        public bool CanHandle(string userMessage)
         {
-            if (userMessage.ToLower().Contains(term))
+            return userMessage?.StartsWith("/google") ?? false;
+        }
+
+        public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
+        {
+            try
             {
-                var startIndex = userMessage.ToLower().IndexOf(term) + term.Length;
-                var query = userMessage.Substring(startIndex).Trim();
-                if (query.StartsWith("for ") || query.StartsWith("about "))
+                var searchQuery = userMessage.Replace("/google", "").Trim();
+                if (string.IsNullOrWhiteSpace(searchQuery))
                 {
-                    query = query.Substring(4).Trim();
+                    return new PluginResult(
+                        "Please provide a search query after /google",
+                        false,
+                        Name,
+                        "Empty search query"
+                    );
                 }
 
-                return query;
+                var url = $"https://www.googleapis.com/customsearch/v1?key={_apiKey}&cx={_cx}&q={Uri.EscapeDataString(searchQuery)}";
+                
+                var response = await _httpClient.GetAsync(url, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                
+                var json = await response.Content.ReadAsStringAsync();
+                var searchResponse = JsonConvert.DeserializeObject<GoogleSearchResponse>(json);
+                
+                return new PluginResult(
+                    FormatResults(searchResponse),
+                    true,
+                    Name
+                );
+            }
+            catch (Exception ex)
+            {
+                return new PluginResult(
+                    $"Google Search Error: {ex.Message}",
+                    false,
+                    Name,
+                    ex.Message
+                );
             }
         }
 
-        return userMessage;
+        private string FormatResults(GoogleSearchResponse response)
+        {
+            if (response?.Items == null || response.Items.Count == 0)
+                return "No results found";
+
+            var result = new StringBuilder();
+            result.AppendLine($"**Top {response.Items.Count} results:**");
+
+            for (int i = 0; i < response.Items.Count; i++)
+            {
+                var item = response.Items[i];
+                result.AppendLine($"{i + 1}. [{item.Title}]({item.Link})");
+                result.AppendLine($"   {item.Snippet}");
+                result.AppendLine();
+            }
+
+            return result.ToString();
+        }
     }
 
-    private async Task<string> PerformWebSearch(string query, CancellationToken cancellationToken)
+    // Response DTOs
+    public class GoogleSearchResponse
     {
-        // Example using Bing Search API:
-        var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"https://api.bing.microsoft.com/v7.0/search?q={Uri.EscapeDataString(query)}&count=5"
-        );
+        [JsonProperty("items")]
+        public List<GoogleSearchResult> Items { get; set; }
+    }
 
-        request.Headers.Add("Ocp-Apim-Subscription-Key", _searchApiKey);
+    public class GoogleSearchResult
+    {
+        [JsonProperty("title")]
+        public string Title { get; set; }
 
-        var response = await _httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        [JsonProperty("link")]
+        public string Link { get; set; }
 
-        var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
-
-
-        var results = JsonDocument.Parse(jsonResponse);
-        var webPages = results.RootElement.GetProperty("webPages").GetProperty("value");
-
-        var formattedResults = new StringBuilder();
-        foreach (var result in webPages.EnumerateArray())
-        {
-            var name = result.GetProperty("name").GetString();
-            var url = result.GetProperty("url").GetString();
-            var snippet = result.GetProperty("snippet").GetString();
-
-            formattedResults.AppendLine($"- **{name}**");
-            formattedResults.AppendLine($"  {snippet}");
-            formattedResults.AppendLine($"  URL: {url}");
-            formattedResults.AppendLine();
-        }
-
-        return formattedResults.ToString();
+        [JsonProperty("snippet")]
+        public string Snippet { get; set; }
     }
 }
