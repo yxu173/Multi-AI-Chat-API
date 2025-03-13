@@ -2,96 +2,73 @@ using System.Text;
 using Application.Abstractions.Interfaces;
 using Newtonsoft.Json;
 
-namespace Infrastructure.Services.Plugins
+public class WebSearchPlugin : IChatPlugin
 {
-    public class WebSearchPlugin : IChatPlugin
+    private readonly HttpClient _httpClient;
+    private readonly string _apiKey;
+    private readonly string _cx;
+
+    public string Name => "Google Search";
+    public string Description => "Search the web using Google for real-time information";
+
+    public WebSearchPlugin(HttpClient httpClient, string apiKey, string cx)
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
-        private readonly string _cx;
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
+        _cx = cx ?? throw new ArgumentNullException(nameof(cx));
+    }
 
-        public WebSearchPlugin(HttpClient httpClient, string apiKey, string cx)
+    public bool CanHandle(string userMessage)
+    {
+        return userMessage.StartsWith("/google", StringComparison.OrdinalIgnoreCase) ||
+               userMessage.StartsWith("/search", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
+    {
+        try
         {
-            _httpClient = httpClient;
-            _apiKey = apiKey;
-            _cx = cx;
+            var query = userMessage.Replace("/google", "").Replace("/search", "").Trim();
+            var url = $"https://www.googleapis.com/customsearch/v1?key={_apiKey}&cx={_cx}&q={Uri.EscapeDataString(query)}";
+            var response = await _httpClient.GetAsync(url, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var searchResponse = JsonConvert.DeserializeObject<GoogleSearchResponse>(json);
+            var result = FormatResults(searchResponse);
+            return new PluginResult(result, true);
         }
-
-        public bool CanHandle(string userMessage)
+        catch (Exception ex)
         {
-            return userMessage?.StartsWith("/google") ?? false;
-        }
-
-        public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                var searchQuery = userMessage.Replace("/google", "").Trim();
-                if (string.IsNullOrWhiteSpace(searchQuery))
-                {
-                    return new PluginResult(
-                        "Please provide a search query after /google",
-                        false,
-                        "Empty search query"
-                    );
-                }
-
-                var url =
-                    $"https://www.googleapis.com/customsearch/v1?key={_apiKey}&cx={_cx}&q={Uri.EscapeDataString(searchQuery)}";
-
-                var response = await _httpClient.GetAsync(url, cancellationToken);
-                response.EnsureSuccessStatusCode();
-
-                var json = await response.Content.ReadAsStringAsync();
-                var searchResponse = JsonConvert.DeserializeObject<GoogleSearchResponse>(json);
-
-                return new PluginResult(
-                    FormatResults(searchResponse),
-                    true
-                );
-            }
-            catch (Exception ex)
-            {
-                return new PluginResult(
-                    $"Google Search Error: {ex.Message}",
-                    false,
-                    ex.Message
-                );
-            }
-        }
-
-        private string FormatResults(GoogleSearchResponse response)
-        {
-            if (response?.Items == null || response.Items.Count == 0)
-                return "No results found";
-
-            var result = new StringBuilder();
-            result.AppendLine($"**Top {response.Items.Count} results:**");
-
-            for (int i = 0; i < response.Items.Count; i++)
-            {
-                var item = response.Items[i];
-                result.AppendLine($"{i + 1}. [{item.Title}]({item.Link})");
-                result.AppendLine($"   {item.Snippet}");
-                result.AppendLine();
-            }
-
-            return result.ToString();
+            return new PluginResult("", false, $"Web search failed: {ex.Message}");
         }
     }
 
-    // Response DTOs
-    public class GoogleSearchResponse
+    private string FormatResults(GoogleSearchResponse? response)
     {
-        [JsonProperty("items")] public List<GoogleSearchResult> Items { get; set; }
+        if (response?.Items == null || response.Items.Count == 0)
+            return "No results found";
+
+        var result = new StringBuilder();
+        result.AppendLine("**Google Search Results:**");
+        for (int i = 0; i < Math.Min(5, response.Items.Count); i++)
+        {
+            var item = response.Items[i];
+            result.AppendLine($"{i + 1}. [{item.Title ?? "No title"}]({item.Link ?? "#"})");
+            result.AppendLine($"   {item.Snippet ?? "No description available"}");
+            result.AppendLine();
+        }
+        return result.ToString();
     }
+}
 
-    public class GoogleSearchResult
-    {
-        [JsonProperty("title")] public string Title { get; set; }
+public class GoogleSearchResponse
+{
+    public List<SearchItem> Items { get; set; } = new List<SearchItem>();
+}
 
-        [JsonProperty("link")] public string Link { get; set; }
-
-        [JsonProperty("snippet")] public string Snippet { get; set; }
-    }
+public class SearchItem
+{
+    public string Title { get; set; }
+    public string Link { get; set; }
+    public string Snippet { get; set; }
 }

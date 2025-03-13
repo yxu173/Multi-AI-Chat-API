@@ -4,6 +4,8 @@ using Application.Notifications;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using MediatR;
+using Polly;
+using System.Net.Http;
 
 namespace Application.Services;
 
@@ -19,6 +21,7 @@ public class ChatService
     private readonly ParallelAiProcessingService _parallelAiProcessingService;
     private readonly IChatSessionPluginRepository _chatSessionPluginRepository;
     private readonly IPluginExecutorFactory _pluginExecutorFactory;
+    private readonly IResilienceService _resilienceService;
 
     public ChatService(
         IChatSessionRepository chatSessionRepository,
@@ -28,7 +31,8 @@ public class ChatService
         IChatTokenUsageRepository tokenUsageRepository,
         ParallelAiProcessingService parallelAiProcessingService,
         IChatSessionPluginRepository chatSessionPluginRepository,
-        IPluginExecutorFactory pluginExecutorFactory)
+        IPluginExecutorFactory pluginExecutorFactory,
+        IResilienceService resilienceService)
     {
         _chatSessionRepository =
             chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
@@ -43,6 +47,8 @@ public class ChatService
                                        throw new ArgumentNullException(nameof(chatSessionPluginRepository));
         _pluginExecutorFactory =
             pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
+        _resilienceService =
+            resilienceService ?? throw new ArgumentNullException(nameof(resilienceService));
     }
 
     public async Task SendUserMessageWithParallelProcessingAsync(
@@ -119,12 +125,11 @@ public class ChatService
         }
     }
 
-    public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content,
-        IEnumerable<string> activePluginIds = null)
+    public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content)
     {
         var chatSession = await GetChatSessionAsync(chatSessionId);
         var userMessage = await CreateUserMessageAsync(chatSession, userId, content);
-        var modifiedContent = await ExecutePluginsAsync(chatSessionId, content, activePluginIds);
+        var modifiedContent = await ExecutePluginsAsync(chatSessionId, content);
         await StreamAiResponseAsync(chatSession, userId, userMessage, modifiedContent);
     }
 
@@ -153,48 +158,40 @@ public class ChatService
         return message;
     }
 
-    private async Task<string> ExecutePluginsAsync(Guid chatSessionId, string content, IEnumerable<string> activePluginIds)
+    private async Task<string> ExecutePluginsAsync(Guid chatSessionId, string content)
     {
         var plugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatSessionId);
         var applicablePlugins = plugins
-            .Where(p => p.IsActive && _pluginExecutorFactory.GetExecutor(p.PluginId).CanHandle(content))
-            .OrderBy(p => p.Order)
+            .Where(p => p.IsActive)
+            .Select(p => _pluginExecutorFactory.GetPlugin(p.PluginId))
+            .Where(p => p.CanHandle(content))
             .ToList();
 
         if (!applicablePlugins.Any())
-            return content + "\n\n[No applicable plugins available]";
+            return content;
 
-        var result = content;
-        bool allFailed = true;
-        foreach (var plugin in applicablePlugins)
-        {
-            var executor = _pluginExecutorFactory.GetExecutor(plugin.PluginId);
-            var pluginResult = await ExecuteWithTimeoutAsync(executor, result);
-            if (pluginResult.Success)
-            {
-                result += $"\n\n[Plugin Result: {pluginResult.Result}]";
-                allFailed = false;
-            }
-            else
-            {
-                result += $"\n\n[Plugin Error: {pluginResult.ErrorMessage}]";
-            }
-        }
+        var pluginTasks = applicablePlugins.Select(p => p.ExecuteAsync(content));
+        var results = await Task.WhenAll(pluginTasks);
+        var successfulResults = results.Where(r => r.Success).Select(r => r.Result).ToList();
 
-        if (allFailed)
-            result += "\n\n[All plugins failed. Please try again later.]";
-
-        return result;
+        return successfulResults.Any()
+            ? $"{content}\n\n**Plugin Results:**\n{string.Join("\n", successfulResults)}"
+            : content;
     }
 
-    private async Task<PluginResult> ExecuteWithTimeoutAsync(IPluginExecutor executor, string content)
+    private bool IsTransientError(string errorMessage)
     {
-        var task = executor.ExecuteAsync(content);
-        var timeout = Task.Delay(5000);
-        var completed = await Task.WhenAny(task, timeout);
-        return completed == task
-            ? await task
-            : new PluginResult("Plugin timed out", false, "Execution exceeded 5 seconds");
+        if (string.IsNullOrWhiteSpace(errorMessage))
+            return false;
+        
+        return errorMessage.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+               errorMessage.Contains("timed out", StringComparison.OrdinalIgnoreCase) ||
+               errorMessage.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
+               errorMessage.Contains("too many requests", StringComparison.OrdinalIgnoreCase) ||
+               errorMessage.Contains("server error", StringComparison.OrdinalIgnoreCase) ||
+               errorMessage.Contains("retry", StringComparison.OrdinalIgnoreCase) ||
+               errorMessage.Contains("429", StringComparison.OrdinalIgnoreCase) ||
+               errorMessage.Contains("503", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task StreamAiResponseAsync(ChatSession chatSession, Guid userId, Message userMessage, string content)
@@ -206,22 +203,23 @@ public class ChatService
             new MessageDto(aiMessage.Content, true, aiMessage.Id)));
 
         var aiService =
-            _aiModelServiceFactory.GetService(chatSession.UserId, chatSession.AiModelId, chatSession.CustomApiKey);
-        
+            _aiModelServiceFactory.GetService(chatSession.UserId, chatSession.AiModelId,
+                chatSession.CustomApiKey ?? string.Empty);
+
         var messages = chatSession.Messages.Where(m => m.Id != aiMessage.Id)
             .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id)).ToList();
-       
+
         messages.Add(new MessageDto(content, false, userMessage.Id));
 
         var responseContent = new StringBuilder();
-        
+
         var tokenUsage = await _tokenUsageRepository.GetByChatSessionIdAsync(chatSession.Id) ??
                          ChatTokenUsage.Create(chatSession.Id, 0, 0, 0);
-        
+
         int previousInputTokens = tokenUsage.InputTokens;
-        
+
         int previousOutputTokens = tokenUsage.OutputTokens;
-        
+
         decimal previousCost = tokenUsage.TotalCost;
 
         await foreach (var response in aiService.StreamResponseAsync(messages))

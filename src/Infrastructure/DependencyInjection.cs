@@ -11,7 +11,9 @@ using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Infrastructure.Services;
 using Infrastructure.Services.AiProvidersServices;
+using Infrastructure.Services.Caching;
 using Infrastructure.Services.Plugins;
+using Infrastructure.Services.Resilience;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
@@ -21,6 +23,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using StackExchange.Redis;
 
 namespace Infrastructure;
 
@@ -48,7 +51,6 @@ public static class DependencyInjection
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
-        services.AddScoped<IPluginExecutor, PluginExecutor>();
 
         services.AddScoped<IChatPlugin, WebSearchPlugin>(sp =>
             new WebSearchPlugin(
@@ -66,6 +68,22 @@ public static class DependencyInjection
         );
 
 
+        services.AddSingleton<IConnectionMultiplexer>(sp =>
+        {
+            var redisConfig =
+                ConfigurationOptions.Parse(configuration.GetConnectionString("Redis") ?? "localhost:6379");
+            redisConfig.AbortOnConnectFail = false;
+            return ConnectionMultiplexer.Connect(redisConfig);
+        });
+
+
+        services.AddScoped<ICacheService, RedisCacheService>();
+
+        var resilienceOptions = ResilienceOptions.FromConfiguration(configuration);
+        services.AddSingleton(resilienceOptions);
+        services.AddSingleton<IResilienceService, ResilienceService>();
+
+
         services.AddScoped<IUserContext, UserContext>();
         services.AddSingleton<ITokenProvider, TokenProvider>();
         services.AddScoped<IApplicationDbContext, ApplicationDbContext>();
@@ -81,7 +99,7 @@ public static class DependencyInjection
             );
         });
 
-        services.AddIdentity<User, Role>()
+        services.AddIdentity<User, Domain.Aggregates.Users.Role>()
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();
 

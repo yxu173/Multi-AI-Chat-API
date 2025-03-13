@@ -36,7 +36,13 @@
             flex: 1;
             padding: 8px;
         }
-        
+        .instructions {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #fff3e0;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
         /* Token stats styles */
         .token-stats-container {
             margin: 20px 0;
@@ -45,14 +51,12 @@
             border-radius: 8px;
             background-color: #f9f9f9;
         }
-        
         .token-stats {
             display: flex;
             flex-wrap: wrap;
             gap: 15px;
             margin-top: 10px;
         }
-        
         .stat-box {
             padding: 10px;
             border-radius: 6px;
@@ -60,24 +64,20 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             min-width: 120px;
         }
-        
         .stat-label {
             display: block;
             font-size: 0.8rem;
             color: #666;
             margin-bottom: 5px;
         }
-        
         .stat-value {
             font-size: 1.1rem;
             font-weight: bold;
             color: #333;
         }
-        
         .stat-value.updated {
             animation: highlight 0.5s ease-out;
         }
-        
         @keyframes highlight {
             0% { background-color: rgba(255, 251, 0, 0.3); }
             100% { background-color: transparent; }
@@ -85,161 +85,157 @@
     </style>
 </head>
 <body>
-    <div class="main-container">
-        <div id="messagesList"></div>
-        
-        <!-- Token Stats Container -->
-        <div class="token-stats-container">
-            <h3>Token Usage</h3>
-            <div class="token-stats">
-                <div class="stat-box">
-                    <span class="stat-label">Input Tokens:</span>
-                    <span id="input-tokens" class="stat-value">0</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Output Tokens:</span>
-                    <span id="output-tokens" class="stat-value">0</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Total Tokens:</span>
-                    <span id="total-tokens" class="stat-value">0</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Estimated Cost:</span>
-                    <span id="token-cost" class="stat-value">$0.00</span>
-                </div>
+<div class="main-container">
+    <!-- Instructions for users -->
+    <div class="instructions">
+        <strong>Tip:</strong> Start your message with <code>/search</code> or <code>/google</code> followed by a query (e.g., "/search latest AI news") to use the web search plugin!
+    </div>
+
+    <div id="messagesList"></div>
+
+    <!-- Token Stats Container -->
+    <div class="token-stats-container">
+        <h3>Token Usage</h3>
+        <div class="token-stats">
+            <div class="stat-box">
+                <span class="stat-label">Input Tokens:</span>
+                <span id="input-tokens" class="stat-value">0</span>
             </div>
-        </div>
-        
-        <div class="input-container">
-            <input type="text" id="messageInput" placeholder="Type your message here..."/>
-            <button onclick="sendMessage()">Send</button>
+            <div class="stat-box">
+                <span class="stat-label">Output Tokens:</span>
+                <span id="output-tokens" class="stat-value">0</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Total Tokens:</span>
+                <span id="total-tokens" class="stat-value">0</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Estimated Cost:</span>
+                <span id="token-cost" class="stat-value">$0.00</span>
+            </div>
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script>
-        // Set your token and chat ID here
-        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1NjEwYi0wNTFmLTcyNmQtYWVkYy1jMmU5MWJlZTA5ZGYiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3QG91dGxvb2suY29tIiwibmFtZSI6Im1yeCIsImp0aSI6IjQ2MTE4MWQzLTkxNzktNGMwYi1hNTc2LTMxYmNlNTU5MTg3NyIsImF1ZCI6WyJTd2FnZ2VyVUkiLCJTd2FnZ2VyVUkiXSwibmJmIjoxNzQxNTUzMDY0LCJleHAiOjE3NDIxNTc4NjQsImlhdCI6MTc0MTU1MzA2NCwiaXNzIjoiSW50ZXJuc2hpcC1QbGF0Zm9ybSJ9.IA01GL9nYlD0O6aJZJYpgOR4djShSf6dmEDtZUzXPps";
-        const chatId = "623f3ef9-4480-455f-a6fd-11a967a924fb";
+    <div class="input-container">
+        <input type="text" id="messageInput" placeholder="Type your message here (e.g., /search latest AI news)"/>
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
 
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/chatHub", { 
-                accessTokenFactory: () => token 
-            })
-            .withAutomaticReconnect()
-            .build();
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+    // Set your token and chat ID here
+    const token = "your-token-here"; // Replace with your actual token
+    const chatId = "your-chat-id-here"; // Replace with your actual chat ID
 
-        async function start() {
-            try {
-                await connection.start();
-                console.log("Connected to hub");
-                await connection.invoke('JoinChatSession', chatId);
-            } catch (err) {
-                console.error(err);
-                setTimeout(start, 5000);
+    const connection = new signalR.HubConnectionBuilder()
+        .withUrl("/chatHub", {
+            accessTokenFactory: () => token
+        })
+        .withAutomaticReconnect()
+        .build();
+
+    async function start() {
+        try {
+            await connection.start();
+            console.log("Connected to hub");
+            await connection.invoke('JoinChatSession', chatId);
+        } catch (err) {
+            console.error(err);
+            setTimeout(start, 5000);
+        }
+    }
+
+    async function sendMessage() {
+        const messageInput = document.getElementById('messageInput');
+        const content = messageInput.value.trim();
+
+        if (!content) return;
+
+        try {
+            await connection.invoke('SendMessage', chatId, content);
+            messageInput.value = '';
+        } catch (error) {
+            console.error('Error sending message:', error);
+        }
+    }
+
+    // Handle received messages
+    connection.on('ReceiveMessage', (message) => {
+        const messagesList = document.getElementById('messagesList');
+        const messageClass = message.isFromAi ? 'ai-message' : 'user-message';
+        messagesList.innerHTML += `<div class="message ${messageClass}">${marked.parse(message.content)}</div>`;
+        messagesList.scrollTop = messagesList.scrollHeight;
+    });
+
+    // Handle streaming message chunks
+    connection.on('ReceiveMessageChunk', (messageId, chunk) => {
+        const messagesList = document.getElementById('messagesList');
+        let messageElement = messagesList.querySelector(`[data-message-id="${messageId}"]`);
+
+        if (!messageElement) {
+            messageElement = document.createElement('div');
+            messageElement.className = 'message ai-message';
+            messageElement.setAttribute('data-message-id', messageId);
+            messagesList.appendChild(messageElement);
+        }
+
+        let content = chunk;
+        if (typeof chunk === 'object' && chunk !== null && 'content' in chunk) {
+            content = chunk.content;
+            if ('inputTokens' in chunk && 'outputTokens' in chunk) {
+                updateTokenDisplay(chunk.inputTokens, chunk.outputTokens);
             }
         }
 
-        async function sendMessage() {
-            const messageInput = document.getElementById('messageInput');
-            const content = messageInput.value.trim();
-            
-            if (!content) return;
-            
-            try {
-                await connection.invoke('SendMessage', chatId, content);
-                messageInput.value = '';
-            } catch (error) {
-                console.error('Error sending message:', error);
-            }
-        }
+        messageElement.innerHTML = marked.parse(messageElement.textContent + content);
+        messagesList.scrollTop = messagesList.scrollHeight;
+    });
 
-        // Handle received messages
-        connection.on('ReceiveMessage', (message) => {
-            const messagesList = document.getElementById('messagesList');
-            const messageClass = message.isFromAi ? 'ai-message' : 'user-message';
-            messagesList.innerHTML += `<div class="message ${messageClass}">${marked.parse(message.content)}</div>`;
-            messagesList.scrollTop = messagesList.scrollHeight;
+    // Function to update token displays
+    function updateTokenDisplay(inputTokens, outputTokens) {
+        document.getElementById("input-tokens").textContent = inputTokens.toLocaleString();
+        document.getElementById("output-tokens").textContent = outputTokens.toLocaleString();
+        document.getElementById("total-tokens").textContent = (inputTokens + outputTokens).toLocaleString();
+
+        const statElements = document.querySelectorAll('.stat-value');
+        statElements.forEach(el => {
+            el.classList.add('updated');
+            setTimeout(() => el.classList.remove('updated'), 500);
+        });
+    }
+
+    // Handle token usage updates
+    connection.on("TokenUsageUpdated", function (tokenData) {
+        document.getElementById("input-tokens").textContent = tokenData.inputTokens.toLocaleString();
+        document.getElementById("output-tokens").textContent = tokenData.outputTokens.toLocaleString();
+        document.getElementById("total-tokens").textContent = (tokenData.inputTokens + tokenData.outputTokens).toLocaleString();
+
+        const formattedCost = new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 4,
+            maximumFractionDigits: 4
+        }).format(tokenData.totalCost);
+        document.getElementById("token-cost").textContent = formattedCost;
+
+        const statElements = document.querySelectorAll('.stat-value');
+        statElements.forEach(el => {
+            el.classList.add('updated');
+            setTimeout(() => el.classList.remove('updated'), 500);
         });
 
-        // Handle streaming message chunks
-        connection.on('ReceiveMessageChunk', (messageId, chunk) => {
-            const messagesList = document.getElementById('messagesList');
-            let messageElement = messagesList.querySelector(`[data-message-id="${messageId}"]`);
-            
-            if (!messageElement) {
-                messageElement = document.createElement('div');
-                messageElement.className = 'message ai-message';
-                messageElement.setAttribute('data-message-id', messageId);
-                messagesList.appendChild(messageElement);
-            }
-            
-            // Check if chunk is an object with content property (StreamResponse)
-            let content = chunk;
-            if (typeof chunk === 'object' && chunk !== null && 'content' in chunk) {
-                content = chunk.content;
-                
-                // Update token information if available in chunk
-                if ('inputTokens' in chunk && 'outputTokens' in chunk) {
-                    updateTokenDisplay(chunk.inputTokens, chunk.outputTokens);
-                }
-            }
-            
-            // Append content and render markdown
-            messageElement.innerHTML = marked.parse(messageElement.textContent + content);
-            messagesList.scrollTop = messagesList.scrollHeight;
-        });
+        console.log("Token usage updated:", tokenData);
+    });
 
-        // Function to update token displays
-        function updateTokenDisplay(inputTokens, outputTokens) {
-            document.getElementById("input-tokens").textContent = inputTokens.toLocaleString();
-            document.getElementById("output-tokens").textContent = outputTokens.toLocaleString();
-            document.getElementById("total-tokens").textContent = (inputTokens + outputTokens).toLocaleString();
-            
-            // Add visual indication that values have updated
-            const statElements = document.querySelectorAll('.stat-value');
-            statElements.forEach(el => {
-                el.classList.add('updated');
-                setTimeout(() => el.classList.remove('updated'), 500);
-            });
-        }
+    // Start the connection
+    start();
 
-        // Handle token usage updates
-        connection.on("TokenUsageUpdated", function (tokenData) {
-            // Update token displays
-            document.getElementById("input-tokens").textContent = tokenData.inputTokens.toLocaleString();
-            document.getElementById("output-tokens").textContent = tokenData.outputTokens.toLocaleString();
-            document.getElementById("total-tokens").textContent = (tokenData.inputTokens + tokenData.outputTokens).toLocaleString();
-            
-            // Format cost as currency
-            const formattedCost = new Intl.NumberFormat('en-US', { 
-                style: 'currency', 
-                currency: 'USD',
-                minimumFractionDigits: 4,
-                maximumFractionDigits: 4 
-            }).format(tokenData.totalCost);
-            
-            document.getElementById("token-cost").textContent = formattedCost;
-            
-            // Add visual indication that values have updated
-            const statElements = document.querySelectorAll('.stat-value');
-            statElements.forEach(el => {
-                el.classList.add('updated');
-                setTimeout(() => el.classList.remove('updated'), 500);
-            });
-            
-            console.log("Token usage updated:", tokenData);
-        });
-
-        // Start the connection
-        start();
-
-        // Add enter key support
-        document.getElementById('messageInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
-        });
-    </script>
+    // Add enter key support
+    document.getElementById('messageInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+</script>
 </body>
 </html>
