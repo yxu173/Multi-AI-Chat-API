@@ -25,7 +25,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<ChatTokenUsage> ChatTokenUsages { get; set; }
     public DbSet<UserApiKey> UserApiKeys { get; set; }
     public DbSet<UserAiModel> UserAiModels { get; set; }
-    public DbSet<UserPluginPreference> UserPluginPreferences { get; set; }
+    public DbSet<UserPlugin> UserPlugins { get; set; }
+    public DbSet<Plugin> Plugins { get; set; }
+    public DbSet<ChatSessionPlugin> ChatSessionPlugins { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

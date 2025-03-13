@@ -43,10 +43,12 @@ public static class DependencyInjection
         services.AddScoped<IUserApiKeyRepository, UserApiKeyRepository>();
         services.AddScoped<IAiModelRepository, AiModelRepository>();
         services.AddScoped<IAiProviderRepository, AiProviderRepository>();
-        services.AddScoped<IUserPluginPreferenceRepository, UserPluginPreferenceRepository>();
+        services.AddScoped<IUserPluginRepository, UserPluginRepository>();
+        services.AddScoped<IChatSessionPluginRepository, ChatSessionPluginRepository>();
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
-
+        services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
+        services.AddScoped<IPluginExecutor, PluginExecutor>();
 
         services.AddScoped<IChatPlugin, WebSearchPlugin>(sp =>
             new WebSearchPlugin(

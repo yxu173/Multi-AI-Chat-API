@@ -6,10 +6,6 @@ namespace Infrastructure.Services.Plugins
 {
     public class WebSearchPlugin : IChatPlugin
     {
-        public string Id => "google-web-search";
-        public string Name => "Google Search";
-        public string Description => "Performs web searches using Google Custom Search API";
-
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
         private readonly string _cx;
@@ -36,23 +32,22 @@ namespace Infrastructure.Services.Plugins
                     return new PluginResult(
                         "Please provide a search query after /google",
                         false,
-                        Name,
                         "Empty search query"
                     );
                 }
 
-                var url = $"https://www.googleapis.com/customsearch/v1?key={_apiKey}&cx={_cx}&q={Uri.EscapeDataString(searchQuery)}";
-                
+                var url =
+                    $"https://www.googleapis.com/customsearch/v1?key={_apiKey}&cx={_cx}&q={Uri.EscapeDataString(searchQuery)}";
+
                 var response = await _httpClient.GetAsync(url, cancellationToken);
                 response.EnsureSuccessStatusCode();
-                
+
                 var json = await response.Content.ReadAsStringAsync();
                 var searchResponse = JsonConvert.DeserializeObject<GoogleSearchResponse>(json);
-                
+
                 return new PluginResult(
                     FormatResults(searchResponse),
-                    true,
-                    Name
+                    true
                 );
             }
             catch (Exception ex)
@@ -60,7 +55,6 @@ namespace Infrastructure.Services.Plugins
                 return new PluginResult(
                     $"Google Search Error: {ex.Message}",
                     false,
-                    Name,
                     ex.Message
                 );
             }
@@ -89,19 +83,15 @@ namespace Infrastructure.Services.Plugins
     // Response DTOs
     public class GoogleSearchResponse
     {
-        [JsonProperty("items")]
-        public List<GoogleSearchResult> Items { get; set; }
+        [JsonProperty("items")] public List<GoogleSearchResult> Items { get; set; }
     }
 
     public class GoogleSearchResult
     {
-        [JsonProperty("title")]
-        public string Title { get; set; }
+        [JsonProperty("title")] public string Title { get; set; }
 
-        [JsonProperty("link")]
-        public string Link { get; set; }
+        [JsonProperty("link")] public string Link { get; set; }
 
-        [JsonProperty("snippet")]
-        public string Snippet { get; set; }
+        [JsonProperty("snippet")] public string Snippet { get; set; }
     }
 }

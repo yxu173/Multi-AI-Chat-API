@@ -6,9 +6,6 @@ namespace Infrastructure.Services.Plugins
 {
     public class PerplexityPlugin : IChatPlugin
     {
-        public string Id => "perplexity-ai";
-        public string Name => "Perplexity AI";
-        public string Description => "Provides answers using Perplexity AI's streaming API";
 
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
@@ -21,7 +18,6 @@ namespace Infrastructure.Services.Plugins
 
         public bool CanHandle(string userMessage)
         {
-            // Example: Handle all messages starting with "/pplx"
             return userMessage?.StartsWith("/pplx") ?? false;
         }
 
@@ -72,8 +68,7 @@ namespace Infrastructure.Services.Plugins
 
                 return new PluginResult(
                     resultBuilder.ToString(),
-                    true,
-                    Name
+                    true
                 );
             }
             catch (Exception ex)
@@ -81,7 +76,6 @@ namespace Infrastructure.Services.Plugins
                 return new PluginResult(
                     $"Perplexity AI Error: {ex.Message}",
                     false,
-                    Name,
                     ex.Message
                 );
             }

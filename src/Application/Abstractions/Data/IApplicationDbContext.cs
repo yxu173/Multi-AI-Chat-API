@@ -22,6 +22,8 @@ public interface IApplicationDbContext
 
     DbSet<UserAiModel> UserAiModels { get; }
 
-    DbSet<UserPluginPreference> UserPluginPreferences { get; }
+    DbSet<UserPlugin> UserPlugins { get; }
+    DbSet<Plugin> Plugins { get; }
+    DbSet<ChatSessionPlugin> ChatSessionPlugins { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

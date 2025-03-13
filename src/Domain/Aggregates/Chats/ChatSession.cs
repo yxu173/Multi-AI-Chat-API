@@ -5,10 +5,12 @@ public sealed class ChatSession : BaseAuditableEntity
 {
     public Guid UserId { get; private set; }
     public string Title { get; private set; }
-    public Guid AiModelId { get; private set; } 
-    public string? CustomApiKey { get; private set; } 
+    public Guid AiModelId { get; private set; }
+    public string? CustomApiKey { get; private set; }
     private readonly List<Message> _messages = new();
+    private readonly List<ChatSessionPlugin> _chatSessionPlugins = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
+    public IReadOnlyList<ChatSessionPlugin> ChatSessionPlugins => _chatSessionPlugins.AsReadOnly();
 
     public AiModel AiModel { get; private set; }
 
@@ -49,5 +51,11 @@ public sealed class ChatSession : BaseAuditableEntity
     {
         CustomApiKey = apiKey;
         LastModifiedAt = DateTime.UtcNow;
+    }
+
+    public void AddPlugin(Guid pluginId, int order, bool isActive = true)
+    {
+        var chatSessionPlugin = ChatSessionPlugin.Create(Id, pluginId, order, isActive);
+        _chatSessionPlugins.Add(chatSessionPlugin);
     }
 }

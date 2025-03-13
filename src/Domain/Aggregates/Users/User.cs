@@ -6,9 +6,11 @@ namespace Domain.Aggregates.Users;
 
 public sealed class User : IdentityUser<Guid>
 {
+    private readonly List<UserPlugin> _userPlugins = new();
     private readonly List<UserAiModel> _userAiModels = new();
 
     public IReadOnlyList<UserAiModel> UserAiModels => _userAiModels.AsReadOnly();
+    public IReadOnlyList<UserPlugin> UserPlugins => _userPlugins.AsReadOnly();
 
     private User()
     {
