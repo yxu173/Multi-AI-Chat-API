@@ -7,6 +7,6 @@ public interface IPluginRepository
     Task<IEnumerable<Plugin>> GetAllAsync();
     Task<Plugin> GetByIdAsync(Guid id);
     Task<IEnumerable<Plugin>> GetByIdsAsync(IEnumerable<Guid> ids);
-    Task<Plugin> AddAsync(Plugin plugin);
+    Task AddAsync(Plugin plugin);
     Task UpdateAsync(Plugin plugin);
 }

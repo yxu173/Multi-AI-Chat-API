@@ -12,9 +12,8 @@ public class PluginExecutorFactory : IPluginExecutorFactory
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _pluginRegistry = new Dictionary<Guid, PluginInfoDto>();
-
-        // Register plugins with fixed GUIDs
-        RegisterPlugin(new Guid("8F0F9A5D-9C9F-4D1A-A033-C913E5FBE428"), typeof(WebSearchPlugin), "Web Search");
+        
+        RegisterPlugin(new Guid("74a08c15-7cc7-436f-8734-25d65a9702d6"), typeof(WebSearchPlugin), "Web Search");
         RegisterPlugin(new Guid("6A2ADF8A-9B2F-4F9D-8F31-B29A9F1C1760"), typeof(PerplexityPlugin), "Perplexity AI");
     }
 

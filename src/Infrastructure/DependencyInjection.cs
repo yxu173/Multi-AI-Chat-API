@@ -46,18 +46,23 @@ public static class DependencyInjection
         services.AddScoped<IUserApiKeyRepository, UserApiKeyRepository>();
         services.AddScoped<IAiModelRepository, AiModelRepository>();
         services.AddScoped<IAiProviderRepository, AiProviderRepository>();
+        services.AddScoped<IPluginRepository, PluginRepository>();
         services.AddScoped<IUserPluginRepository, UserPluginRepository>();
         services.AddScoped<IChatSessionPluginRepository, ChatSessionPluginRepository>();
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
 
-        services.AddScoped<IChatPlugin, WebSearchPlugin>(sp =>
+        var webSearchConfig = configuration.GetSection("AI:Plugins:WebSearch");
+        services.AddScoped<WebSearchPlugin>(sp => 
             new WebSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                configuration["Plugins:WebSearch:ApiKey"],
-                configuration["Plugins:WebSearch:SearchEngine"]
+                webSearchConfig["ApiKey"] ?? throw new InvalidOperationException("Missing WebSearch API key"),
+                webSearchConfig["SearchEngine"] ?? throw new InvalidOperationException("Missing Search Engine ID")
             )
+        );
+        services.AddScoped<IChatPlugin, WebSearchPlugin>(sp =>
+            sp.GetRequiredService<WebSearchPlugin>()
         );
 
         services.AddScoped<IChatPlugin, PerplexityPlugin>(sp =>

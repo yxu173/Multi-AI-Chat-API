@@ -15,7 +15,7 @@ public class Plugin : BaseEntity
     {
     }
 
-    public static Plugin Create(string name, string description, string pluginType, string iconUrl = null)
+    public static Plugin Create(string name, string description, string pluginType, string iconUrl = "/icon.png")
     {
         return new Plugin
         {

@@ -21,4 +21,10 @@ public class ChatSessionPluginRepository : IChatSessionPluginRepository
             .Include(csp => csp.Plugin)
             .ToListAsync();
     }
+
+    public async Task AddAsync(ChatSessionPlugin chatSessionPlugin)
+    {
+        await _dbContext.ChatSessionPlugins.AddAsync(chatSessionPlugin);
+        await _dbContext.SaveChangesAsync();
+    }
 }
