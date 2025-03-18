@@ -5,7 +5,7 @@ using SharedKernel;
 
 namespace Application.Features.AiModels.CreateAiModel;
 
-public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelCommand, bool>
+public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelCommand, Guid>
 {
     private readonly IAiModelRepository _aiModelRepository;
 
@@ -14,7 +14,7 @@ public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelC
         _aiModelRepository = aiModelRepository;
     }
 
-    public async Task<Result<bool>> Handle(CreateAiModelCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> Handle(CreateAiModelCommand request, CancellationToken cancellationToken)
     {
         var aiModel = AiModel.Create(
             request.Name,
@@ -25,6 +25,6 @@ public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelC
             request.ModelCode
         );
         await _aiModelRepository.AddAsync(aiModel);
-        return Result.Success(true);
+        return Result.Success(aiModel.Id);
     }
 }

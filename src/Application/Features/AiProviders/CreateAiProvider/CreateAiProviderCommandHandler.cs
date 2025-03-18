@@ -4,7 +4,7 @@ using SharedKernel;
 
 namespace Application.Features.AiProviders.CreateAiProvider;
 
-public sealed class CreateAiProviderCommandHandler : ICommandHandler<CreateAiProviderCommand, bool>
+public sealed class CreateAiProviderCommandHandler : ICommandHandler<CreateAiProviderCommand, Guid>
 {
     private readonly IAiProviderRepository _providerRepository;
 
@@ -13,12 +13,12 @@ public sealed class CreateAiProviderCommandHandler : ICommandHandler<CreateAiPro
         _providerRepository = providerRepository;
     }
 
-    public async Task<Result<bool>> Handle(CreateAiProviderCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> Handle(CreateAiProviderCommand request, CancellationToken cancellationToken)
     {
-        var aiProvider = AiProvider.Create(request.Name,request.Description);
-        
+        var aiProvider = AiProvider.Create(request.Name, request.Description);
+
         await _providerRepository.AddAsync(aiProvider);
-        
-        return Result.Success(true);
+
+        return Result.Success(aiProvider.Id);
     }
 }

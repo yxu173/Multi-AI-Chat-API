@@ -1,4 +1,5 @@
-﻿using Application.Abstractions.Data;
+﻿using Application.Abstractions.Authentication;
+using Application.Abstractions.Data;
 using Application.Abstractions.Messaging;
 using Domain.Aggregates.Users;
 using Domain.DomainErrors;
@@ -11,28 +12,31 @@ namespace Application.Features.Identity.Register;
 
 internal sealed class RegisterUserCommandHandler(
     UserManager<User> userManager,
-    IUserRepository userRepository)
-    : ICommandHandler<RegisterUserCommand, Guid>
+    IUserRepository userRepository,
+    ITokenProvider tokenProvider)
+    : ICommandHandler<RegisterUserCommand, string>
 {
-    public async Task<Result<Guid>> Handle(RegisterUserCommand command, CancellationToken cancellationToken)
+    public async Task<Result<string>> Handle(RegisterUserCommand command, CancellationToken cancellationToken)
     {
         if (await userRepository.ExistsByEmailAsync(command.Email))
         {
-            return Result.Failure<Guid>(UserErrors.EmailNotUnique);
+            return Result.Failure<string>(UserErrors.EmailNotUnique);
         }
 
         var user = User.Create(command.Email, command.UserName);
         if (user.IsFailure)
         {
-            return Result.Failure<Guid>(user.Error);
+            return Result.Failure<string>(user.Error);
         }
 
         var result = await userManager.CreateAsync(user.Value, command.Password);
         if (!result.Succeeded)
         {
-            return Result.Failure<Guid>(UserErrors.RegisterUserError);
+            return Result.Failure<string>(UserErrors.RegisterUserError);
         }
 
-        return user.Value.Id;
+        var token = tokenProvider.Create(user.Value);
+
+        return token;
     }
 }
