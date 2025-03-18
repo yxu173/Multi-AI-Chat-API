@@ -163,20 +163,36 @@ public class ChatService
         var plugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatSessionId);
         var applicablePlugins = plugins
             .Where(p => p.IsActive)
-            .Select(p => _pluginExecutorFactory.GetPlugin(p.PluginId))
-            .Where(p => p.CanHandle(content))
+            .Select(p => new { 
+                Plugin = _pluginExecutorFactory.GetPlugin(p.PluginId),
+                Order = p.Order 
+            })
+            .Where(p => p.Plugin.CanHandle(content))
+            .OrderBy(p => p.Order)
             .ToList();
 
         if (!applicablePlugins.Any())
             return content;
 
-        var pluginTasks = applicablePlugins.Select(p => p.ExecuteAsync(content));
-        var results = await Task.WhenAll(pluginTasks);
-        var successfulResults = results.Where(r => r.Success).Select(r => r.Result).ToList();
+        // Group plugins by order so plugins with same order run in parallel
+        var pluginGroups = applicablePlugins.GroupBy(p => p.Order).OrderBy(g => g.Key).ToList();
+        var currentContent = content;
 
-        return successfulResults.Any()
-            ? $"{content}\n\n**Plugin Results:**\n{string.Join("\n", successfulResults)}"
-            : content;
+        foreach (var group in pluginGroups)
+        {
+            // Execute all plugins in this order group in parallel
+            var pluginTasks = group.Select(p => p.Plugin.ExecuteAsync(currentContent));
+            var results = await Task.WhenAll(pluginTasks);
+            var successfulResults = results.Where(r => r.Success).Select(r => r.Result).ToList();
+
+            if (successfulResults.Any())
+            {
+                // Append plugin results to the content for the next order of plugins
+                currentContent = $"{currentContent}\n\n**Plugin Results (Order {group.Key}):**\n{string.Join("\n", successfulResults)}";
+            }
+        }
+
+        return currentContent;
     }
 
     private bool IsTransientError(string errorMessage)

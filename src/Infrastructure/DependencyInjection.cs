@@ -49,12 +49,15 @@ public static class DependencyInjection
         services.AddScoped<IPluginRepository, PluginRepository>();
         services.AddScoped<IUserPluginRepository, UserPluginRepository>();
         services.AddScoped<IChatSessionPluginRepository, ChatSessionPluginRepository>();
+        services.AddScoped<IChatFolderRepository, ChatFolderRepository>();
+        services.AddScoped<IUserAiModelSettingsRepository, UserAiModelSettingsRepository>();
+        services.AddScoped<IAiAgentRepository, AiAgentRepository>();
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
 
         var webSearchConfig = configuration.GetSection("AI:Plugins:WebSearch");
-        services.AddScoped<WebSearchPlugin>(sp => 
+        services.AddScoped<WebSearchPlugin>(sp =>
             new WebSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                 webSearchConfig["ApiKey"] ?? throw new InvalidOperationException("Missing WebSearch API key"),
@@ -69,6 +72,25 @@ public static class DependencyInjection
             new PerplexityPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                 configuration["Plugins:Perplexity:ApiKey"]
+            )
+        );
+
+        services.AddScoped<IChatPlugin, JinaWebPlugin>(sp =>
+            new JinaWebPlugin(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                configuration["Plugins:JinaWeb:ApiKey"] ??
+                throw new InvalidOperationException("Missing JinaWeb API key"),
+                maxRetries: configuration.GetValue<int>("Plugins:JinaWeb:MaxRetries", 3),
+                timeoutSeconds: configuration.GetValue<int>("Plugins:JinaWeb:TimeoutSeconds", 30),
+                includeCached: configuration.GetValue<bool>("Plugins:JinaWeb:IncludeCached", true)
+            )
+        );
+
+        services.AddScoped<IChatPlugin, WebPageReader>(sp =>
+            new WebPageReader(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                configuration["Plugins:WebPageReader:ApiKey"] ??
+                throw new InvalidOperationException("Missing WebPageReader API key")
             )
         );
 

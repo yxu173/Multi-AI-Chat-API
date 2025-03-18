@@ -15,6 +15,8 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         
         RegisterPlugin(new Guid("74a08c15-7cc7-436f-8734-25d65a9702d6"), typeof(WebSearchPlugin), "Web Search");
         RegisterPlugin(new Guid("6A2ADF8A-9B2F-4F9D-8F31-B29A9F1C1760"), typeof(PerplexityPlugin), "Perplexity AI");
+        RegisterPlugin(new Guid("B4BDAF1C-7E6A-4B7D-8F31-B29A9F1C1760"), typeof(JinaWebPlugin), "Jina Web");
+        RegisterPlugin(new Guid("B4BDAF1C-7E6A-4B7D-8F31-B29A9F1C1760"), typeof(WebPageReader), "Web Page Reader");
     }
 
     private void RegisterPlugin(Guid id, Type pluginType, string name)

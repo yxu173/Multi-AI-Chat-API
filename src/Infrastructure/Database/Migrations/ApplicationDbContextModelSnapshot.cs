@@ -64,6 +64,9 @@ namespace Infrastructure.Database.Migrations
                     b.Property<string>("CustomApiKey")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("FolderId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -79,7 +82,76 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("AiModelId");
 
+                    b.HasIndex("FolderId");
+
                     b.ToTable("ChatSessions", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.AiAgent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AiModelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("IconUrl")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("LastModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SystemPrompt")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AiModelId");
+
+                    b.ToTable("AiAgents");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.AiAgentPlugin", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AiAgentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("PluginId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AiAgentId");
+
+                    b.HasIndex("PluginId");
+
+                    b.ToTable("AiAgentPlugins");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.AiModel", b =>
@@ -129,6 +201,33 @@ namespace Infrastructure.Database.Migrations
                     b.ToTable("AiModels", (string)null);
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Chats.ChatFolder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("LastModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ChatFolders");
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Chats.ChatSessionPlugin", b =>
                 {
                     b.Property<Guid>("Id")
@@ -159,7 +258,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("PluginId");
 
-                    b.ToTable("ChatSessionPlugins", (string)null);
+                    b.ToTable("ChatSessionPlugins");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.ChatTokenUsage", b =>
@@ -289,7 +388,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Plugins", (string)null);
+                    b.ToTable("Plugins");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Prompts.PromptTemplate", b =>
@@ -436,6 +535,54 @@ namespace Infrastructure.Database.Migrations
                     b.ToTable("UserAiModels", (string)null);
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Users.UserAiModelSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AiModelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<double?>("FrequencyPenalty")
+                        .HasColumnType("double precision");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("MaxInputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxOutputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("PresencePenalty")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("Temperature")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("TopK")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("TopP")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid>("UserAiModelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserAiModelId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserAiModelSettings");
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Users.UserApiKey", b =>
                 {
                     b.Property<Guid>("Id")
@@ -489,7 +636,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserPlugins", (string)null);
+                    b.ToTable("UserPlugins");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -603,7 +750,43 @@ namespace Infrastructure.Database.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Domain.Aggregates.Chats.ChatFolder", "Folder")
+                        .WithMany("ChatSessions")
+                        .HasForeignKey("FolderId");
+
                     b.Navigation("AiModel");
+
+                    b.Navigation("Folder");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.AiAgent", b =>
+                {
+                    b.HasOne("Domain.Aggregates.Chats.AiModel", "AiModel")
+                        .WithMany()
+                        .HasForeignKey("AiModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AiModel");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.AiAgentPlugin", b =>
+                {
+                    b.HasOne("Domain.Aggregates.Chats.AiAgent", "AiAgent")
+                        .WithMany("AiAgentPlugins")
+                        .HasForeignKey("AiAgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Aggregates.Chats.Plugin", "Plugin")
+                        .WithMany()
+                        .HasForeignKey("PluginId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AiAgent");
+
+                    b.Navigation("Plugin");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.AiModel", b =>
@@ -718,6 +901,25 @@ namespace Infrastructure.Database.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Users.UserAiModelSettings", b =>
+                {
+                    b.HasOne("Domain.Aggregates.Users.UserAiModel", "UserAiModel")
+                        .WithMany()
+                        .HasForeignKey("UserAiModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Aggregates.Users.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+
+                    b.Navigation("UserAiModel");
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Users.UserApiKey", b =>
                 {
                     b.HasOne("AiProvider", "AiProvider")
@@ -819,9 +1021,19 @@ namespace Infrastructure.Database.Migrations
                     b.Navigation("Messages");
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Chats.AiAgent", b =>
+                {
+                    b.Navigation("AiAgentPlugins");
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Chats.AiModel", b =>
                 {
                     b.Navigation("UserAiModels");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.ChatFolder", b =>
+                {
+                    b.Navigation("ChatSessions");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.Message", b =>

@@ -4,21 +4,23 @@ using Domain.Common;
 public sealed class ChatSession : BaseAuditableEntity
 {
     public Guid UserId { get; private set; }
-    public string Title { get; private set; }
+    public string Title { get; private set; } = string.Empty;
     public Guid AiModelId { get; private set; }
     public string? CustomApiKey { get; private set; }
+    public Guid? FolderId { get; private set; }
     private readonly List<Message> _messages = new();
     private readonly List<ChatSessionPlugin> _chatSessionPlugins = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
     public IReadOnlyList<ChatSessionPlugin> ChatSessionPlugins => _chatSessionPlugins.AsReadOnly();
 
-    public AiModel AiModel { get; private set; }
+    public AiModel AiModel { get; private set; } = null!;
+    public ChatFolder? Folder { get; private set; }
 
     private ChatSession()
     {
     }
 
-    public static ChatSession Create(Guid userId, Guid aiModelId, string? customApiKey = null)
+    public static ChatSession Create(Guid userId, Guid aiModelId, string? customApiKey = null, Guid? folderId = null)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
@@ -30,6 +32,7 @@ public sealed class ChatSession : BaseAuditableEntity
             Title = "New Chat",
             AiModelId = aiModelId,
             CustomApiKey = customApiKey,
+            FolderId = folderId,
             CreatedAt = DateTime.UtcNow
         };
     }
@@ -57,5 +60,18 @@ public sealed class ChatSession : BaseAuditableEntity
     {
         var chatSessionPlugin = ChatSessionPlugin.Create(Id, pluginId, order, isActive);
         _chatSessionPlugins.Add(chatSessionPlugin);
+    }
+    
+    public void MoveToFolder(Guid? folderId)
+    {
+        FolderId = folderId;
+        LastModifiedAt = DateTime.UtcNow;
+    }
+
+    public void RemoveFromFolder()
+    {
+        FolderId = null;
+        Folder = null;
+        LastModifiedAt = DateTime.UtcNow;
     }
 }

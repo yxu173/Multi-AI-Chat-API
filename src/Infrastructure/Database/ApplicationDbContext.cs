@@ -1,4 +1,4 @@
-﻿using Application.Abstractions.Data;
+using Application.Abstractions.Data;
 using Domain.Aggregates.Chats;
 using Domain.Aggregates.Prompts;
 using Domain.Aggregates.Users;
@@ -28,6 +28,11 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<UserPlugin> UserPlugins { get; set; }
     public DbSet<Plugin> Plugins { get; set; }
     public DbSet<ChatSessionPlugin> ChatSessionPlugins { get; set; }
+    public DbSet<ChatFolder> ChatFolders { get; set; }
+    public DbSet<UserAiModelSettings> UserAiModelSettings { get; set; }
+    public DbSet<AiAgent> AiAgents { get; set; }
+    public DbSet<AiAgentPlugin> AiAgentPlugins { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
