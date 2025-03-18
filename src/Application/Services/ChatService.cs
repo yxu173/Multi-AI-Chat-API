@@ -195,21 +195,6 @@ public class ChatService
         return currentContent;
     }
 
-    private bool IsTransientError(string errorMessage)
-    {
-        if (string.IsNullOrWhiteSpace(errorMessage))
-            return false;
-        
-        return errorMessage.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
-               errorMessage.Contains("timed out", StringComparison.OrdinalIgnoreCase) ||
-               errorMessage.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
-               errorMessage.Contains("too many requests", StringComparison.OrdinalIgnoreCase) ||
-               errorMessage.Contains("server error", StringComparison.OrdinalIgnoreCase) ||
-               errorMessage.Contains("retry", StringComparison.OrdinalIgnoreCase) ||
-               errorMessage.Contains("429", StringComparison.OrdinalIgnoreCase) ||
-               errorMessage.Contains("503", StringComparison.OrdinalIgnoreCase);
-    }
-
     private async Task StreamAiResponseAsync(ChatSession chatSession, Guid userId, Message userMessage, string content)
     {
         var aiMessage = Message.CreateAiMessage(userId, chatSession.Id);

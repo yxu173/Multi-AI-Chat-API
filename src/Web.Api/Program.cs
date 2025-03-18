@@ -2,15 +2,10 @@ using Serilog;
 using Application;
 using Infrastructure;
 using Infrastructure.Database;
-using Microsoft.EntityFrameworkCore;
 using Web.Api;
 using Web.Api.Hubs;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
 using System.Runtime;
 
-// Configure GC settings to better handle unmanaged memory
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,11 +33,10 @@ builder.Services.AddCors(options =>
             .AllowCredentials());
 });
 
-// Configure HttpClient factory with connection pooling
 builder.Services.AddHttpClient("DefaultClient", client => {
     client.Timeout = TimeSpan.FromSeconds(30);
 })
-.SetHandlerLifetime(TimeSpan.FromMinutes(5)); // Default is 2 minutes
+.SetHandlerLifetime(TimeSpan.FromMinutes(5)); 
 
 builder.Services.AddHttpClient();
 
