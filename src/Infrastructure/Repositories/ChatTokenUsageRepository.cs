@@ -37,24 +37,21 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
         {
             try
             {
-                // If the entity is not being tracked, reload it first to get the latest version
                 if (_dbContext.Entry(tokenUsage).State == EntityState.Detached)
                 {
                     var freshEntity = await _dbContext.ChatTokenUsages
                         .FirstOrDefaultAsync(t => t.Id == tokenUsage.Id);
-                    
+
                     if (freshEntity == null)
                     {
-                        // Entity might have been deleted
                         throw new InvalidOperationException($"ChatTokenUsage with ID {tokenUsage.Id} not found.");
                     }
 
-                    // Update the properties on the fresh entity
                     freshEntity.UpdateTokenCountsAndCost(
                         tokenUsage.InputTokens - freshEntity.InputTokens,
                         tokenUsage.OutputTokens - freshEntity.OutputTokens,
                         tokenUsage.TotalCost - freshEntity.TotalCost);
-                        
+
                     _dbContext.Entry(freshEntity).State = EntityState.Modified;
                 }
                 else
@@ -70,19 +67,18 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
                 retryCount++;
                 if (retryCount >= maxRetries)
                 {
-                    throw; // Rethrow if we've exhausted our retries
+                    throw;
                 }
-                
-                // Clear the DbContext's change tracker to avoid stale entries
+
                 _dbContext.ChangeTracker.Clear();
-                
-                // Get a fresh instance for the next retry
+
                 tokenUsage = await _dbContext.ChatTokenUsages
                     .FirstOrDefaultAsync(t => t.Id == tokenUsage.Id);
-                
+
                 if (tokenUsage == null)
                 {
-                    throw new InvalidOperationException($"ChatTokenUsage with ID {tokenUsage.Id} not found during retry.");
+                    throw new InvalidOperationException(
+                        $"ChatTokenUsage with ID {tokenUsage.Id} not found during retry.");
                 }
             }
         }

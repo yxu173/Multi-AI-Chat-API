@@ -163,9 +163,10 @@ public class ChatService
         var plugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatSessionId);
         var applicablePlugins = plugins
             .Where(p => p.IsActive)
-            .Select(p => new { 
+            .Select(p => new
+            {
                 Plugin = _pluginExecutorFactory.GetPlugin(p.PluginId),
-                Order = p.Order 
+                Order = p.Order
             })
             .Where(p => p.Plugin.CanHandle(content))
             .OrderBy(p => p.Order)
@@ -188,7 +189,8 @@ public class ChatService
             if (successfulResults.Any())
             {
                 // Append plugin results to the content for the next order of plugins
-                currentContent = $"{currentContent}\n\n**Plugin Results (Order {group.Key}):**\n{string.Join("\n", successfulResults)}";
+                currentContent =
+                    $"{currentContent}\n\n**Plugin Results (Order {group.Key}):**\n{string.Join("\n", successfulResults)}";
             }
         }
 
@@ -216,6 +218,8 @@ public class ChatService
 
         var tokenUsage = await _tokenUsageRepository.GetByChatSessionIdAsync(chatSession.Id) ??
                          ChatTokenUsage.Create(chatSession.Id, 0, 0, 0);
+
+        await _tokenUsageRepository.AddAsync(tokenUsage);
 
         int previousInputTokens = tokenUsage.InputTokens;
 
