@@ -2,28 +2,31 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices
 {
-    public class GeminiService : IAiModelService
+    public class GeminiService : BaseAiService
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
-        private readonly string _modelCode;
+        private const string BaseUrl = "https://generativelanguage.googleapis.com/";
 
         public GeminiService(
             IHttpClientFactory httpClientFactory,
             string apiKey,
             string modelCode)
+            : base(httpClientFactory, apiKey, modelCode, BaseUrl)
         {
-            _httpClient = httpClientFactory.CreateClient();
-            _httpClient.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
-            _apiKey = apiKey;
-            _modelCode = modelCode;
         }
 
-        public async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
-            Action<int, int>? tokenCallback = null)
+        protected override void ConfigureHttpClient()
+        {
+            // No additional headers needed for base initialization
+            // API key is passed in the URL for Google's Gemini API
+        }
+
+        protected override string GetEndpointPath() => $"v1beta/models/{ModelCode}:streamGenerateContent?key={ApiKey}";
+
+        protected override object CreateRequestBody(IEnumerable<MessageDto> history)
         {
             var validHistory = history
                 .Where(m => !string.IsNullOrWhiteSpace(m.Content))
@@ -36,7 +39,7 @@ namespace Infrastructure.Services.AiProvidersServices
                 parts = new[] { new { text = m.Content } }
             }).ToArray();
 
-            var requestBody = new
+            return new
             {
                 contents,
                 generationConfig = new
@@ -47,21 +50,36 @@ namespace Infrastructure.Services.AiProvidersServices
                     topK = 40
                 }
             };
+        }
 
-            var request = new HttpRequestMessage(
-                HttpMethod.Post,
-                $"v1beta/models/{_modelCode}:streamGenerateContent?key={_apiKey}")
+        // Override the CreateRequest method since Gemini has a unique request format
+        protected override HttpRequestMessage CreateRequest(object requestBody)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath())
             {
                 Content = new StringContent(
                     JsonSerializer.Serialize(requestBody),
                     Encoding.UTF8,
                     "application/json")
             };
+            return request;
+        }
 
-            using var response = await _httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+        public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
+        {
+            var request = CreateRequest(CreateRequestBody(history));
+
+            using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            
+            try 
+            {
+                response.EnsureSuccessStatusCode();
+            }
+            catch
+            {
+                await HandleApiErrorAsync(response, "Gemini");
+                yield break;
+            }
 
             var jsonResponse = await response.Content.ReadAsStringAsync();
             using var document = JsonDocument.Parse(jsonResponse);
@@ -88,7 +106,6 @@ namespace Infrastructure.Services.AiProvidersServices
                         }
                     }
 
-
                     if (element.TryGetProperty("usageMetadata", out var usageMetadata))
                     {
                         if (usageMetadata.TryGetProperty("promptTokenCount", out var promptTokenElement))
@@ -107,34 +124,12 @@ namespace Infrastructure.Services.AiProvidersServices
                         }
                     }
 
-                    tokenCallback?.Invoke(promptTokens, outputTokens);
-
                     if (!string.IsNullOrEmpty(text))
                     {
                        yield return new StreamResponse(text, promptTokens, outputTokens);
                     }
                 }
             }
-        }
-
-        public class Response
-        {
-            public Candidate[] Candidates { get; set; }
-        }
-
-        public class Candidate
-        {
-            public Content Content { get; set; }
-        }
-
-        public class Content
-        {
-            public Part[] Parts { get; set; }
-        }
-
-        public class Part
-        {
-            public string Text { get; set; }
         }
     }
 }

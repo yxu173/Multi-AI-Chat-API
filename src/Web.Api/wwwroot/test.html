@@ -8,6 +8,7 @@
             margin: 20px auto;
             padding: 20px;
         }
+
         #messagesList {
             height: 400px;
             overflow-y: auto;
@@ -15,27 +16,33 @@
             padding: 10px;
             margin-bottom: 20px;
         }
+
         .message {
             margin: 10px 0;
             padding: 10px;
             border-radius: 8px;
         }
+
         .user-message {
             background: #e3f2fd;
             margin-left: 20px;
         }
+
         .ai-message {
             background: #f5f5f5;
             margin-right: 20px;
         }
+
         .input-container {
             display: flex;
             gap: 10px;
         }
+
         #messageInput {
             flex: 1;
             padding: 8px;
         }
+
         .instructions {
             margin-bottom: 15px;
             padding: 10px;
@@ -43,6 +50,7 @@
             border-radius: 8px;
             font-size: 0.9rem;
         }
+
         /* Token stats styles */
         .token-stats-container {
             margin: 20px 0;
@@ -51,36 +59,46 @@
             border-radius: 8px;
             background-color: #f9f9f9;
         }
+
         .token-stats {
             display: flex;
             flex-wrap: wrap;
             gap: 15px;
             margin-top: 10px;
         }
+
         .stat-box {
             padding: 10px;
             border-radius: 6px;
             background-color: white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
             min-width: 120px;
         }
+
         .stat-label {
             display: block;
             font-size: 0.8rem;
             color: #666;
             margin-bottom: 5px;
         }
+
         .stat-value {
             font-size: 1.1rem;
             font-weight: bold;
             color: #333;
         }
+
         .stat-value.updated {
             animation: highlight 0.5s ease-out;
         }
+
         @keyframes highlight {
-            0% { background-color: rgba(255, 251, 0, 0.3); }
-            100% { background-color: transparent; }
+            0% {
+                background-color: rgba(255, 251, 0, 0.3);
+            }
+            100% {
+                background-color: transparent;
+            }
         }
     </style>
 </head>
@@ -88,7 +106,8 @@
 <div class="main-container">
     <!-- Instructions for users -->
     <div class="instructions">
-        <strong>Tip:</strong> Start your message with <code>/search</code> or <code>/google</code> followed by a query (e.g., "/search latest AI news") to use the web search plugin!
+        <strong>Tip:</strong> Start your message with <code>/search</code> or <code>/google</code> followed by a query
+        (e.g., "/search latest AI news") to use the web search plugin!
     </div>
 
     <div id="messagesList"></div>
@@ -126,8 +145,8 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
     // Set your token and chat ID here
-    const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1NjEwYi0wNTFmLTcyNmQtYWVkYy1jMmU5MWJlZTA5ZGYiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3QG91dGxvb2suY29tIiwibmFtZSI6Im1yeCIsImp0aSI6ImZlZDA3OWJhLTUxYmMtNDdmMS04NmUzLTA1MTgyZjA1NzU5MiIsImF1ZCI6WyJTd2FnZ2VyVUkiLCJTd2FnZ2VyVUkiXSwibmJmIjoxNzQxOTAzMTM3LCJleHAiOjE3NDI1MDc5MzcsImlhdCI6MTc0MTkwMzEzNywiaXNzIjoiSW50ZXJuc2hpcC1QbGF0Zm9ybSJ9.LaXToJhkefMnKAr4gkUYKiPPTqUsPioQtTnkmIrSu8w"; // Replace with your actual token
-    const chatId = "c0db8e78-309a-4414-9f0a-80ef1c793f79"; // Replace with your actual chat ID
+    const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1NjEwYi0wNTFmLTcyNmQtYWVkYy1jMmU5MWJlZTA5ZGYiLCJlbWFpbCI6Im1vaGFtZWRzYW1pcjE3QG91dGxvb2suY29tIiwibmFtZSI6Im1yeCIsImp0aSI6IjhmYmE2YjliLTAxMTEtNDFhMy04MzRhLWYzOWIwOTJlOGZlNyIsImF1ZCI6WyJTd2FnZ2VyVUkiLCJTd2FnZ2VyVUkiXSwibmJmIjoxNzQyMzY0OTQxLCJleHAiOjE3NDI5Njk3NDEsImlhdCI6MTc0MjM2NDk0MSwiaXNzIjoiSW50ZXJuc2hpcC1QbGF0Zm9ybSJ9.yEvQ7zXx3PLRiaCotjTfOSKTi2QFCu3kc0DzYM-oerE"; // Replace with your actual token
+    const chatId = "6e5f6846-ab59-4c3a-bda9-b9c538972e2a"; // Replace with your actual chat ID
 
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/chatHub", {

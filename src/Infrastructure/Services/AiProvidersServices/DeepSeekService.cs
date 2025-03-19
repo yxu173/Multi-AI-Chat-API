@@ -2,29 +2,30 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
-public class DeepSeekService : IAiModelService
+public class DeepSeekService : BaseAiService
 {
-    private readonly HttpClient _httpClient;
-    private readonly string _apiKey;
-    private readonly string _modelCode;
+    private const string BaseUrl = "https://api.deepseek.com/v1/";
 
     public DeepSeekService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
         string modelCode)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {
-        _httpClient = httpClientFactory.CreateClient();
-        _httpClient.BaseAddress = new Uri("https://api.deepseek.com/v1/");
-        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-        _apiKey = apiKey;
-        _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
-        Action<int, int>? tokenCallback = null)
+    protected override void ConfigureHttpClient()
+    {
+        HttpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {ApiKey}");
+    }
+
+    protected override string GetEndpointPath() => "chat/completions";
+
+    protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
         var messages = new List<DeepSeekMessage>
         {
@@ -35,26 +36,23 @@ public class DeepSeekService : IAiModelService
             .Where(m => !string.IsNullOrEmpty(m.Content))
             .Select(m => new DeepSeekMessage(m.IsFromAi ? "assistant" : "user", m.Content)));
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
-
-        var requestBody = new
+        return new
         {
-            model = _modelCode,
+            model = ModelCode,
             messages,
             max_tokens = 2000,
             stream = true
         };
+    }
 
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
-            "application/json");
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
+    {
+        var request = CreateRequest(CreateRequestBody(history));
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         if (!response.IsSuccessStatusCode)
         {
-            var errorContent = await response.Content.ReadAsStringAsync();
-            throw new Exception($"DeepSeek API Error: {response.StatusCode} - {errorContent}");
+            await HandleApiErrorAsync(response, "DeepSeek");
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync();
@@ -116,7 +114,6 @@ public class DeepSeekService : IAiModelService
             }
         }
     }
-
 
     private record DeepSeekMessage(string role, string content);
 

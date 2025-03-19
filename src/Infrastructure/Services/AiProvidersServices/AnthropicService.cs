@@ -2,30 +2,32 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
-public class AnthropicService : IAiModelService
+public class AnthropicService : BaseAiService
 {
-    private readonly HttpClient _httpClient;
-    private readonly string _apiKey;
-    private readonly string _modelCode;
+    private const string BaseUrl = "https://api.anthropic.com/v1/";
+    private const string AnthropicVersion = "2023-06-01";
 
     public AnthropicService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
         string modelCode)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {
-        _httpClient = httpClientFactory.CreateClient();
-        _httpClient.BaseAddress = new Uri("https://api.anthropic.com/v1/");
-        _httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
-        _httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
-        _apiKey = apiKey;
-        _modelCode = modelCode;
     }
 
-    public async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
-        Action<int, int>? tokenCallback = null)
+    protected override void ConfigureHttpClient()
+    {
+        HttpClient.DefaultRequestHeaders.Add("x-api-key", ApiKey);
+        HttpClient.DefaultRequestHeaders.Add("anthropic-version", AnthropicVersion);
+    }
+
+    protected override string GetEndpointPath() => "messages";
+
+    protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
         var systemMessage = "Format your responses in markdown.";
 
@@ -38,27 +40,24 @@ public class AnthropicService : IAiModelService
             .TakeLast(10)
             .ToList();
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "messages");
-
-        var requestBody = new
+        return new
         {
-            model = _modelCode,
+            model = ModelCode,
             system = systemMessage,
             messages,
             max_tokens = 2000,
             stream = true
         };
+    }
 
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
-            "application/json");
-
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
+    {
+        var request = CreateRequest(CreateRequestBody(history));
+        
+        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         if (!response.IsSuccessStatusCode)
         {
-            var errorContent = await response.Content.ReadAsStringAsync();
-            throw new Exception($"Claude API Error: {response.StatusCode} - {errorContent}");
+            await HandleApiErrorAsync(response, "Claude");
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync();
@@ -67,10 +66,9 @@ public class AnthropicService : IAiModelService
         int inputTokens = 0;
         int outputTokens = 0;
         int estimatedOutputTokens = 0;
-
     
         StringBuilder fullResponse = new StringBuilder();
-        HashSet<string> sentChunks = new HashSet<string>(); 
+        HashSet<string> sentChunks = new HashSet<string>();
 
         while (!reader.EndOfStream)
         {
@@ -93,7 +91,6 @@ public class AnthropicService : IAiModelService
                             .GetProperty("usage")
                             .GetProperty("input_tokens")
                             .GetInt32();
-                        tokenCallback?.Invoke(inputTokens, 0);
                         break;
 
                     case "content_block_delta":
@@ -104,51 +101,23 @@ public class AnthropicService : IAiModelService
                         if (!string.IsNullOrEmpty(text))
                         {
                             fullResponse.Append(text);
-
-
                             estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
-
+                            
                             yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
-
                             sentChunks.Add(text);
-
-                            if (outputTokens == 0)
-                            {
-                                tokenCallback?.Invoke(inputTokens, estimatedOutputTokens);
-                            }
                         }
-
                         break;
 
                     case "message_delta":
                         if (doc.RootElement.TryGetProperty("usage", out var usageElement) &&
                             usageElement.TryGetProperty("output_tokens", out var outputTokenElement))
                         {
-                            outputTokens = outputTokenElement.GetInt32();
-                            tokenCallback?.Invoke(inputTokens, outputTokens);
-                        }
-
+                            outputTokens = outputTokenElement.GetInt32(); }
                         break;
                 }
             }
         }
-
-        if (outputTokens == 0 && estimatedOutputTokens > 0)
-        {
-            tokenCallback?.Invoke(inputTokens, estimatedOutputTokens);
-        }
     }
 
-
     private record ClaudeMessage(string role, string content);
-
-    private record ClaudeUsage(int input_tokens, int output_tokens);
-
-    private record ClaudeResponse(
-        string type,
-        ClaudeDelta? delta,
-        ClaudeUsage? usage
-    );
-
-    private record ClaudeDelta(string text);
 }

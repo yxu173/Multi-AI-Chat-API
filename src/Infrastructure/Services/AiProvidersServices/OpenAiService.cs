@@ -2,29 +2,30 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
-public class OpenAiService : IAiModelService
+public class OpenAiService : BaseAiService
 {
-    private readonly HttpClient _httpClient;
-    private readonly string _apiKey;
-    private readonly string _modelCode;
+    private const string BaseUrl = "https://api.openai.com/v1/";
 
     public OpenAiService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
         string modelCode)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {
-        _httpClient = httpClientFactory.CreateClient();
-        _httpClient.BaseAddress = new Uri("https://api.openai.com/v1/");
-        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-        _modelCode = modelCode;
     }
 
+    protected override void ConfigureHttpClient()
+    {
+        HttpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {ApiKey}");
+    }
 
-    public async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
-        Action<int, int>? tokenCallback = null)
+    protected override string GetEndpointPath() => "chat/completions";
+
+    protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
         var messages = new List<OpenAiMessage>
         {
@@ -35,35 +36,32 @@ public class OpenAiService : IAiModelService
             .Where(m => !string.IsNullOrEmpty(m.Content))
             .Select(m => new OpenAiMessage(m.IsFromAi ? "assistant" : "user", m.Content)));
 
-        var tokenizer = Tiktoken.ModelToEncoder.For(_modelCode);
+        return new
+        {
+            model = ModelCode,
+            messages,
+            max_tokens = 2000,
+            stream = true
+        };
+    }
+
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
+    {
+        var tokenizer = Tiktoken.ModelToEncoder.For(ModelCode);
+        var messages = ((List<OpenAiMessage>)((dynamic)CreateRequestBody(history)).messages);
 
         int inputTokens = 0;
         foreach (var msg in messages)
         {
             inputTokens += tokenizer.Encode(msg.content).Count;
         }
-        tokenCallback?.Invoke(inputTokens, 0);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
+        var request = CreateRequest(CreateRequestBody(history));
 
-        var requestBody = new
-        {
-            model = _modelCode,
-            messages,
-            max_tokens = 2000,
-            stream = true
-        };
-
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
-            "application/json");
-
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         if (!response.IsSuccessStatusCode)
         {
-            var errorContent = await response.Content.ReadAsStringAsync();
-            throw new Exception($"OpenAI API Error: {response.StatusCode} - {errorContent}");
+            await HandleApiErrorAsync(response, "OpenAI");
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync();
@@ -87,7 +85,6 @@ public class OpenAiService : IAiModelService
                     if (!string.IsNullOrEmpty(delta?.content))
                     {
                         outputTokens += tokenizer.Encode(delta.content).Count;
-                        tokenCallback?.Invoke(inputTokens, outputTokens);
                         yield return new StreamResponse(delta.content, inputTokens, outputTokens);
                     }
                 }
