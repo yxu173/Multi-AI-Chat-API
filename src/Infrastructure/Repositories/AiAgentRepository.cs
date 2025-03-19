@@ -18,6 +18,7 @@ public class AiAgentRepository : IAiAgentRepository
     {
         return await _context.AiAgents
             .Include(a => a.AiAgentPlugins)
+            .Include(a => a.AiModel)
             .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
     }
 
@@ -25,6 +26,7 @@ public class AiAgentRepository : IAiAgentRepository
     {
         return await _context.AiAgents
             .Include(a => a.AiAgentPlugins)
+            .Include(a => a.AiModel)
             .Where(a => a.UserId == userId)
             .ToListAsync(cancellationToken);
     }
@@ -39,6 +41,8 @@ public class AiAgentRepository : IAiAgentRepository
     public async Task<AiAgent> UpdateAsync(AiAgent agent, CancellationToken cancellationToken = default)
     {
         _context.Entry(agent).State = EntityState.Modified;
+        
+        _context.Entry(agent).Property("Categories").IsModified = true;
 
         foreach (var plugin in agent.AiAgentPlugins)
         {
