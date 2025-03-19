@@ -37,7 +37,6 @@ public class AnthropicService : BaseAiService
                 m.IsFromAi ? "assistant" : "user",
                 m.Content.Trim()
             ))
-            .TakeLast(10)
             .ToList();
 
         return new
