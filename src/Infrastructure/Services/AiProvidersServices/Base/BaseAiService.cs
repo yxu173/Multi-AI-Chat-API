@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Domain.Aggregates.Chats;
+using Domain.Aggregates.Users;
 
 namespace Infrastructure.Services.AiProvidersServices.Base;
 
@@ -10,34 +12,35 @@ public abstract class BaseAiService : IAiModelService
     protected readonly HttpClient HttpClient;
     protected readonly string ApiKey;
     protected readonly string ModelCode;
+    protected readonly UserAiModelSettings? ModelSettings;
+    protected readonly AiModel? AiModel;
+    private CancellationTokenSource? _stopTokenSource;
 
     protected BaseAiService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
         string modelCode,
-        string baseUrl)
+        string baseUrl,
+        UserAiModelSettings? modelSettings = null,
+        AiModel? aiModel = null)
     {
         HttpClient = httpClientFactory.CreateClient();
         HttpClient.BaseAddress = new Uri(baseUrl);
         ApiKey = apiKey;
         ModelCode = modelCode;
+        ModelSettings = modelSettings;
+        AiModel = aiModel;
 
         ConfigureHttpClient();
     }
 
-    /// <summary>
-    /// Configures HTTP client headers and other settings specific to the AI provider
-    /// </summary>
+  
     protected abstract void ConfigureHttpClient();
 
-    /// <summary>
-    /// Creates the request body for the AI provider API
-    /// </summary>
+   
     protected abstract object CreateRequestBody(IEnumerable<MessageDto> history);
 
-    /// <summary>
-    /// Creates the HTTP request with appropriate headers and endpoint
-    /// </summary>
+  
     protected virtual HttpRequestMessage CreateRequest(object requestBody)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath());
@@ -48,23 +51,124 @@ public abstract class BaseAiService : IAiModelService
         return request;
     }
 
-    /// <summary>
-    /// Gets the endpoint path for the AI provider API
-    /// </summary>
+   
     protected abstract string GetEndpointPath();
 
-    /// <summary>
-    /// Processes the streaming response from the AI provider
-    /// </summary>
+    
     public abstract IAsyncEnumerable<StreamResponse> StreamResponseAsync(
         IEnumerable<MessageDto> history);
 
-    /// <summary>
-    /// Common method to handle API errors
-    /// </summary>
+   
     protected async Task HandleApiErrorAsync(HttpResponseMessage response, string providerName)
     {
         var errorContent = await response.Content.ReadAsStringAsync();
         throw new Exception($"{providerName} API Error: {response.StatusCode} - {errorContent}");
+    }
+    
+   
+    protected Dictionary<string, object> ApplyUserSettings(Dictionary<string, object> requestObj, bool includeStopSequences = true)
+    {
+       
+        if (AiModel != null)
+        {
+            if (AiModel.MaxOutputTokens.HasValue)
+            {
+                if (!requestObj.ContainsKey("max_tokens"))
+                    requestObj["max_tokens"] = AiModel.MaxOutputTokens.Value;
+                if (!requestObj.ContainsKey("maxOutputTokens"))
+                    requestObj["maxOutputTokens"] = AiModel.MaxOutputTokens.Value;
+                if (!requestObj.ContainsKey("max_output_tokens"))
+                    requestObj["max_output_tokens"] = AiModel.MaxOutputTokens.Value;
+            }
+        }
+        
+        
+        if (ModelSettings == null)
+        {
+           
+            if (!requestObj.ContainsKey("max_tokens") && !requestObj.ContainsKey("maxOutputTokens") && !requestObj.ContainsKey("max_output_tokens"))
+                requestObj["max_tokens"] = 2000;
+            
+            return requestObj;
+        }
+        
+      
+        var settingsToApply = new Dictionary<string, object>();
+        
+    
+        
+        if (ModelSettings.Temperature.HasValue)
+        {
+            settingsToApply["temperature"] = ModelSettings.Temperature.Value;
+        }
+        
+        if (ModelSettings.TopP.HasValue)
+        {
+            settingsToApply["top_p"] = ModelSettings.TopP.Value;
+            settingsToApply["topP"] = ModelSettings.TopP.Value;
+        }
+        
+        if (ModelSettings.TopK.HasValue)
+        {
+            settingsToApply["top_k"] = ModelSettings.TopK.Value;
+            settingsToApply["topK"] = ModelSettings.TopK.Value;
+        }
+        
+        if (ModelSettings.FrequencyPenalty.HasValue)
+        {
+            settingsToApply["frequency_penalty"] = ModelSettings.FrequencyPenalty.Value;
+        }
+        
+        if (ModelSettings.PresencePenalty.HasValue)
+        {
+            settingsToApply["presence_penalty"] = ModelSettings.PresencePenalty.Value;
+        }
+        
+        if (includeStopSequences && ModelSettings.StopSequences.Any())
+        {
+            settingsToApply["stop"] = ModelSettings.StopSequences;
+            settingsToApply["stop_sequences"] = ModelSettings.StopSequences;
+        }
+        
+     
+        foreach (var setting in settingsToApply)
+        {
+            if (requestObj.ContainsKey(setting.Key))
+            {
+                requestObj[setting.Key] = setting.Value;
+            }
+            else
+            {
+                switch (setting.Key)
+                {
+                    case "max_tokens":
+                    case "temperature":
+                    case "top_p":
+                    case "top_k":
+                    case "frequency_penalty":
+                    case "presence_penalty":
+                    case "stop":
+                    
+                        requestObj[setting.Key] = setting.Value;
+                        break;
+                }
+            }
+        }
+        
+        return requestObj;
+    }
+    
+  
+    protected CancellationTokenSource GetCancellationTokenSource()
+    {
+        _stopTokenSource?.Dispose();
+        _stopTokenSource = new CancellationTokenSource();
+        return _stopTokenSource;
+    }
+    
+   
+    public virtual void StopResponse()
+    {
+        _stopTokenSource?.Cancel();
     }
 }

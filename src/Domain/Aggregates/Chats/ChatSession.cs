@@ -8,6 +8,7 @@ public sealed class ChatSession : BaseAuditableEntity
     public Guid AiModelId { get; private set; }
     public string? CustomApiKey { get; private set; }
     public Guid? FolderId { get; private set; }
+    public string? SystemPrompt { get; private set; }
     private readonly List<Message> _messages = new();
     private readonly List<ChatSessionPlugin> _chatSessionPlugins = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
@@ -20,7 +21,7 @@ public sealed class ChatSession : BaseAuditableEntity
     {
     }
 
-    public static ChatSession Create(Guid userId, Guid aiModelId, string? customApiKey = null, Guid? folderId = null)
+    public static ChatSession Create(Guid userId, Guid aiModelId, string? title = null, string? customApiKey = null, Guid? folderId = null, string? systemPrompt = null)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
@@ -29,7 +30,8 @@ public sealed class ChatSession : BaseAuditableEntity
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            Title = "New Chat",
+            Title = title ?? "New Chat",
+            SystemPrompt = systemPrompt,
             AiModelId = aiModelId,
             CustomApiKey = customApiKey,
             FolderId = folderId,

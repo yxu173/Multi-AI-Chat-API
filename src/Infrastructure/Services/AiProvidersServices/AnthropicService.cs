@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Domain.Aggregates.Chats;
 using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices;
@@ -9,13 +10,16 @@ namespace Infrastructure.Services.AiProvidersServices;
 public class AnthropicService : BaseAiService
 {
     private const string BaseUrl = "https://api.anthropic.com/v1/";
+
     private const string AnthropicVersion = "2023-06-01";
 
     public AnthropicService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
-        string modelCode)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
+        string modelCode,
+        Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
+        AiModel? aiModel = null)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel)
     {
     }
 
@@ -39,24 +43,48 @@ public class AnthropicService : BaseAiService
             ))
             .ToList();
 
-        return new
+        var requestObj = new Dictionary<string, object>
         {
-            model = ModelCode,
-            system = systemMessage,
-            messages,
-            max_tokens = 2000,
-            stream = true
+            ["model"] = ModelCode,
+            ["system"] = systemMessage,
+            ["messages"] = messages,
+            ["stream"] = true
         };
+
+        var requestWithSettings = ApplyUserSettings(requestObj, false);
+
+
+        requestWithSettings.Remove("frequency_penalty");
+        requestWithSettings.Remove("presence_penalty");
+        requestWithSettings.Remove("maxOutputTokens");
+        requestWithSettings.Remove("max_output_tokens");
+
+
+        if (ModelSettings?.StopSequences != null && ModelSettings.StopSequences.Any())
+        {
+            requestWithSettings["stop_sequences"] = ModelSettings.StopSequences;
+        }
+
+        return requestWithSettings;
     }
 
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
     {
+        var cancellationToken = GetCancellationTokenSource().Token;
+
         var request = CreateRequest(CreateRequestBody(history));
-        
+
         using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "Claude");
+            yield break;
+        }
+
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            yield break;
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync();
@@ -65,11 +93,11 @@ public class AnthropicService : BaseAiService
         int inputTokens = 0;
         int outputTokens = 0;
         int estimatedOutputTokens = 0;
-    
+
         StringBuilder fullResponse = new StringBuilder();
         HashSet<string> sentChunks = new HashSet<string>();
 
-        while (!reader.EndOfStream)
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync();
             if (string.IsNullOrWhiteSpace(line)) continue;
@@ -101,17 +129,20 @@ public class AnthropicService : BaseAiService
                         {
                             fullResponse.Append(text);
                             estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
-                            
+
                             yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
                             sentChunks.Add(text);
                         }
+
                         break;
 
                     case "message_delta":
                         if (doc.RootElement.TryGetProperty("usage", out var usageElement) &&
                             usageElement.TryGetProperty("output_tokens", out var outputTokenElement))
                         {
-                            outputTokens = outputTokenElement.GetInt32(); }
+                            outputTokens = outputTokenElement.GetInt32();
+                        }
+
                         break;
                 }
             }
@@ -119,4 +150,10 @@ public class AnthropicService : BaseAiService
     }
 
     private record ClaudeMessage(string role, string content);
+
+
+    public override void StopResponse()
+    {
+        base.StopResponse();
+    }
 }

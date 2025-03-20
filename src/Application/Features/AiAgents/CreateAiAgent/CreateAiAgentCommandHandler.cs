@@ -46,7 +46,7 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
             );
 
           
-            if (request.Plugins != null && request.Plugins.Any())
+            if (request.Plugins != null && request.Plugins.Count > 0)
             {
                 foreach (var plugin in request.Plugins)
                 {

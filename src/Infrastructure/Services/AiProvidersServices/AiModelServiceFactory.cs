@@ -2,6 +2,7 @@ using Application.Abstractions.Authentication;
 using Application.Abstractions.Data;
 using Application.Abstractions.Interfaces;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Users;
 using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -58,15 +59,17 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             }
         }
 
-      
+        // Get user model settings if available
+        var userSettings = await _dbContext.UserAiModelSettings
+            .FirstOrDefaultAsync(s => s.UserId == userId);
 
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => CreateChatGptService(aiModel, apiKey),
-            ModelType.Anthropic => CreateClaudeService(aiModel, apiKey),
-            ModelType.DeepSeek => CreateDeepSeekService(aiModel, apiKey),
-            ModelType.Gemini => CreateGeminiService(aiModel, apiKey),
-          //  ModelType.Imagen3 => CreateImagen3Service(aiModel),
+            ModelType.OpenAi => CreateChatGptService(aiModel, apiKey, userSettings),
+            ModelType.Anthropic => CreateClaudeService(aiModel, apiKey, userSettings),
+            ModelType.DeepSeek => CreateDeepSeekService(aiModel, apiKey, userSettings),
+            ModelType.Gemini => CreateGeminiService(aiModel, apiKey, userSettings),
+            //ModelType.Imagen3 => CreateImagen3Service(aiModel),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
     }
@@ -76,40 +79,48 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         return GetServiceAsync(userId, modelId, customApiKey).GetAwaiter().GetResult();
     }
 
-    private OpenAiService CreateChatGptService(AiModel aiModel, string apiKey)
+    private OpenAiService CreateChatGptService(AiModel aiModel, string apiKey, UserAiModelSettings? userSettings = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new OpenAiService(
             httpClientFactory,
             apiKey,
-            aiModel.ModelCode);
+            aiModel.ModelCode,
+            userSettings,
+            aiModel);
     }
 
-    private AnthropicService CreateClaudeService(AiModel aiModel, string apiKey)
+    private AnthropicService CreateClaudeService(AiModel aiModel, string apiKey,
+        UserAiModelSettings? userSettings = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new AnthropicService(
             httpClientFactory,
             apiKey,
-            aiModel.ModelCode);
+            aiModel.ModelCode,
+            userSettings,
+            aiModel);
     }
 
-    private DeepSeekService CreateDeepSeekService(AiModel aiModel, string apiKey)
+    private DeepSeekService CreateDeepSeekService(AiModel aiModel, string apiKey,
+        UserAiModelSettings? userSettings = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new DeepSeekService(
             httpClientFactory,
             apiKey,
-            aiModel.ModelCode);
+            aiModel.ModelCode,
+            userSettings);
     }
 
-    private GeminiService CreateGeminiService(AiModel aiModel, string apiKey)
+    private GeminiService CreateGeminiService(AiModel aiModel, string apiKey, UserAiModelSettings? userSettings = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new GeminiService(
             httpClientFactory,
             apiKey,
-            aiModel.ModelCode);
+            aiModel.ModelCode,
+            userSettings);
     }
 
     private ImagenService CreateImagen3Service(AiModel aiModel)

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Domain.Aggregates.Chats;
 using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices
@@ -9,19 +10,20 @@ namespace Infrastructure.Services.AiProvidersServices
     public class GeminiService : BaseAiService
     {
         private const string BaseUrl = "https://generativelanguage.googleapis.com/";
+    
 
         public GeminiService(
             IHttpClientFactory httpClientFactory,
             string apiKey,
-            string modelCode)
-            : base(httpClientFactory, apiKey, modelCode, BaseUrl)
+            string modelCode,
+            Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
+            AiModel? aiModel = null)
+            : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel)
         {
         }
 
         protected override void ConfigureHttpClient()
         {
-            // No additional headers needed for base initialization
-            // API key is passed in the URL for Google's Gemini API
         }
 
         protected override string GetEndpointPath() => $"v1beta/models/{ModelCode}:streamGenerateContent?key={ApiKey}";
@@ -39,20 +41,42 @@ namespace Infrastructure.Services.AiProvidersServices
                 parts = new[] { new { text = m.Content } }
             }).ToArray();
 
+            var generationConfig = new Dictionary<string, object>();
+            
+            
+            if (AiModel?.MaxOutputTokens.HasValue == true)
+            {
+                generationConfig["maxOutputTokens"] = AiModel.MaxOutputTokens.Value;
+            }
+            
+           
+            if (ModelSettings != null)
+            {
+                generationConfig["temperature"] = ModelSettings.Temperature ?? 0.7;
+                generationConfig["topP"] = ModelSettings.TopP ?? 0.8;
+                generationConfig["topK"] = ModelSettings.TopK ?? 40;
+                
+                if (ModelSettings.StopSequences != null && ModelSettings.StopSequences.Any())
+                {
+                    generationConfig["stopSequences"] = ModelSettings.StopSequences;
+                }
+            }
+            else
+            {
+                // Default values if no settings provided
+                generationConfig["temperature"] = 0.7;
+                generationConfig["topP"] = 0.8;
+                generationConfig["topK"] = 40;
+            }
+
             return new
             {
                 contents,
-                generationConfig = new
-                {
-                    temperature = 0.7,
-                    maxOutputTokens = 2048,
-                    topP = 0.8,
-                    topK = 40
-                }
+                generationConfig
             };
         }
 
-        // Override the CreateRequest method since Gemini has a unique request format
+      
         protected override HttpRequestMessage CreateRequest(object requestBody)
         {
             var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath())
@@ -67,6 +91,9 @@ namespace Infrastructure.Services.AiProvidersServices
 
         public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
         {
+            // Get cancellation token from base implementation
+            var cancellationToken = GetCancellationTokenSource().Token;
+            
             var request = CreateRequest(CreateRequestBody(history));
 
             using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -80,6 +107,12 @@ namespace Infrastructure.Services.AiProvidersServices
                 await HandleApiErrorAsync(response, "Gemini");
                 yield break;
             }
+            
+            // Check for cancellation
+            if (cancellationToken.IsCancellationRequested)
+            {
+                yield break;
+            }
 
             var jsonResponse = await response.Content.ReadAsStringAsync();
             using var document = JsonDocument.Parse(jsonResponse);
@@ -89,6 +122,12 @@ namespace Infrastructure.Services.AiProvidersServices
             {
                 foreach (var element in root.EnumerateArray())
                 {
+                    // Check for cancellation between chunks
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        yield break;
+                    }
+                    
                     string? text = null;
                     int promptTokens = 0;
                     int outputTokens = 0;
@@ -130,6 +169,12 @@ namespace Infrastructure.Services.AiProvidersServices
                     }
                 }
             }
+        }
+        
+       
+        public override void StopResponse()
+        {
+            base.StopResponse();
         }
     }
 }

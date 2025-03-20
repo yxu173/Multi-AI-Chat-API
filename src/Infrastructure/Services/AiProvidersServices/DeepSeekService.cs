@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Domain.Aggregates.Chats;
 using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices;
@@ -13,8 +14,10 @@ public class DeepSeekService : BaseAiService
     public DeepSeekService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
-        string modelCode)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
+        string modelCode,
+        Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
+        AiModel? aiModel = null)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel)
     {
     }
 
@@ -36,23 +39,34 @@ public class DeepSeekService : BaseAiService
             .Where(m => !string.IsNullOrEmpty(m.Content))
             .Select(m => new DeepSeekMessage(m.IsFromAi ? "assistant" : "user", m.Content)));
 
-        return new
+        var requestObj = new Dictionary<string, object>
         {
-            model = ModelCode,
-            messages,
-            max_tokens = 2000,
-            stream = true
+            ["model"] = ModelCode,
+            ["messages"] = messages,
+            ["stream"] = true
         };
+        
+       
+        var requestWithSettings = ApplyUserSettings(requestObj);
+        
+        
+        return requestWithSettings;
     }
 
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
     {
+        var cancellationToken = GetCancellationTokenSource().Token;
         var request = CreateRequest(CreateRequestBody(history));
 
         using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "DeepSeek");
+        }
+        
+        if (cancellationToken.IsCancellationRequested)
+        {
+            yield break;
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync();
@@ -61,7 +75,7 @@ public class DeepSeekService : BaseAiService
         var contentBuffer = new List<string>();
         DeepSeekUsage? finalUsage = null;
 
-        while (!reader.EndOfStream)
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync();
             if (string.IsNullOrWhiteSpace(line)) continue;
@@ -131,4 +145,9 @@ public class DeepSeekService : BaseAiService
     private record DeepSeekDelta(string content);
 
     private record DeepSeekUsage(int prompt_tokens, int completion_tokens, int total_tokens);
+    
+    public override void StopResponse()
+    {
+        base.StopResponse();
+    }
 }
