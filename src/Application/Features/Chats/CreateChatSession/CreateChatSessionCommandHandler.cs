@@ -17,7 +17,7 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
 
     public async Task<Result<Guid>> Handle(CreateChatSessionCommand request, CancellationToken cancellationToken)
     {
-        var chatSession = ChatSession.Create(request.UserId, request.ModelId, request.customApiKey);
+        var chatSession = ChatSession.Create(request.UserId, request.ModelId, request.FolderId, request.customApiKey);
         await _chatSessionRepository.AddAsync(chatSession);
         return Result.Success(chatSession.Id);
     }

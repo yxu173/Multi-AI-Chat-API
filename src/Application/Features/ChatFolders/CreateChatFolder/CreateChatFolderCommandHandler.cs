@@ -5,7 +5,7 @@ using SharedKernel;
 
 namespace Application.Features.ChatFolders.CreateChatFolder;
 
-public sealed class CreateChatFolderCommandHandler : ICommandHandler<CreateChatFolderCommand, bool>
+public sealed class CreateChatFolderCommandHandler : ICommandHandler<CreateChatFolderCommand, Guid>
 {
     private readonly IChatFolderRepository _chatFolderRepository;
 
@@ -14,10 +14,10 @@ public sealed class CreateChatFolderCommandHandler : ICommandHandler<CreateChatF
         _chatFolderRepository = chatFolderRepository;
     }
 
-    public async Task<Result<bool>> Handle(CreateChatFolderCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> Handle(CreateChatFolderCommand request, CancellationToken cancellationToken)
     {
         var chatFolder = ChatFolder.Create(request.UserId, request.Name, request.Description);
         await _chatFolderRepository.AddAsync(chatFolder, cancellationToken);
-        return Result.Success(true);
+        return Result.Success(chatFolder.Id);
     }
 }

@@ -21,7 +21,8 @@ public sealed class ChatSession : BaseAuditableEntity
     {
     }
 
-    public static ChatSession Create(Guid userId, Guid aiModelId, string? title = null, string? customApiKey = null, Guid? folderId = null, string? systemPrompt = null)
+    public static ChatSession Create(Guid userId, Guid aiModelId, Guid? folderId = null, string? customApiKey = null,
+        string? systemPrompt = null)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
@@ -30,7 +31,7 @@ public sealed class ChatSession : BaseAuditableEntity
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            Title = title ?? "New Chat",
+            Title = "New Chat",
             SystemPrompt = systemPrompt,
             AiModelId = aiModelId,
             CustomApiKey = customApiKey,
@@ -63,7 +64,7 @@ public sealed class ChatSession : BaseAuditableEntity
         var chatSessionPlugin = ChatSessionPlugin.Create(Id, pluginId, order, isActive);
         _chatSessionPlugins.Add(chatSessionPlugin);
     }
-    
+
     public void MoveToFolder(Guid? folderId)
     {
         FolderId = folderId;
