@@ -1,0 +1,27 @@
+using Application.Features.UserAiModelSettings.UpdateUserAiModelSettings;
+using Microsoft.AspNetCore.Mvc;
+using Web.Api.Contracts.UserSettings;
+using Web.Api.Extensions;
+using Web.Api.Infrastructure;
+
+namespace Web.Api.Controllers;
+
+public class UserSettingsController : BaseController
+{
+    [HttpPut("UpdateUserAiModelSettings")]
+    public async Task<IResult> UpdateUserAiModelSettings([FromBody] UpdateUserAiModelSettingsRequest request)
+    {
+        var command = new UpdateUserAiModelSettingsCommand
+        (
+            UserId,
+            request.Temperature,
+            request.TopP,
+            request.TopK,
+            request.FrequencyPenalty,
+            request.PresencePenalty
+        );
+
+        var result = await _mediator.Send(command);
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+}

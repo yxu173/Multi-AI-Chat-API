@@ -56,7 +56,7 @@ internal sealed class RegisterUserCommandHandler(
         }
 
 
-        var settings = UserAiModelSettings.Create(
+        var settings = Domain.Aggregates.Users.UserAiModelSettings.Create(
             userId
         );
 

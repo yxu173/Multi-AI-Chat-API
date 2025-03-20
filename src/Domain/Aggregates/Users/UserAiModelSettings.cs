@@ -41,15 +41,13 @@ public sealed class UserAiModelSettings : BaseEntity
         double? topP = null,
         int? topK = null,
         double? frequencyPenalty = null,
-        double? presencePenalty = null,
-        List<string>? stopSequences = null)
+        double? presencePenalty = null)
     {
         if (temperature.HasValue) Temperature = temperature;
         if (topP.HasValue) TopP = topP;
         if (topK.HasValue) TopK = topK;
         if (frequencyPenalty.HasValue) FrequencyPenalty = frequencyPenalty;
         if (presencePenalty.HasValue) PresencePenalty = presencePenalty;
-        if (stopSequences != null) StopSequences = stopSequences;
     }
 
     public void SetDefault(bool isDefault)
