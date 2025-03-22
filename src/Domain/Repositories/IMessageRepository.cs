@@ -4,6 +4,7 @@ namespace Domain.Repositories;
 
 public interface IMessageRepository
 {
-    Task AddAsync(Message message);
-    Task UpdateAsync(Message message);
+    Task AddAsync(Message message, CancellationToken cancellationToken);
+    Task UpdateAsync(Message message, CancellationToken cancellationToken);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 }

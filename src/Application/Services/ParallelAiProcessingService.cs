@@ -42,7 +42,7 @@ public class ParallelAiProcessingService
             int inputTokens = 0;
             int outputTokens = 0;
 
-            await foreach (var chunk in aiService.StreamResponseAsync(messages))
+            await foreach (var chunk in aiService.StreamResponseAsync(messages, cancellationToken))
             {
                 content.Append(chunk.Content);
                 inputTokens = chunk.InputTokens;

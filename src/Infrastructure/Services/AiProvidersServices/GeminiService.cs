@@ -89,14 +89,12 @@ namespace Infrastructure.Services.AiProvidersServices
             return request;
         }
 
-        public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
+        public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, CancellationToken cancellationToken)
         {
-            // Get cancellation token from base implementation
-            var cancellationToken = GetCancellationTokenSource().Token;
             
             var request = CreateRequest(CreateRequestBody(history));
 
-            using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             
             try 
             {

@@ -27,7 +27,7 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
             .FirstOrDefaultAsync(t => t.ChatId == chatSessionId);
     }
 
-    public async Task UpdateAsync(ChatTokenUsage tokenUsage)
+    public async Task UpdateAsync(ChatTokenUsage tokenUsage, CancellationToken cancellationToken)
     {
         const int maxRetries = 3;
         int retryCount = 0;
@@ -40,7 +40,7 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
                 if (_dbContext.Entry(tokenUsage).State == EntityState.Detached)
                 {
                     var freshEntity = await _dbContext.ChatTokenUsages
-                        .FirstOrDefaultAsync(t => t.Id == tokenUsage.Id);
+                        .FirstOrDefaultAsync(t => t.Id == tokenUsage.Id, cancellationToken: cancellationToken);
 
                     if (freshEntity == null)
                     {
@@ -59,7 +59,7 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
                     _dbContext.Entry(tokenUsage).State = EntityState.Modified;
                 }
 
-                await _dbContext.SaveChangesAsync();
+                await _dbContext.SaveChangesAsync(cancellationToken);
                 success = true;
             }
             catch (DbUpdateConcurrencyException)
@@ -73,7 +73,7 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
                 _dbContext.ChangeTracker.Clear();
 
                 tokenUsage = await _dbContext.ChatTokenUsages
-                    .FirstOrDefaultAsync(t => t.Id == tokenUsage.Id);
+                    .FirstOrDefaultAsync(t => t.Id == tokenUsage.Id, cancellationToken: cancellationToken);
 
                 if (tokenUsage == null)
                 {

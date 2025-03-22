@@ -57,6 +57,14 @@ public sealed class Message : BaseAuditableEntity
             CreatedAt = DateTime.UtcNow
         };
     }
+    
+    public void UpdateContent(string newContent)
+    {
+        if (string.IsNullOrWhiteSpace(newContent))
+            throw new ArgumentException("Content cannot be empty.", nameof(newContent));
+        Content = newContent;
+        LastModifiedAt = DateTime.UtcNow;
+    }
 
     public void AppendContent(string chunk)
     {
@@ -67,6 +75,11 @@ public sealed class Message : BaseAuditableEntity
     public void CompleteMessage()
     {
         Status = MessageStatus.Completed;
+        LastModifiedAt = DateTime.UtcNow;
+    }
+    public void InterruptMessage()
+    {
+        Status = MessageStatus.Interrupted;
         LastModifiedAt = DateTime.UtcNow;
     }
 

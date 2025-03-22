@@ -8,6 +8,7 @@ public sealed class ChatSession : BaseAuditableEntity
     public Guid AiModelId { get; private set; }
     public string? CustomApiKey { get; private set; }
     public Guid? FolderId { get; private set; }
+    public Guid? AiAgentId { get; private set; }
     public string? SystemPrompt { get; private set; }
     private readonly List<Message> _messages = new();
     private readonly List<ChatSessionPlugin> _chatSessionPlugins = new();
@@ -21,7 +22,10 @@ public sealed class ChatSession : BaseAuditableEntity
     {
     }
 
-    public static ChatSession Create(Guid userId, Guid aiModelId, Guid? folderId = null, string? customApiKey = null,
+    public static ChatSession Create(Guid userId, Guid aiModelId,
+        Guid? folderId = null,
+        string? customApiKey = null,
+        Guid? aiAgent = null,
         string? systemPrompt = null)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
@@ -36,6 +40,7 @@ public sealed class ChatSession : BaseAuditableEntity
             AiModelId = aiModelId,
             CustomApiKey = customApiKey,
             FolderId = folderId,
+            AiAgentId = aiAgent,
             CreatedAt = DateTime.UtcNow
         };
     }
@@ -52,17 +57,25 @@ public sealed class ChatSession : BaseAuditableEntity
         Title = newTitle;
         LastModifiedAt = DateTime.UtcNow;
     }
+    
+    public int GetMessageIndex(Message message)
+    {
+        return _messages.IndexOf(message);
+    }
 
+    public void RemoveMessage(Message message)
+    {
+        _messages.Remove(message);
+    }
     public void UpdateApiKey(string apiKey)
     {
         CustomApiKey = apiKey;
         LastModifiedAt = DateTime.UtcNow;
     }
 
-    public void AddPlugin(Guid pluginId, int order, bool isActive = true)
+    public void AddPlugin(Guid pluginId, int order)
     {
-        var chatSessionPlugin = ChatSessionPlugin.Create(Id, pluginId, order, isActive);
-        _chatSessionPlugins.Add(chatSessionPlugin);
+        _chatSessionPlugins.Add(ChatSessionPlugin.Create(Id, pluginId, order));
     }
 
     public void MoveToFolder(Guid? folderId)
@@ -76,5 +89,10 @@ public sealed class ChatSession : BaseAuditableEntity
         FolderId = null;
         Folder = null;
         LastModifiedAt = DateTime.UtcNow;
+    }
+
+    public void SetSystemPrompt(string systemPrompt)
+    {
+        SystemPrompt = systemPrompt;
     }
 }

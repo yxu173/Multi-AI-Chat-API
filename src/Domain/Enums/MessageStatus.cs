@@ -5,5 +5,6 @@ public enum MessageStatus
     Pending,
     Streaming,
     Completed,
-    Failed
+    Failed,
+    Interrupted
 }

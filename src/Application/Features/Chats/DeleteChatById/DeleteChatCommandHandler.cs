@@ -15,7 +15,7 @@ public sealed class DeleteChatCommandHandler : ICommandHandler<DeleteChatCommand
 
     public async Task<Result<bool>> Handle(DeleteChatCommand request, CancellationToken cancellationToken)
     {
-        var result = await _chatSessionRepository.DeleteAsync(request.Id);
+        var result = await _chatSessionRepository.DeleteAsync(request.Id, cancellationToken);
         if (result.IsFailure)
         {
             return Result.Failure<bool>(result.Error);

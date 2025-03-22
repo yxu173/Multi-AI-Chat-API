@@ -2,6 +2,7 @@ using System.Text;
 using Application.Abstractions.Interfaces;
 using Application.Notifications;
 using Domain.Aggregates.Chats;
+using Domain.Enums;
 using Domain.Repositories;
 using MediatR;
 using Polly;
@@ -24,6 +25,7 @@ public class ChatService
     private readonly IChatSessionPluginRepository _chatSessionPluginRepository;
     private readonly IPluginExecutorFactory _pluginExecutorFactory;
     private readonly IResilienceService _resilienceService;
+    private readonly StreamingOperationManager _streamingOperationManager;
 
     private const int MaxTitleLength = 50;
     private const int DefaultMaxTokens = 2000;
@@ -37,17 +39,25 @@ public class ChatService
         ParallelAiProcessingService parallelAiProcessingService,
         IChatSessionPluginRepository chatSessionPluginRepository,
         IPluginExecutorFactory pluginExecutorFactory,
-        IResilienceService resilienceService)
+        IResilienceService resilienceService,
+        StreamingOperationManager streamingOperationManager)
     {
-        _chatSessionRepository = chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
+        _chatSessionRepository =
+            chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
-        _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
+        _aiModelServiceFactory =
+            aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _tokenUsageRepository = tokenUsageRepository ?? throw new ArgumentNullException(nameof(tokenUsageRepository));
-        _parallelAiProcessingService = parallelAiProcessingService ?? throw new ArgumentNullException(nameof(parallelAiProcessingService));
-        _chatSessionPluginRepository = chatSessionPluginRepository ?? throw new ArgumentNullException(nameof(chatSessionPluginRepository));
-        _pluginExecutorFactory = pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
+        _parallelAiProcessingService = parallelAiProcessingService ??
+                                       throw new ArgumentNullException(nameof(parallelAiProcessingService));
+        _chatSessionPluginRepository = chatSessionPluginRepository ??
+                                       throw new ArgumentNullException(nameof(chatSessionPluginRepository));
+        _pluginExecutorFactory =
+            pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
         _resilienceService = resilienceService ?? throw new ArgumentNullException(nameof(resilienceService));
+        _streamingOperationManager = streamingOperationManager ??
+                                     throw new ArgumentNullException(nameof(streamingOperationManager));
     }
 
     /// <summary>
@@ -60,11 +70,11 @@ public class ChatService
         IEnumerable<Guid> modelIds)
     {
         var chatSession = await _chatSessionRepository.GetByIdWithModelAsync(chatSessionId)
-            ?? throw new Exception("Chat session not found.");
+                          ?? throw new Exception("Chat session not found.");
 
         // Create and save user message
         var userMessage = await CreateAndSaveUserMessageAsync(userId, chatSessionId, content, chatSession);
-        
+
         // Create placeholder messages for each AI model
         var aiMessages = await CreatePlaceholderAiMessagesAsync(userId, chatSessionId, chatSession, modelIds);
 
@@ -85,12 +95,13 @@ public class ChatService
     /// <summary>
     /// Sends a user message to a chat session and streams AI response
     /// </summary>
-    public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content)
+    public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content,
+        CancellationToken cancellationToken = default)
     {
         var chatSession = await GetChatSessionAsync(chatSessionId);
-        var userMessage = await CreateUserMessageAsync(chatSession, userId, content);
-        var modifiedContent = await ExecutePluginsAsync(chatSessionId, content);
-        await StreamAiResponseAsync(chatSession, userId, userMessage, modifiedContent);
+        var userMessage = await CreateUserMessageAsync(chatSession, userId, content, cancellationToken);
+        var modifiedContent = await ExecutePluginsAsync(chatSessionId, content, cancellationToken);
+        await StreamAiResponseAsync(chatSession, userId, userMessage, modifiedContent, cancellationToken);
     }
 
     /// <summary>
@@ -106,42 +117,44 @@ public class ChatService
     /// <summary>
     /// Creates and persists a user message
     /// </summary>
-    private async Task<Message> CreateUserMessageAsync(ChatSession chatSession, Guid userId, string content)
+    private async Task<Message> CreateUserMessageAsync(ChatSession chatSession, Guid userId, string content,
+        CancellationToken cancellationToken = default)
     {
         // If this is the first message, generate a title for the chat
         if (!chatSession.Messages.Any())
         {
             var title = GenerateTitleFromContent(content);
             chatSession.UpdateTitle(title);
-            await _chatSessionRepository.UpdateAsync(chatSession);
-            await _mediator.Publish(new ChatTitleUpdatedNotification(chatSession.Id, title));
+            await _chatSessionRepository.UpdateAsync(chatSession, cancellationToken);
+            await _mediator.Publish(new ChatTitleUpdatedNotification(chatSession.Id, title), cancellationToken);
         }
 
         // Create and save the user message
         var message = Message.CreateUserMessage(userId, chatSession.Id, content);
-        await _messageRepository.AddAsync(message);
+        await _messageRepository.AddAsync(message, cancellationToken);
         chatSession.AddMessage(message);
-        
+
         // Notify that a message has been sent
         await _mediator.Publish(new MessageSentNotification(chatSession.Id,
-            new MessageDto(message.Content, false, message.Id)));
-            
+            new MessageDto(message.Content, false, message.Id)), cancellationToken);
+
         return message;
     }
 
     /// <summary>
     /// Creates and saves a user message for parallel processing
     /// </summary>
-    private async Task<Message> CreateAndSaveUserMessageAsync(Guid userId, Guid chatSessionId, string content, ChatSession chatSession)
+    private async Task<Message> CreateAndSaveUserMessageAsync(Guid userId, Guid chatSessionId,
+        string content, ChatSession chatSession, CancellationToken cancellationToken = default)
     {
         var userMessage = Message.CreateUserMessage(userId, chatSessionId, content);
-        await _messageRepository.AddAsync(userMessage);
+        await _messageRepository.AddAsync(userMessage, cancellationToken);
         chatSession.AddMessage(userMessage);
 
         await _mediator.Publish(new MessageSentNotification(
             chatSessionId,
             new MessageDto(userMessage.Content, userMessage.IsFromAi, userMessage.Id)
-        ));
+        ), cancellationToken);
 
         return userMessage;
     }
@@ -150,24 +163,25 @@ public class ChatService
     /// Creates placeholder AI messages for each model in parallel processing
     /// </summary>
     private async Task<Dictionary<Guid, Message>> CreatePlaceholderAiMessagesAsync(
-        Guid userId, 
-        Guid chatSessionId, 
-        ChatSession chatSession, 
-        IEnumerable<Guid> modelIds)
+        Guid userId,
+        Guid chatSessionId,
+        ChatSession chatSession,
+        IEnumerable<Guid> modelIds,
+        CancellationToken cancellationToken = default)
     {
         var aiMessages = new Dictionary<Guid, Message>();
 
         foreach (var modelId in modelIds)
         {
             var aiMessage = Message.CreateAiMessage(userId, chatSessionId);
-            await _messageRepository.AddAsync(aiMessage);
+            await _messageRepository.AddAsync(aiMessage, cancellationToken);
             chatSession.AddMessage(aiMessage);
             aiMessages[modelId] = aiMessage;
 
             await _mediator.Publish(new MessageSentNotification(
                 chatSessionId,
                 new MessageDto(aiMessage.Content, aiMessage.IsFromAi, aiMessage.Id)
-            ));
+            ), cancellationToken);
         }
 
         return aiMessages;
@@ -177,19 +191,19 @@ public class ChatService
     /// Gets chat history for processing, excluding placeholder AI messages
     /// </summary>
     private List<MessageDto> GetChatHistoryForProcessing(
-        ChatSession chatSession, 
-        Message userMessage, 
+        ChatSession chatSession,
+        Message userMessage,
         Dictionary<Guid, Message> aiMessages)
     {
         var aiMessageIds = aiMessages.Values.Select(am => am.Id).ToHashSet();
-        
+
         var messages = chatSession.Messages
             .Where(m => m.Id != userMessage.Id && !aiMessageIds.Contains(m.Id))
             .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id))
             .ToList();
 
         messages.Add(new MessageDto(userMessage.Content, userMessage.IsFromAi, userMessage.Id));
-        
+
         return messages;
     }
 
@@ -197,9 +211,10 @@ public class ChatService
     /// Process AI model responses and update the respective placeholder messages
     /// </summary>
     private async Task ProcessModelResponsesAsync(
-        Guid chatSessionId, 
-        Dictionary<Guid, Message> aiMessages, 
-        IEnumerable<ParallelAiResponse> responses)
+        Guid chatSessionId,
+        Dictionary<Guid, Message> aiMessages,
+        IEnumerable<ParallelAiResponse> responses,
+        CancellationToken cancellationToken = default)
     {
         foreach (var response in responses)
         {
@@ -207,13 +222,13 @@ public class ChatService
             {
                 aiMessage.AppendContent(response.Content);
                 aiMessage.CompleteMessage();
-                await _messageRepository.UpdateAsync(aiMessage);
+                await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
 
                 await _mediator.Publish(new MessageChunkReceivedNotification(
                     chatSessionId,
                     aiMessage.Id,
                     response.Content
-                ));
+                ), cancellationToken);
 
                 await UpdateTokenUsageAsync(chatSessionId, response.InputTokens, response.OutputTokens);
             }
@@ -223,21 +238,23 @@ public class ChatService
     /// <summary>
     /// Updates token usage for a chat session
     /// </summary>
-    private async Task UpdateTokenUsageAsync(Guid chatSessionId, int inputTokens, int outputTokens)
+    private async Task UpdateTokenUsageAsync(Guid chatSessionId, int inputTokens, int outputTokens,
+        CancellationToken cancellationToken = default)
     {
         var tokenUsage = await _tokenUsageRepository.GetByChatSessionIdAsync(chatSessionId) ??
-                            await _tokenUsageRepository.AddAsync(ChatTokenUsage.Create(chatSessionId, 0, 0, 0));
+                         await _tokenUsageRepository.AddAsync(ChatTokenUsage.Create(chatSessionId, 0, 0, 0));
 
         tokenUsage.UpdateTokenCounts(inputTokens, outputTokens);
-        await _tokenUsageRepository.UpdateAsync(tokenUsage);
+        await _tokenUsageRepository.UpdateAsync(tokenUsage,cancellationToken);
     }
 
     /// <summary>
     /// Executes applicable plugins on the user's message content
     /// </summary>
-    private async Task<string> ExecutePluginsAsync(Guid chatSessionId, string content)
+    private async Task<string> ExecutePluginsAsync(Guid chatSessionId, string content,
+        CancellationToken cancellationToken = default)
     {
-        var plugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatSessionId);
+        var plugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatSessionId, cancellationToken);
         var applicablePlugins = plugins
             .Where(p => p.IsActive)
             .Select(p => new
@@ -259,7 +276,7 @@ public class ChatService
         foreach (var group in pluginGroups)
         {
             // Execute all plugins in this order group in parallel
-            var pluginTasks = group.Select(p => p.Plugin.ExecuteAsync(currentContent));
+            var pluginTasks = group.Select(p => p.Plugin.ExecuteAsync(currentContent, cancellationToken));
             var results = await Task.WhenAll(pluginTasks);
             var successfulResults = results.Where(r => r.Success).Select(r => r.Result).ToList();
 
@@ -275,62 +292,83 @@ public class ChatService
     }
 
     /// <summary>
-    /// Streams AI responses for a given user message
+    /// Streams AI responses for a given user message with cancellation support
     /// </summary>
-    private async Task StreamAiResponseAsync(ChatSession chatSession, Guid userId, Message userMessage, string content)
+    private async Task StreamAiResponseAsync(ChatSession chatSession, Guid userId, Message userMessage, string content,
+        CancellationToken cancellationToken = default)
     {
         // Create AI message placeholder
         var aiMessage = Message.CreateAiMessage(userId, chatSession.Id);
-        await _messageRepository.AddAsync(aiMessage);
+        await _messageRepository.AddAsync(aiMessage, cancellationToken);
         chatSession.AddMessage(aiMessage);
         await _mediator.Publish(new MessageSentNotification(chatSession.Id,
-            new MessageDto(aiMessage.Content, true, aiMessage.Id)));
+            new MessageDto(aiMessage.Content, true, aiMessage.Id)), cancellationToken);
 
-        // Get AI service for the model
-        var aiService = _aiModelServiceFactory.GetService(
-            chatSession.UserId, 
-            chatSession.AiModelId,
-            chatSession.CustomApiKey ?? string.Empty);
-
-        // Prepare message history
-        var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, userMessage, content);
-
-        // Get or create token usage record
-        var (tokenUsage, previousInputTokens, previousOutputTokens, previousCost) = 
-            await GetOrCreateTokenUsageAsync(chatSession.Id);
-
-        // Process streaming response
-        var responseContent = new StringBuilder();
-        await foreach (var response in aiService.StreamResponseAsync(messages))
+        // Start streaming operation
+        var cts = _streamingOperationManager.StartStreaming(aiMessage.Id);
+        try
         {
-            await ProcessStreamResponseChunkAsync(
-                chatSession, 
-                aiMessage, 
-                response, 
-                responseContent, 
+            // Get AI service for the model
+            var aiService = _aiModelServiceFactory.GetService(
+                chatSession.UserId,
+                chatSession.AiModelId,
+                chatSession.CustomApiKey ?? string.Empty);
+
+            // Prepare message history
+            var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, userMessage, content);
+
+            // Get or create token usage record
+            var (tokenUsage, previousInputTokens, previousOutputTokens, previousCost) =
+                await GetOrCreateTokenUsageAsync(chatSession.Id);
+
+            // Process streaming response with cancellation token
+            var responseContent = new StringBuilder();
+            await foreach (var response in aiService.StreamResponseAsync(messages, cts.Token))
+            {
+                await ProcessStreamResponseChunkAsync(
+                    chatSession,
+                    aiMessage,
+                    response,
+                    responseContent,
+                    tokenUsage,
+                    previousInputTokens,
+                    previousOutputTokens,
+                    previousCost,
+                    cts.Token);
+            }
+
+            // Complete the AI message
+            await FinalizeAiMessageAsync(
+                aiMessage,
                 tokenUsage,
+                chatSession,
                 previousInputTokens,
                 previousOutputTokens,
-                previousCost);
+                previousCost,
+                cts.Token);
         }
-
-        // Complete the AI message
-        await FinalizeAiMessageAsync(
-            aiMessage, 
-            tokenUsage, 
-            chatSession,
-            previousInputTokens,
-            previousOutputTokens,
-            previousCost);
+        catch (OperationCanceledException)
+        {
+            aiMessage.AppendContent("\n[Response interrupted]");
+            aiMessage.InterruptMessage();
+            await _messageRepository.UpdateAsync(aiMessage, cts.Token);
+            await _mediator.Publish(
+                new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
+                cts.Token);
+        }
+        finally
+        {
+            _streamingOperationManager.CompleteStreaming(aiMessage.Id);
+        }
     }
 
     /// <summary>
     /// Prepares message history to send to AI
     /// </summary>
     private List<MessageDto> PrepareMessageHistoryForAi(
-        ChatSession chatSession, 
-        Message aiMessage, 
-        Message userMessage, 
+        ChatSession chatSession,
+        Message aiMessage,
+        Message userMessage,
         string content)
     {
         var messages = chatSession.Messages
@@ -340,18 +378,19 @@ public class ChatService
 
         // Add the modified user message content (which may include plugin results)
         messages.Add(new MessageDto(content, false, userMessage.Id));
-        
+
         return messages;
     }
 
     /// <summary>
     /// Gets or creates a token usage record for a chat session
     /// </summary>
-    private async Task<(ChatTokenUsage TokenUsage, int PreviousInputTokens, int PreviousOutputTokens, decimal PreviousCost)> 
+    private async Task<(ChatTokenUsage TokenUsage, int PreviousInputTokens, int PreviousOutputTokens, decimal
+            PreviousCost)>
         GetOrCreateTokenUsageAsync(Guid chatSessionId)
     {
         var tokenUsage = await _tokenUsageRepository.GetByChatSessionIdAsync(chatSessionId) ??
-                          await _tokenUsageRepository.AddAsync(ChatTokenUsage.Create(chatSessionId, 0, 0, 0));
+                         await _tokenUsageRepository.AddAsync(ChatTokenUsage.Create(chatSessionId, 0, 0, 0));
 
         return (tokenUsage, tokenUsage.InputTokens, tokenUsage.OutputTokens, tokenUsage.TotalCost);
     }
@@ -367,7 +406,8 @@ public class ChatService
         ChatTokenUsage tokenUsage,
         int previousInputTokens,
         int previousOutputTokens,
-        decimal previousCost)
+        decimal previousCost,
+        CancellationToken cancellationToken = default)
     {
         var chunk = response.Content;
         var currentInputTokens = response.InputTokens;
@@ -378,11 +418,11 @@ public class ChatService
 
         // Update token counts
         tokenUsage.UpdateTokenCounts(currentInputTokens, currentOutputTokens);
-        await _tokenUsageRepository.UpdateAsync(tokenUsage);
+        await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
 
         // Calculate current cost
         decimal currentTotalCost = previousCost +
-                               CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens);
+                                   CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens);
 
         // Notify of token usage updates
         await _mediator.Publish(new TokenUsageUpdatedNotification(
@@ -390,34 +430,36 @@ public class ChatService
             totalInputTokens,
             totalOutputTokens,
             currentTotalCost
-        ));
+        ), cancellationToken);
 
         // Append response chunk to message
         responseContent.Append(chunk);
         aiMessage.AppendContent(chunk);
-        await _messageRepository.UpdateAsync(aiMessage);
-        await _mediator.Publish(new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, chunk));
+        await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
+        await _mediator.Publish(new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, chunk),
+            cancellationToken);
     }
 
     /// <summary>
     /// Finalizes an AI message after streaming is complete
     /// </summary>
     private async Task FinalizeAiMessageAsync(
-        Message aiMessage, 
+        Message aiMessage,
         ChatTokenUsage tokenUsage,
         ChatSession chatSession,
         int previousInputTokens,
         int previousOutputTokens,
-        decimal previousCost)
+        decimal previousCost,
+        CancellationToken cancellationToken = default)
     {
         aiMessage.CompleteMessage();
-        await _messageRepository.UpdateAsync(aiMessage);
+        await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
 
         // Calculate final cost
         decimal finalCost = previousCost +
-                        CalculateCost(chatSession.AiModel, 
-                            tokenUsage.InputTokens - previousInputTokens,
-                            tokenUsage.OutputTokens - previousOutputTokens);
+                            CalculateCost(chatSession.AiModel,
+                                tokenUsage.InputTokens - previousInputTokens,
+                                tokenUsage.OutputTokens - previousOutputTokens);
 
         // Update final token counts and cost
         tokenUsage.UpdateTokenCountsAndCost(
@@ -426,7 +468,7 @@ public class ChatService
             finalCost
         );
 
-        await _tokenUsageRepository.UpdateAsync(tokenUsage);
+        await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
     }
 
     /// <summary>

@@ -5,18 +5,18 @@ using Web.Api.Hubs;
 
 namespace Web.Api.NotificationHandlers;
 
-public class MessageSentNotificationHandler : INotificationHandler<MessageSentNotification>
+public class MessageEditedNotificationHandler : INotificationHandler<MessageEditedNotification>
 {
     private readonly IHubContext<ChatHub> _hubContext;
 
-    public MessageSentNotificationHandler(IHubContext<ChatHub> hubContext)
+    public MessageEditedNotificationHandler(IHubContext<ChatHub> hubContext)
     {
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
     }
 
-    public async Task Handle(MessageSentNotification notification, CancellationToken cancellationToken)
+    public async Task Handle(MessageEditedNotification notification, CancellationToken cancellationToken)
     {
         await _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("ReceiveMessage", notification.Message, cancellationToken);
+            .SendAsync("MessageEdited", notification.MessageId, notification.NewContent, cancellationToken);
     }
 }

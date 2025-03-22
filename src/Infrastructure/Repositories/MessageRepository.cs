@@ -13,15 +13,25 @@ public class MessageRepository : IMessageRepository
         _context = context ?? throw new ArgumentNullException(nameof(context));
     }
 
-    public async Task AddAsync(Message message)
+    public async Task AddAsync(Message message, CancellationToken cancellationToken)
     {
-        await _context.Messages.AddAsync(message);
-        await _context.SaveChangesAsync();
+        await _context.Messages.AddAsync(message, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(Message message)
+    public async Task UpdateAsync(Message message, CancellationToken cancellationToken)
     {
         _context.Messages.Update(message);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var message = await _context.Messages.FindAsync(id);
+        if (message is not null)
+        {
+            _context.Messages.Remove(message);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
     }
 }

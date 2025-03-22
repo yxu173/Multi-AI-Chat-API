@@ -36,25 +36,25 @@ public class ChatSessionRepository : IChatSessionRepository
             .Include(c => c.Messages)
             .ThenInclude(m => m.FileAttachments)
             .Include(c => c.AiModel)
-                .ThenInclude(m => m.AiProvider)
+            .ThenInclude(m => m.AiProvider)
             .AsSplitQuery()
             .FirstOrDefaultAsync(c => c.Id == id);
         return chat;
     }
 
-    public async Task AddAsync(ChatSession chatSession)
+    public async Task AddAsync(ChatSession chatSession, CancellationToken cancellationToken)
     {
-        await _context.ChatSessions.AddAsync(chatSession);
-        await _context.SaveChangesAsync();
+        await _context.ChatSessions.AddAsync(chatSession, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(ChatSession chatSession)
+    public async Task UpdateAsync(ChatSession chatSession, CancellationToken cancellationToken)
     {
         _context.ChatSessions.Update(chatSession);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<Result<bool>> DeleteAsync(Guid id)
+    public async Task<Result<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
         var chat = await _context.ChatSessions.FindAsync(id);
         if (chat == null)
@@ -63,7 +63,7 @@ public class ChatSessionRepository : IChatSessionRepository
         }
 
         _context.ChatSessions.Remove(chat);
-        var result = await _context.SaveChangesAsync();
+        var result = await _context.SaveChangesAsync(cancellationToken);
         if (result == 0)
             return Result.Failure<bool>(ChatErrors.ChatNotFound);
 
@@ -84,7 +84,7 @@ public class ChatSessionRepository : IChatSessionRepository
 
         if (!string.IsNullOrEmpty(searchTerm))
         {
-            query = query.Where(c => 
+            query = query.Where(c =>
                 c.Title.Contains(searchTerm) ||
                 c.Messages.Any(m => m.Content.Contains(searchTerm)));
         }

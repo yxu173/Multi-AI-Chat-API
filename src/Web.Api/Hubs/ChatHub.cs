@@ -1,9 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
-using Domain.Aggregates.Chats;
-using Domain.Repositories;
 using Application.Services;
-using System.Text;
-using Application.Abstractions.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 
@@ -13,10 +9,12 @@ namespace Web.Api.Hubs;
 public class ChatHub : Hub
 {
     private readonly ChatService _chatService;
+    private readonly StreamingOperationManager _streamingOperationManager;
 
-    public ChatHub(ChatService chatService)
+    public ChatHub(ChatService chatService, StreamingOperationManager streamingOperationManager)
     {
         _chatService = chatService;
+        _streamingOperationManager = streamingOperationManager;
     }
 
     public override async Task OnConnectedAsync()
@@ -41,9 +39,10 @@ public class ChatHub : Hub
         var userId = Guid.Parse(Context.UserIdentifier);
         await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content);
     }
-
-    public async Task SubscribeToSearch(string searchTerm)
+    public async Task StopResponse(string messageId, string chatSessionId)
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"search:{searchTerm}");
+        _streamingOperationManager.StopStreaming(Guid.Parse(messageId));
+        await Clients.Group(chatSessionId)
+            .SendAsync("ResponseStopped", messageId);
     }
 }

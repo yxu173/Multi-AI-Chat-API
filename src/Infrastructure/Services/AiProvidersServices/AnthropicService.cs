@@ -68,13 +68,12 @@ public class AnthropicService : BaseAiService
         return requestWithSettings;
     }
 
-    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, CancellationToken cancellationToken)
     {
-        var cancellationToken = GetCancellationTokenSource().Token;
 
         var request = CreateRequest(CreateRequestBody(history));
 
-        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "Claude");
@@ -87,7 +86,7 @@ public class AnthropicService : BaseAiService
             yield break;
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
 
         int inputTokens = 0;

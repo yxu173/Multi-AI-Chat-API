@@ -9,7 +9,7 @@ public interface IChatTokenUsageRepository
 {
     Task<ChatTokenUsage> AddAsync(ChatTokenUsage tokenUsage);
     Task<ChatTokenUsage?> GetByChatSessionIdAsync(Guid chatSessionId);
-    Task UpdateAsync(ChatTokenUsage tokenUsage);
+    Task UpdateAsync(ChatTokenUsage tokenUsage,CancellationToken cancellationToken);
     Task<int> GetTotalInputTokensForUserAsync(Guid userId);
     Task<int> GetTotalOutputTokensForUserAsync(Guid userId);
 }

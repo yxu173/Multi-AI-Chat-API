@@ -56,7 +56,8 @@ public abstract class BaseAiService : IAiModelService
 
     
     public abstract IAsyncEnumerable<StreamResponse> StreamResponseAsync(
-        IEnumerable<MessageDto> history);
+        IEnumerable<MessageDto> history,
+        CancellationToken cancellationToken);
 
    
     protected async Task HandleApiErrorAsync(HttpResponseMessage response, string providerName)
@@ -158,17 +159,24 @@ public abstract class BaseAiService : IAiModelService
         return requestObj;
     }
     
-  
-    protected CancellationTokenSource GetCancellationTokenSource()
-    {
-        _stopTokenSource?.Dispose();
-        _stopTokenSource = new CancellationTokenSource();
-        return _stopTokenSource;
-    }
+
     
    
-    public virtual void StopResponse()
+   public virtual void StopResponse()
     {
         _stopTokenSource?.Cancel();
+        _stopTokenSource?.Dispose();
+        _stopTokenSource = null;
+    }
+
+    protected CancellationTokenSource GetCancellationTokenSource()
+    {
+        if (_stopTokenSource is { IsCancellationRequested: false })
+        {
+            return _stopTokenSource;
+        }
+
+        _stopTokenSource = new CancellationTokenSource();
+        return _stopTokenSource;
     }
 }

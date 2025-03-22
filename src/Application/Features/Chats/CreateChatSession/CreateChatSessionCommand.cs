@@ -5,8 +5,8 @@ namespace Application.Features.Chats.CreateChatSession;
 
 public record CreateChatSessionCommand(
     Guid UserId,
-    Guid ModelId,
+    Guid? ModelId,
+    Guid? AiAgentId = null,
     Guid? FolderId = null,
-    string? customApiKey = null
-)
-    : ICommand<Guid>;
+    string? CustomApiKey = null
+) : ICommand<Guid>;

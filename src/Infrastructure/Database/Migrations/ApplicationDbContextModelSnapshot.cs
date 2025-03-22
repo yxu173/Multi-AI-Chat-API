@@ -56,6 +56,9 @@ namespace Infrastructure.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AiAgentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("AiModelId")
                         .HasColumnType("uuid");
 
@@ -563,12 +566,6 @@ namespace Infrastructure.Database.Migrations
 
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
-
-                    b.Property<int?>("MaxInputTokens")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("MaxOutputTokens")
-                        .HasColumnType("integer");
 
                     b.Property<double?>("PresencePenalty")
                         .HasColumnType("double precision");

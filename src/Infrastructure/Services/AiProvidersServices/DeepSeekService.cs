@@ -53,12 +53,11 @@ public class DeepSeekService : BaseAiService
         return requestWithSettings;
     }
 
-    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history)
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,CancellationToken cancellationToken)
     {
-        var cancellationToken = GetCancellationTokenSource().Token;
         var request = CreateRequest(CreateRequestBody(history));
 
-        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "DeepSeek");
