@@ -95,16 +95,18 @@ public class OpenAiService : BaseAiService
         using var reader = new StreamReader(stream);
 
         int outputTokens = 0;
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        while (true)
         {
-            var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
+            if (reader.EndOfStream || cancellationToken.IsCancellationRequested) yield break;
+            var readTask = reader.ReadLineAsync();
+            var delayTask = Task.Delay(Timeout.Infinite, cancellationToken);
+            var completedTask = await Task.WhenAny(readTask, delayTask);
+            if (completedTask == delayTask) yield break;
+            var line = await readTask;
+            if (string.IsNullOrWhiteSpace(line)) continue;
             if (line.StartsWith("data: ") && line.Trim() != "data: [DONE]")
             {
                 var json = line["data: ".Length..];
-
                 var chunk = JsonSerializer.Deserialize<OpenAiResponse>(json);
                 if (chunk?.choices is { Length: > 0 } choices)
                 {

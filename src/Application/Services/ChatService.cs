@@ -332,6 +332,7 @@ public class ChatService
             new MessageDto(aiMessage.Content, true, aiMessage.Id)), cancellationToken);
 
         var token = _streamingOperationManager.RegisterStreaming(aiMessage.Id);
+        bool wasCanceled = false;
         try
         {
             var aiService = _aiModelServiceFactory.GetService(
@@ -355,31 +356,40 @@ public class ChatService
                     previousInputTokens,
                     previousOutputTokens,
                     previousCost,
-                    cancellationToken); // Use method's cancellationToken for consistency
+                    cancellationToken);
             }
 
-            await FinalizeAiMessageAsync(
-                aiMessage,
-                tokenUsage,
-                chatSession,
-                previousInputTokens,
-                previousOutputTokens,
-                previousCost,
-                cancellationToken);
-        }
-        catch (OperationCanceledException ex) when (ex.CancellationToken == token)
-        {
-            aiMessage.AppendContent("\n[Response interrupted]");
-            aiMessage.InterruptMessage();
-            await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
-            await _mediator.Publish(
-                new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
-                cancellationToken);
+
+            if (token.IsCancellationRequested)
+            {
+                wasCanceled = true;
+            }
+            else
+            {
+                await FinalizeAiMessageAsync(
+                    aiMessage,
+                    tokenUsage,
+                    chatSession,
+                    previousInputTokens,
+                    previousOutputTokens,
+                    previousCost,
+                    cancellationToken);
+            }
         }
         finally
         {
             _streamingOperationManager.UnregisterStreaming(aiMessage.Id);
-             await _mediator.Publish(new ResponseCompletedNotification(chatSession.Id, aiMessage.Id), cancellationToken);
+            if (wasCanceled)
+            {
+                aiMessage.AppendContent("\n[Response interrupted]");
+                aiMessage.InterruptMessage();
+                await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
+                await _mediator.Publish(
+                    new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
+                    cancellationToken);
+            }
+
+            await _mediator.Publish(new ResponseCompletedNotification(chatSession.Id, aiMessage.Id), cancellationToken);
         }
     }
 

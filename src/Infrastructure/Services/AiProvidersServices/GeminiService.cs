@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
@@ -37,7 +38,7 @@ public class GeminiService : BaseAiService
         var contents = validHistory.Select(m => new
         {
             role = m.IsFromAi ? "model" : "user",
-            parts = new[]{ new { text = m.Content } }
+            parts = new[] { new { text = m.Content } }
         }).ToArray();
 
         var generationConfig = new Dictionary<string, object>();
@@ -81,7 +82,7 @@ public class GeminiService : BaseAiService
     }
 
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(
-        IEnumerable<MessageDto> history, CancellationToken cancellationToken)
+        IEnumerable<MessageDto> history, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var request = CreateRequest(CreateRequestBody(history));
         using var response =
@@ -90,13 +91,22 @@ public class GeminiService : BaseAiService
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
-       
-            var responseArray = await JsonSerializer.DeserializeAsync<JsonElement?>(stream, cancellationToken: cancellationToken);
+        try
+        {
+            var responseArray =
+                await JsonSerializer.DeserializeAsync<JsonElement?>(stream, cancellationToken: cancellationToken);
 
             if (responseArray.HasValue && responseArray.Value.ValueKind != JsonValueKind.Null)
             {
                 foreach (var root in responseArray.Value.EnumerateArray())
                 {
+                    // Check for cancellation within the loop
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        Console.WriteLine("Cancellation requested, stopping stream.");
+                        break;
+                    }
+
                     string? text = null;
                     int promptTokens = 0, outputTokens = 0;
 
@@ -126,6 +136,19 @@ public class GeminiService : BaseAiService
                     }
                 }
             }
-       
+        }
+        finally
+        {
+            // Ensure the stream is disposed even if cancellation occurs
+            if (stream != null)
+            {
+                await stream.DisposeAsync();
+            }
+
+            if (response != null)
+            {
+                response.Dispose();
+            }
+        }
     }
 }

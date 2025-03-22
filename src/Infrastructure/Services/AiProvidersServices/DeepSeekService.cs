@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
@@ -45,15 +46,12 @@ public class DeepSeekService : BaseAiService
             ["messages"] = messages,
             ["stream"] = true
         };
-        
-       
+
         var requestWithSettings = ApplyUserSettings(requestObj);
-        
-        
         return requestWithSettings;
     }
 
-    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,CancellationToken cancellationToken)
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var request = CreateRequest(CreateRequestBody(history));
 
@@ -62,69 +60,83 @@ public class DeepSeekService : BaseAiService
         {
             await HandleApiErrorAsync(response, "DeepSeek");
         }
-        
-        if (cancellationToken.IsCancellationRequested)
-        {
-            yield break;
-        }
 
-        await using var stream = await response.Content.ReadAsStreamAsync();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
 
         var contentBuffer = new List<string>();
         DeepSeekUsage? finalUsage = null;
 
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        try
         {
-            var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-            if (line.StartsWith("data: "))
+            while (true)
             {
-                var json = line["data: ".Length..];
-                if (json == "[DONE]") break;
+                if (reader.EndOfStream)
+                    break;
 
-                var chunk = JsonSerializer.Deserialize<DeepSeekResponse>(json);
-                if (chunk?.choices is { Length: > 0 } choices)
+                var readTask = reader.ReadLineAsync();
+                var delayTask = Task.Delay(Timeout.Infinite, cancellationToken);
+                var completedTask = await Task.WhenAny(readTask, delayTask);
+                if (completedTask == delayTask)
+                    break;
+
+                var line = await readTask;
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                if (line.StartsWith("data: "))
                 {
-                    var delta = choices[0].delta;
+                    var json = line["data: ".Length..];
+                    if (json == "[DONE]") break;
 
-                    if (choices[0].finish_reason != null && chunk.usage != null)
+                    var chunk = JsonSerializer.Deserialize<DeepSeekResponse>(json);
+                    if (chunk?.choices is { Length: > 0 } choices)
                     {
-                        finalUsage = chunk.usage;
+                        var delta = choices[0].delta;
 
-                        foreach (var bufferedContent in contentBuffer)
+                        if (choices[0].finish_reason != null && chunk.usage != null)
                         {
-                            yield return new StreamResponse(bufferedContent, finalUsage.prompt_tokens,
-                                finalUsage.completion_tokens);
+                            finalUsage = chunk.usage;
+                            foreach (var bufferedContent in contentBuffer)
+                            {
+                                if (cancellationToken.IsCancellationRequested) yield break;
+                                yield return new StreamResponse(bufferedContent, finalUsage.prompt_tokens, finalUsage.completion_tokens);
+                            }
+                            contentBuffer.Clear();
+
+                            if (!string.IsNullOrEmpty(delta?.content))
+                            {
+                                if (cancellationToken.IsCancellationRequested) yield break;
+                                yield return new StreamResponse(delta.content, finalUsage.prompt_tokens, finalUsage.completion_tokens);
+                            }
                         }
-
-                        contentBuffer.Clear();
-                    }
-
-                    if (!string.IsNullOrEmpty(delta?.content))
-                    {
-                        if (finalUsage != null)
+                        else if (!string.IsNullOrEmpty(delta?.content))
                         {
-                            yield return new StreamResponse(delta.content, finalUsage.prompt_tokens,
-                                finalUsage.completion_tokens);
-                        }
-                        else
-                        {
-                            contentBuffer.Add(delta.content);
+                            if (finalUsage != null)
+                            {
+                                if (cancellationToken.IsCancellationRequested) yield break;
+                                yield return new StreamResponse(delta.content, finalUsage.prompt_tokens, finalUsage.completion_tokens);
+                            }
+                            else
+                            {
+                                contentBuffer.Add(delta.content);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        if (finalUsage != null && contentBuffer.Count > 0)
-        {
-            foreach (var bufferedContent in contentBuffer)
+            if (finalUsage != null && contentBuffer.Count > 0)
             {
-                yield return new StreamResponse(bufferedContent, finalUsage.prompt_tokens,
-                    finalUsage.completion_tokens);
+                foreach (var bufferedContent in contentBuffer)
+                {
+                    if (cancellationToken.IsCancellationRequested) yield break;
+                    yield return new StreamResponse(bufferedContent, finalUsage.prompt_tokens, finalUsage.completion_tokens);
+                }
             }
+        }
+        finally
+        {
+            response.Dispose();
         }
     }
 
@@ -144,5 +156,4 @@ public class DeepSeekService : BaseAiService
     private record DeepSeekDelta(string content);
 
     private record DeepSeekUsage(int prompt_tokens, int completion_tokens, int total_tokens);
-    
 }

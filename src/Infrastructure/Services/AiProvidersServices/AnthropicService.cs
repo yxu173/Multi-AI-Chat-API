@@ -10,7 +10,6 @@ namespace Infrastructure.Services.AiProvidersServices;
 public class AnthropicService : BaseAiService
 {
     private const string BaseUrl = "https://api.anthropic.com/v1/";
-
     private const string AnthropicVersion = "2023-06-01";
 
     public AnthropicService(
@@ -34,13 +33,9 @@ public class AnthropicService : BaseAiService
     protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
         var systemMessage = "Format your responses in markdown.";
-
         var messages = history
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
-            .Select(m => new ClaudeMessage(
-                m.IsFromAi ? "assistant" : "user",
-                m.Content.Trim()
-            ))
+            .Select(m => new ClaudeMessage(m.IsFromAi ? "assistant" : "user", m.Content.Trim()))
             .ToList();
 
         var requestObj = new Dictionary<string, object>
@@ -53,12 +48,10 @@ public class AnthropicService : BaseAiService
 
         var requestWithSettings = ApplyUserSettings(requestObj, false);
 
-
         requestWithSettings.Remove("frequency_penalty");
         requestWithSettings.Remove("presence_penalty");
         requestWithSettings.Remove("maxOutputTokens");
         requestWithSettings.Remove("max_output_tokens");
-
 
         if (ModelSettings?.StopSequences != null && ModelSettings.StopSequences.Any())
         {
@@ -70,7 +63,6 @@ public class AnthropicService : BaseAiService
 
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, CancellationToken cancellationToken)
     {
-
         var request = CreateRequest(CreateRequestBody(history));
 
         using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -80,26 +72,29 @@ public class AnthropicService : BaseAiService
             yield break;
         }
 
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            yield break;
-        }
-
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
 
         int inputTokens = 0;
         int outputTokens = 0;
         int estimatedOutputTokens = 0;
-
         StringBuilder fullResponse = new StringBuilder();
-        HashSet<string> sentChunks = new HashSet<string>();
 
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        while (true)
         {
-            var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (reader.EndOfStream)
+                break;
+
+            var readTask = reader.ReadLineAsync();
+            var delayTask = Task.Delay(Timeout.Infinite, cancellationToken);
+            var completedTask = await Task.WhenAny(readTask, delayTask);
+
+            if (completedTask == delayTask)
+                break;
+
+            var line = await readTask;
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
 
             if (line.StartsWith("data: "))
             {
@@ -112,27 +107,17 @@ public class AnthropicService : BaseAiService
                 switch (type)
                 {
                     case "message_start":
-                        inputTokens = doc.RootElement
-                            .GetProperty("message")
-                            .GetProperty("usage")
-                            .GetProperty("input_tokens")
-                            .GetInt32();
+                        inputTokens = doc.RootElement.GetProperty("message").GetProperty("usage").GetProperty("input_tokens").GetInt32();
                         break;
 
                     case "content_block_delta":
-                        var text = doc.RootElement
-                            .GetProperty("delta")
-                            .GetProperty("text")
-                            .GetString();
+                        var text = doc.RootElement.GetProperty("delta").GetProperty("text").GetString();
                         if (!string.IsNullOrEmpty(text))
                         {
                             fullResponse.Append(text);
                             estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
-
                             yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
-                            sentChunks.Add(text);
                         }
-
                         break;
 
                     case "message_delta":
@@ -141,7 +126,6 @@ public class AnthropicService : BaseAiService
                         {
                             outputTokens = outputTokenElement.GetInt32();
                         }
-
                         break;
                 }
             }

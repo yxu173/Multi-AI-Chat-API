@@ -12,20 +12,26 @@ public class StreamingOperationManager
         var cts = new CancellationTokenSource();
         if (!_streamingOperations.TryAdd(messageId, cts))
         {
-            cts.Dispose(); // Clean up the unused CTS
-            throw new InvalidOperationException($"A streaming operation is already registered for message ID {messageId}.");
+            cts.Dispose();
+            throw new InvalidOperationException(
+                $"A streaming operation is already registered for message ID {messageId}.");
         }
+
         return cts.Token;
     }
 
-    public void StopStreaming(Guid messageId)
+    public void StopStreaming(Guid operationId)
     {
-        if (_streamingOperations.TryRemove(messageId, out var cts))
+        if (_streamingOperations.TryRemove(operationId, out var cts))
         {
+            Console.WriteLine($"Cancelling operation {operationId}");
             cts.Cancel();
             cts.Dispose();
         }
-        // Optionally log if no operation is found: Console.WriteLine($"No operation found for {messageId}");
+        else
+        {
+            Console.WriteLine($"No operation found for {operationId}");
+        }
     }
 
     public void UnregisterStreaming(Guid messageId)
@@ -34,6 +40,7 @@ public class StreamingOperationManager
         {
             cts.Dispose();
         }
-        // Optionally log if no operation is found: Console.WriteLine($"No operation found for {messageId}");
+
+        Console.WriteLine($"No operation found for {messageId}");
     }
 }

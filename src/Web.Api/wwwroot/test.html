@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Chat Demo</title>
     <style>
+        /* Keep all existing CSS styles unchanged */
         .main-container {
             max-width: 800px;
             margin: 20px auto;
@@ -25,9 +26,9 @@
             margin: 10px 0;
             padding: 10px;
             border-radius: 8px;
-            display: flex;
             align-items: baseline;
             word-break: break-word;
+            display: block;
         }
 
         .user-message {
@@ -64,10 +65,6 @@
             cursor: pointer;
             font-size: 0.8rem;
             margin-left: 5px;
-        }
-
-        .edit-button:hover {
-            background-color: #45a049;
         }
 
         .input-container {
@@ -125,15 +122,6 @@
             color: #333;
         }
 
-        .stat-value.updated {
-            animation: highlight 0.5s ease-out;
-        }
-
-        @keyframes highlight {
-            0% { background-color: rgba(255, 251, 0, 0.3); }
-            100% { background-color: transparent; }
-        }
-
         .stop-button {
             padding: 5px 10px;
             background-color: #ff4d4d;
@@ -144,40 +132,13 @@
             margin-left: 10px;
         }
 
-        .stop-button:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
-        }
-
         .edit-input-container {
             display: flex;
             gap: 10px;
             margin-top: 5px;
         }
 
-        .edit-input {
-            flex-grow: 1;
-            padding: 8px;
-        }
-
-        .save-edit-button, .cancel-edit-button {
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
-
-        .save-edit-button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-        }
-
-        .cancel-edit-button {
-            background-color: #dc3545;
-            color: white;
-            border: none;
-        }
+        /* Add any additional styles you need */
     </style>
 </head>
 <body>
@@ -214,7 +175,7 @@
     <div class="input-container">
         <input type="text" id="messageInput" placeholder="Type your message here (e.g., /search latest AI news)"/>
         <button onclick="sendMessage()">Send</button>
-        <button class="stop-button" id="stopButton" disabled>Stop</button>
+        <button class="stop-button" id="stopButton" onclick="stopResponse()" disabled>Stop</button>
     </div>
 </div>
 
@@ -222,15 +183,17 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
     const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1YjI0MC1kZjZlLTc2NTMtOWE1OC1kMmUwYTg5YTE3OTMiLCJlbWFpbCI6Im1vaGFtZWRzYW1pckBvdXRsb29rLmNvbSIsIm5hbWUiOiJ5eHUiLCJqdGkiOiJjNDg3MTcyYy02YjBmLTQ4MzEtYjJiMi03YmZmNDhjYWZmZmUiLCJhdWQiOlsiU3dhZ2dlclVJIiwiU3dhZ2dlclVJIl0sIm5iZiI6MTc0MjYyMjM0NSwiZXhwIjoxNzQzMjI3MTQ1LCJpYXQiOjE3NDI2MjIzNDUsImlzcyI6IkludGVybnNoaXAtUGxhdGZvcm0ifQ.Jsa7aNpiMxkWOYNP8KyfMW_nH-ucQgIWhiXmp_m4yvA"; // Replace with your actual token
-    const chatId = "fd7533ba-8f92-47cc-b413-10f9e6cc2385"; // Replace with your actual chat ID
+    const chatId = "5915eae8-507e-4717-ba56-92338e485c67"; // Replace with your actual chat ID
+
     const connection = new signalR.HubConnectionBuilder()
-        .withUrl("/chatHub", { accessTokenFactory: () => token })
+        .withUrl("/chatHub", {accessTokenFactory: () => token})
         .withAutomaticReconnect()
         .build();
 
     let currentMessageId = null;
     let editingMessageId = null;
 
+    // Connection management
     async function start() {
         try {
             await connection.start();
@@ -242,10 +205,12 @@
         }
     }
 
+    // Message sending
     async function sendMessage() {
         const messageInput = document.getElementById('messageInput');
         const content = messageInput.value.trim();
         if (!content) return;
+
         try {
             await connection.invoke('SendMessage', chatId, content);
             messageInput.value = '';
@@ -254,169 +219,130 @@
         }
     }
 
-    function editMessage(messageId) {
-        const messageDiv = document.querySelector(`.message[data-message-id="${messageId}"]`);
-        if (!messageDiv || !messageDiv.classList.contains('user-message')) return;
-
-        const contentDiv = messageDiv.querySelector('.message-content');
-        const currentContent = contentDiv.innerText;
-
-        editingMessageId = messageId;
-
-        contentDiv.innerHTML = `
-            <div class="edit-input-container">
-                <input type="text" class="edit-input" value="${currentContent}" />
-                <button class="save-edit-button" onclick="saveEditedMessage('${messageId}')">Save</button>
-                <button class="cancel-edit-button" onclick="cancelEdit('${messageId}', '${currentContent.replace(/'/g, "\\'")}')">Cancel</button>
-            </div>
-        `;
-    }
-
-    async function saveEditedMessage(messageId) {
-        if (!editingMessageId || editingMessageId !== messageId) return;
-
-        const messageDiv = document.querySelector(`.message[data-message-id="${messageId}"]`);
-        const editInput = messageDiv.querySelector('.edit-input');
-        const newContent = editInput.value.trim();
-
-        if (newContent) {
-            try {
-                await connection.invoke('EditLastMessage', chatId, newContent);
-                // The UI will be updated by the 'ReceiveMessage' and streaming events
-            } catch (error) {
-                console.error('Error editing message:', error);
-            } finally {
-                editingMessageId = null;
-            }
-        } else {
-            // If content is empty, maybe revert or show an error
-            const contentDiv = messageDiv.querySelector('.message-content');
-            const inputContainer = messageDiv.querySelector('.edit-input-container');
-            contentDiv.innerHTML = inputContainer.querySelector('.edit-input').placeholder = 'Message cannot be empty.';
-        }
-    }
-
-    function cancelEdit(messageId, originalContent) {
-        const messageDiv = document.querySelector(`.message[data-message-id="${messageId}"]`);
-        const contentDiv = messageDiv.querySelector('.message-content');
-        contentDiv.innerHTML = marked.parse(originalContent);
-        editingMessageId = null;
-    }
-
+    // Message handling
     connection.on('ReceiveMessage', (message) => {
+        console.log("Received Message:", message);
         const messagesList = document.getElementById('messagesList');
-        const messageClass = message.isFromAi ? 'ai-message' : 'user-message';
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${messageClass}`;
-        messageDiv.setAttribute('data-message-id', message.messageId);
-        messageDiv.innerHTML = `
-            <div class="message-content">${marked.parse(message.content)}</div>
-            ${!message.isFromAi ? '<div class="message-actions"><button class="edit-button" onclick="editMessage(\'' + message.messageId + '\')">Edit</button></div>' : ''}
-        `;
-        messagesList.appendChild(messageDiv);
+
+        // Create or update message element
+        let messageDiv = messagesList.querySelector(`[data-message-id="${message.messageId}"]`);
+        if (!messageDiv) {
+            messageDiv = document.createElement('div');
+            messageDiv.className = `message ${message.isFromAi ? 'ai-message' : 'user-message'}`;
+            messageDiv.setAttribute('data-message-id', message.messageId);
+            messageDiv.innerHTML = `
+                <div class="message-content">${marked.parse(message.content)}</div>
+                ${!message.isFromAi ? '<div class="message-actions"><button class="edit-button" onclick="editMessage(\'' + message.messageId + '\')">Edit</button></div>' : ''}
+            `;
+            messagesList.appendChild(messageDiv);
+        }
+
+        // Update AI message state
+        if (message.isFromAi) {
+            currentMessageId = message.messageId;
+            document.getElementById('stopButton').disabled = false;
+        }
+
         messagesList.scrollTop = messagesList.scrollHeight;
     });
 
+    // Streaming chunks handling
     connection.on('ReceiveMessageChunk', (messageId, chunk) => {
+        console.log(`Received Chunk for Message ID: ${messageId}`, chunk);
         const messagesList = document.getElementById('messagesList');
-        let messageElement = messagesList.querySelector(`.message[data-message-id="${messageId}"]`);
+
+        // Get or create message element
+        let messageElement = messagesList.querySelector(`[data-message-id="${messageId}"]`);
         if (!messageElement) {
             messageElement = document.createElement('div');
             messageElement.className = 'message ai-message';
             messageElement.setAttribute('data-message-id', messageId);
-            messageElement.innerHTML = `<div class="message-content"><div class="content"></div></div>`;
+            messageElement.innerHTML = '<div class="message-content"></div>';
             messagesList.appendChild(messageElement);
-            currentMessageId = messageId;
-            const stopButton = document.getElementById('stopButton');
-            stopButton.disabled = false;
-            stopButton.textContent = 'Stop';
         }
-        let content = chunk;
-        if (typeof chunk === 'object' && chunk !== null && 'content' in chunk) {
-            content = chunk.content;
-            if ('inputTokens' in chunk && 'outputTokens' in chunk) {
-                updateTokenDisplay(chunk.inputTokens, chunk.outputTokens);
-            }
+
+        // Update content
+        const contentDiv = messageElement.querySelector('.message-content');
+        contentDiv.innerHTML = marked.parse(contentDiv.innerHTML + chunk);
+
+        // Update tokens
+        if (chunk.inputTokens && chunk.outputTokens) {
+            updateTokenDisplay(chunk.inputTokens, chunk.outputTokens);
         }
-        const contentDiv = messageElement.querySelector('.content');
-        contentDiv.innerHTML = marked.parse(contentDiv.textContent + content);
+
         messagesList.scrollTop = messagesList.scrollHeight;
     });
 
-    connection.on('ResponseCompleted', (messageId) => {
-        if (messageId === currentMessageId) {
-            const stopButton = document.getElementById('stopButton');
-            stopButton.disabled = true;
-            stopButton.textContent = 'Stop';
-            currentMessageId = null;
-        }
-    });
-
-    connection.on('ResponseStopped', (messageId) => {
-        if (messageId === currentMessageId) {
-            const aiMessageElement = document.querySelector(`.message[data-message-id="${messageId}"] .message-content`);
-            if (aiMessageElement && !aiMessageElement.textContent.endsWith(' [Response interrupted]')) {
-                aiMessageElement.innerHTML += ' [Response interrupted]';
+    // Stop response functionality
+    async function stopResponse() {
+        if (currentMessageId) {
+            document.getElementById('stopButton').disabled = true; // Disable immediately
+            try {
+                console.log(`Stopping response for messageId: ${currentMessageId}`);
+                await connection.invoke('StopResponse', currentMessageId, chatId);
+                console.log('StopResponse invoked successfully');
+            } catch (error) {
+                console.error('Error stopping response:', error);
+                document.getElementById('stopButton').disabled = false; // Re-enable if error occurs
             }
-            const stopButton = document.getElementById('stopButton');
-            stopButton.disabled = true;
-            stopButton.textContent = 'Stop';
-            currentMessageId = null;
+        } else {
+            console.log('No current message to stop');
         }
-    });
-
-    connection.on("MessageEditedNotification", (chatSessionId, messageId, newContent) => {
-        if (chatSessionId === chatId) {
-            const messageDiv = document.querySelector(`.message[data-message-id="${messageId}"]`);
-            if (messageDiv && messageDiv.classList.contains('user-message')) {
-                const contentDiv = messageDiv.querySelector('.message-content');
-                contentDiv.innerHTML = marked.parse(newContent);
-            }
-            // Optionally clear any subsequent AI response
-            const aiMessageToRemove = document.querySelector(`.message.ai-message[data-replying-to="${messageId}"]`);
-            if (aiMessageToRemove) {
-                aiMessageToRemove.remove();
-            }
-        }
-    });
-
-    function updateTokenDisplay(inputTokens, outputTokens) {
-        document.getElementById("input-tokens").textContent = inputTokens.toLocaleString();
-        document.getElementById("output-tokens").textContent = outputTokens.toLocaleString();
-        document.getElementById("total-tokens").textContent = (inputTokens + outputTokens).toLocaleString();
-        const statElements = document.querySelectorAll('.stat-value');
-        statElements.forEach(el => {
-            el.classList.add('updated');
-            setTimeout(() => el.classList.remove('updated'), 500);
-        });
     }
 
-    connection.on("TokenUsageUpdated", (tokenData) => {
-        document.getElementById("input-tokens").textContent = tokenData.inputTokens.toLocaleString();
-        document.getElementById("output-tokens").textContent = tokenData.outputTokens.toLocaleString();
-        document.getElementById("total-tokens").textContent = (tokenData.inputTokens + tokenData.outputTokens).toLocaleString();
-        const formattedCost = new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-            minimumFractionDigits: 4,
-            maximumFractionDigits: 4
-        }).format(tokenData.totalCost);
-        document.getElementById("token-cost").textContent = formattedCost;
-        const statElements = document.querySelectorAll('.stat-value');
-        statElements.forEach(el => {
-            el.classList.add('updated');
-            setTimeout(() => el.classList.remove('updated'), 500);
-        });
-        console.log("Token usage updated:", tokenData);
+    // Response completion handler
+    connection.on('ResponseCompleted', (messageId) => {
+        if (messageId === currentMessageId) {
+            document.getElementById('stopButton').disabled = true;
+            currentMessageId = null;
+        }
     });
 
-    start();
+    // Edit functionality
+    function editMessage(messageId) {
+        const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+        const content = messageDiv.querySelector('.message-content').textContent;
 
+        messageDiv.querySelector('.message-content').innerHTML = `
+            <div class="edit-input-container">
+                <input class="edit-input" value="${content}" />
+                <button class="save-edit-button" onclick="saveEdit('${messageId}')">Save</button>
+                <button class="cancel-edit-button" onclick="cancelEdit('${messageId}')">Cancel</button>
+            </div>
+        `;
+        editingMessageId = messageId;
+    }
+
+    async function saveEdit(messageId) {
+        const newContent = document.querySelector(`[data-message-id="${messageId}"] .edit-input`).value;
+        try {
+            await connection.invoke('EditLastMessage', chatId, newContent);
+            editingMessageId = null;
+        } catch (error) {
+            console.error('Error saving edit:', error);
+        }
+    }
+
+    function cancelEdit(messageId) {
+        const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+        messageDiv.querySelector('.message-content').innerHTML = marked.parse(
+            messageDiv.querySelector('.edit-input').value
+        );
+        editingMessageId = null;
+    }
+
+    // Token display update
+    function updateTokenDisplay(inputTokens, outputTokens) {
+        document.getElementById('input-tokens').textContent = inputTokens;
+        document.getElementById('output-tokens').textContent = outputTokens;
+        document.getElementById('total-tokens').textContent = inputTokens + outputTokens;
+    }
+
+    // Initialize
+    start();
     document.getElementById('messageInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendMessage();
     });
-
-    document.getElementById('stopButton').addEventListener('click', stopResponse);
 </script>
 </body>
 </html>
