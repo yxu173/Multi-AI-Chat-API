@@ -14,7 +14,6 @@ public abstract class BaseAiService : IAiModelService
     protected readonly string ModelCode;
     protected readonly UserAiModelSettings? ModelSettings;
     protected readonly AiModel? AiModel;
-    private CancellationTokenSource? _stopTokenSource;
 
     protected BaseAiService(
         IHttpClientFactory httpClientFactory,
@@ -157,26 +156,5 @@ public abstract class BaseAiService : IAiModelService
         }
         
         return requestObj;
-    }
-    
-
-    
-   
-   public virtual void StopResponse()
-    {
-        _stopTokenSource?.Cancel();
-        _stopTokenSource?.Dispose();
-        _stopTokenSource = null;
-    }
-
-    protected CancellationTokenSource GetCancellationTokenSource()
-    {
-        if (_stopTokenSource is { IsCancellationRequested: false })
-        {
-            return _stopTokenSource;
-        }
-
-        _stopTokenSource = new CancellationTokenSource();
-        return _stopTokenSource;
     }
 }

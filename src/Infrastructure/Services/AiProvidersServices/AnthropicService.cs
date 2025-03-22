@@ -149,10 +149,4 @@ public class AnthropicService : BaseAiService
     }
 
     private record ClaudeMessage(string role, string content);
-
-
-    public override void StopResponse()
-    {
-        base.StopResponse();
-    }
 }

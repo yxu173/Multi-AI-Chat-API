@@ -10,7 +10,7 @@ namespace Infrastructure.Services.AiProvidersServices;
 public class OpenAiService : BaseAiService
 {
     private const string BaseUrl = "https://api.openai.com/v1/";
-    
+
 
     public OpenAiService(
         IHttpClientFactory httpClientFactory,
@@ -46,27 +46,27 @@ public class OpenAiService : BaseAiService
             ["messages"] = messages,
             ["stream"] = true
         };
-        
-        
+
+
         var requestWithSettings = ApplyUserSettings(requestObj);
-        
+
         requestWithSettings.Remove("top_k");
         requestWithSettings.Remove("topK");
         requestWithSettings.Remove("maxOutputTokens");
         requestWithSettings.Remove("max_output_tokens");
-       
-        if (requestWithSettings.TryGetValue("max_tokens", out var maxTokensObj) && 
+
+        if (requestWithSettings.TryGetValue("max_tokens", out var maxTokensObj) &&
             maxTokensObj is int maxTokens && maxTokens > 16384)
         {
             requestWithSettings["max_tokens"] = 16384;
         }
-        
+
         return requestWithSettings;
     }
 
-    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, CancellationToken cancellationToken)
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
+        CancellationToken cancellationToken)
     {
-        
         var tokenizer = Tiktoken.ModelToEncoder.For(ModelCode);
         var messages = ((List<OpenAiMessage>)((dynamic)CreateRequestBody(history))["messages"]);
 
@@ -78,13 +78,14 @@ public class OpenAiService : BaseAiService
 
         var request = CreateRequest(CreateRequestBody(history));
 
-        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response =
+            await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "OpenAI");
         }
-        
-      
+
+
         if (cancellationToken.IsCancellationRequested)
         {
             yield break;
@@ -131,9 +132,4 @@ public class OpenAiService : BaseAiService
     private record Choice(Delta delta, int index, string finish_reason);
 
     private record Delta(string content);
-    
-    public override void StopResponse()
-    {
-        base.StopResponse();
-    }
 }

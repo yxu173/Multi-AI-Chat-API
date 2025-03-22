@@ -39,6 +39,13 @@ public class ChatHub : Hub
         var userId = Guid.Parse(Context.UserIdentifier);
         await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content);
     }
+
+    public async Task EditLastMessage(string chatSessionId, string newContent)
+    {
+        var userId = Guid.Parse(Context.UserIdentifier);
+        await _chatService.EditLastUserMessageAsync(Guid.Parse(chatSessionId), userId, newContent);
+    }
+
     public async Task StopResponse(string messageId, string chatSessionId)
     {
         _streamingOperationManager.StopStreaming(Guid.Parse(messageId));

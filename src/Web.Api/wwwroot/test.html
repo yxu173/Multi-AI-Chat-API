@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Chat Demo</title>
     <style>
         .main-container {
@@ -15,28 +17,63 @@
             border: 1px solid #ddd;
             padding: 10px;
             margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
         }
 
         .message {
             margin: 10px 0;
             padding: 10px;
             border-radius: 8px;
+            display: flex;
+            align-items: baseline;
+            word-break: break-word;
         }
 
         .user-message {
             background: #e3f2fd;
-            margin-left: 20px;
+            margin-left: auto;
+            justify-content: flex-end;
         }
 
         .ai-message {
             background: #f5f5f5;
-            margin-right: 20px;
+            margin-right: auto;
+            justify-content: flex-start;
+        }
+
+        .message-content {
+            flex-grow: 1;
+        }
+
+        .message-actions {
+            margin-left: 10px;
+            display: none;
+        }
+
+        .user-message .message-actions {
+            display: block;
+        }
+
+        .edit-button {
+            padding: 5px 8px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-left: 5px;
+        }
+
+        .edit-button:hover {
+            background-color: #45a049;
         }
 
         .input-container {
             display: flex;
             gap: 10px;
-            position: relative; /* Added for stop button alignment */
+            position: relative;
         }
 
         #messageInput {
@@ -52,7 +89,6 @@
             font-size: 0.9rem;
         }
 
-        /* Token stats styles */
         .token-stats-container {
             margin: 20px 0;
             padding: 15px;
@@ -94,15 +130,10 @@
         }
 
         @keyframes highlight {
-            0% {
-                background-color: rgba(255, 251, 0, 0.3);
-            }
-            100% {
-                background-color: transparent;
-            }
+            0% { background-color: rgba(255, 251, 0, 0.3); }
+            100% { background-color: transparent; }
         }
 
-        /* Stop button styling */
         .stop-button {
             padding: 5px 10px;
             background-color: #ff4d4d;
@@ -117,11 +148,40 @@
             background-color: #cccccc;
             cursor: not-allowed;
         }
+
+        .edit-input-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        .edit-input {
+            flex-grow: 1;
+            padding: 8px;
+        }
+
+        .save-edit-button, .cancel-edit-button {
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .save-edit-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+        }
+
+        .cancel-edit-button {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+        }
     </style>
 </head>
 <body>
 <div class="main-container">
-    <!-- Instructions for users -->
     <div class="instructions">
         <strong>Tip:</strong> Start your message with <code>/search</code> or <code>/google</code> followed by a query
         (e.g., "/search latest AI news") to use the web search plugin!
@@ -129,7 +189,6 @@
 
     <div id="messagesList"></div>
 
-    <!-- Token Stats Container -->
     <div class="token-stats-container">
         <h3>Token Usage</h3>
         <div class="token-stats">
@@ -155,25 +214,22 @@
     <div class="input-container">
         <input type="text" id="messageInput" placeholder="Type your message here (e.g., /search latest AI news)"/>
         <button onclick="sendMessage()">Send</button>
-        <button class="stop-button" id="stopButton" disabled>Stop</button> <!-- Static stop button -->
+        <button class="stop-button" id="stopButton" disabled>Stop</button>
     </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-    // Set your token and chat ID here
     const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1YjI0MC1kZjZlLTc2NTMtOWE1OC1kMmUwYTg5YTE3OTMiLCJlbWFpbCI6Im1vaGFtZWRzYW1pckBvdXRsb29rLmNvbSIsIm5hbWUiOiJ5eHUiLCJqdGkiOiJjNDg3MTcyYy02YjBmLTQ4MzEtYjJiMi03YmZmNDhjYWZmZmUiLCJhdWQiOlsiU3dhZ2dlclVJIiwiU3dhZ2dlclVJIl0sIm5iZiI6MTc0MjYyMjM0NSwiZXhwIjoxNzQzMjI3MTQ1LCJpYXQiOjE3NDI2MjIzNDUsImlzcyI6IkludGVybnNoaXAtUGxhdGZvcm0ifQ.Jsa7aNpiMxkWOYNP8KyfMW_nH-ucQgIWhiXmp_m4yvA"; // Replace with your actual token
-    const chatId = "f9d9a0df-aada-408f-8610-4d7f264b0f07"; // Replace with your actual chat ID
-
+    const chatId = "fd7533ba-8f92-47cc-b413-10f9e6cc2385"; // Replace with your actual chat ID
     const connection = new signalR.HubConnectionBuilder()
-        .withUrl("/chatHub", {
-            accessTokenFactory: () => token
-        })
+        .withUrl("/chatHub", { accessTokenFactory: () => token })
         .withAutomaticReconnect()
         .build();
 
-    let currentMessageId = null; // Track the current streaming message ID
+    let currentMessageId = null;
+    let editingMessageId = null;
 
     async function start() {
         try {
@@ -189,9 +245,7 @@
     async function sendMessage() {
         const messageInput = document.getElementById('messageInput');
         const content = messageInput.value.trim();
-
         if (!content) return;
-
         try {
             await connection.invoke('SendMessage', chatId, content);
             messageInput.value = '';
@@ -200,32 +254,83 @@
         }
     }
 
-    // Handle received messages
+    function editMessage(messageId) {
+        const messageDiv = document.querySelector(`.message[data-message-id="${messageId}"]`);
+        if (!messageDiv || !messageDiv.classList.contains('user-message')) return;
+
+        const contentDiv = messageDiv.querySelector('.message-content');
+        const currentContent = contentDiv.innerText;
+
+        editingMessageId = messageId;
+
+        contentDiv.innerHTML = `
+            <div class="edit-input-container">
+                <input type="text" class="edit-input" value="${currentContent}" />
+                <button class="save-edit-button" onclick="saveEditedMessage('${messageId}')">Save</button>
+                <button class="cancel-edit-button" onclick="cancelEdit('${messageId}', '${currentContent.replace(/'/g, "\\'")}')">Cancel</button>
+            </div>
+        `;
+    }
+
+    async function saveEditedMessage(messageId) {
+        if (!editingMessageId || editingMessageId !== messageId) return;
+
+        const messageDiv = document.querySelector(`.message[data-message-id="${messageId}"]`);
+        const editInput = messageDiv.querySelector('.edit-input');
+        const newContent = editInput.value.trim();
+
+        if (newContent) {
+            try {
+                await connection.invoke('EditLastMessage', chatId, newContent);
+                // The UI will be updated by the 'ReceiveMessage' and streaming events
+            } catch (error) {
+                console.error('Error editing message:', error);
+            } finally {
+                editingMessageId = null;
+            }
+        } else {
+            // If content is empty, maybe revert or show an error
+            const contentDiv = messageDiv.querySelector('.message-content');
+            const inputContainer = messageDiv.querySelector('.edit-input-container');
+            contentDiv.innerHTML = inputContainer.querySelector('.edit-input').placeholder = 'Message cannot be empty.';
+        }
+    }
+
+    function cancelEdit(messageId, originalContent) {
+        const messageDiv = document.querySelector(`.message[data-message-id="${messageId}"]`);
+        const contentDiv = messageDiv.querySelector('.message-content');
+        contentDiv.innerHTML = marked.parse(originalContent);
+        editingMessageId = null;
+    }
+
     connection.on('ReceiveMessage', (message) => {
         const messagesList = document.getElementById('messagesList');
         const messageClass = message.isFromAi ? 'ai-message' : 'user-message';
-        messagesList.innerHTML += `<div class="message ${messageClass}">${marked.parse(message.content)}</div>`;
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${messageClass}`;
+        messageDiv.setAttribute('data-message-id', message.messageId);
+        messageDiv.innerHTML = `
+            <div class="message-content">${marked.parse(message.content)}</div>
+            ${!message.isFromAi ? '<div class="message-actions"><button class="edit-button" onclick="editMessage(\'' + message.messageId + '\')">Edit</button></div>' : ''}
+        `;
+        messagesList.appendChild(messageDiv);
         messagesList.scrollTop = messagesList.scrollHeight;
     });
 
-    // Handle streaming message chunks
     connection.on('ReceiveMessageChunk', (messageId, chunk) => {
         const messagesList = document.getElementById('messagesList');
-        let messageElement = messagesList.querySelector(`[data-message-id="${messageId}"]`);
-
+        let messageElement = messagesList.querySelector(`.message[data-message-id="${messageId}"]`);
         if (!messageElement) {
-            // Create a new AI message
             messageElement = document.createElement('div');
             messageElement.className = 'message ai-message';
             messageElement.setAttribute('data-message-id', messageId);
-            messageElement.innerHTML = `<div class="content"></div>`;
+            messageElement.innerHTML = `<div class="message-content"><div class="content"></div></div>`;
             messagesList.appendChild(messageElement);
-
-            // Set the current message ID and enable the stop button
             currentMessageId = messageId;
-            document.getElementById('stopButton').disabled = false;
+            const stopButton = document.getElementById('stopButton');
+            stopButton.disabled = false;
+            stopButton.textContent = 'Stop';
         }
-
         let content = chunk;
         if (typeof chunk === 'object' && chunk !== null && 'content' in chunk) {
             content = chunk.content;
@@ -233,39 +338,52 @@
                 updateTokenDisplay(chunk.inputTokens, chunk.outputTokens);
             }
         }
-
-        // Append the chunk to the content div and render markdown
         const contentDiv = messageElement.querySelector('.content');
         contentDiv.innerHTML = marked.parse(contentDiv.textContent + content);
         messagesList.scrollTop = messagesList.scrollHeight;
     });
 
-    // Handle stopped responses
-    connection.on('ResponseStopped', (messageId) => {
+    connection.on('ResponseCompleted', (messageId) => {
         if (messageId === currentMessageId) {
             const stopButton = document.getElementById('stopButton');
             stopButton.disabled = true;
-            stopButton.textContent = 'Stopped';
+            stopButton.textContent = 'Stop';
             currentMessageId = null;
         }
     });
 
-    // Function to stop an AI response
-    async function stopResponse() {
-        if (!currentMessageId) return;
-        try {
-            await connection.invoke('StopResponse', chatId, currentMessageId);
-        } catch (error) {
-            console.error('Error stopping response:', error);
+    connection.on('ResponseStopped', (messageId) => {
+        if (messageId === currentMessageId) {
+            const aiMessageElement = document.querySelector(`.message[data-message-id="${messageId}"] .message-content`);
+            if (aiMessageElement && !aiMessageElement.textContent.endsWith(' [Response interrupted]')) {
+                aiMessageElement.innerHTML += ' [Response interrupted]';
+            }
+            const stopButton = document.getElementById('stopButton');
+            stopButton.disabled = true;
+            stopButton.textContent = 'Stop';
+            currentMessageId = null;
         }
-    }
+    });
 
-    // Function to update token displays
+    connection.on("MessageEditedNotification", (chatSessionId, messageId, newContent) => {
+        if (chatSessionId === chatId) {
+            const messageDiv = document.querySelector(`.message[data-message-id="${messageId}"]`);
+            if (messageDiv && messageDiv.classList.contains('user-message')) {
+                const contentDiv = messageDiv.querySelector('.message-content');
+                contentDiv.innerHTML = marked.parse(newContent);
+            }
+            // Optionally clear any subsequent AI response
+            const aiMessageToRemove = document.querySelector(`.message.ai-message[data-replying-to="${messageId}"]`);
+            if (aiMessageToRemove) {
+                aiMessageToRemove.remove();
+            }
+        }
+    });
+
     function updateTokenDisplay(inputTokens, outputTokens) {
         document.getElementById("input-tokens").textContent = inputTokens.toLocaleString();
         document.getElementById("output-tokens").textContent = outputTokens.toLocaleString();
         document.getElementById("total-tokens").textContent = (inputTokens + outputTokens).toLocaleString();
-
         const statElements = document.querySelectorAll('.stat-value');
         statElements.forEach(el => {
             el.classList.add('updated');
@@ -273,12 +391,10 @@
         });
     }
 
-    // Handle token usage updates
-    connection.on("TokenUsageUpdated", function (tokenData) {
+    connection.on("TokenUsageUpdated", (tokenData) => {
         document.getElementById("input-tokens").textContent = tokenData.inputTokens.toLocaleString();
         document.getElementById("output-tokens").textContent = tokenData.outputTokens.toLocaleString();
         document.getElementById("total-tokens").textContent = (tokenData.inputTokens + tokenData.outputTokens).toLocaleString();
-
         const formattedCost = new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
@@ -286,25 +402,20 @@
             maximumFractionDigits: 4
         }).format(tokenData.totalCost);
         document.getElementById("token-cost").textContent = formattedCost;
-
         const statElements = document.querySelectorAll('.stat-value');
         statElements.forEach(el => {
             el.classList.add('updated');
             setTimeout(() => el.classList.remove('updated'), 500);
         });
-
         console.log("Token usage updated:", tokenData);
     });
 
-    // Start the connection
     start();
 
-    // Add enter key support
     document.getElementById('messageInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendMessage();
     });
 
-    // Attach stopResponse to the static stop button
     document.getElementById('stopButton').addEventListener('click', stopResponse);
 </script>
 </body>

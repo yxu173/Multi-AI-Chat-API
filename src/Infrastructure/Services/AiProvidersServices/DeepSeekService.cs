@@ -145,8 +145,4 @@ public class DeepSeekService : BaseAiService
 
     private record DeepSeekUsage(int prompt_tokens, int completion_tokens, int total_tokens);
     
-    public override void StopResponse()
-    {
-        base.StopResponse();
-    }
 }
