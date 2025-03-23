@@ -48,8 +48,14 @@ public class ChatHub : Hub
 
     public async Task StopResponse(string messageId, string chatSessionId)
     {
-        _streamingOperationManager.StopStreaming(Guid.Parse(messageId));
-        await Clients.Group(chatSessionId)
-            .SendAsync("ResponseStopped", messageId);
+        try
+        {
+            _streamingOperationManager.StopStreaming(Guid.Parse(messageId));
+            await Clients.Group(chatSessionId).SendAsync("ResponseStopped", messageId);
+        }
+        catch (FormatException)
+        {
+            await Clients.Caller.SendAsync("Error", "Invalid message ID format");
+        }
     }
 }

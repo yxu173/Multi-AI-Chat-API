@@ -17,7 +17,7 @@ public class ChatController : BaseController
     [HttpPost("Create")]
     public async Task<IResult> CreateChatSession([FromBody] CreateChatSessionRequest request)
     {
-        var command = new CreateChatSessionCommand(UserId, request.ModelId, request.FolderId, request.AiAgentId);
+        var command = new CreateChatSessionCommand(UserId, request.ModelId, request.FolderId);
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }

@@ -1,46 +1,25 @@
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 
-namespace Application.Services;
-
-public class StreamingOperationManager
+namespace Application.Services
 {
-    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _streamingOperations = new();
-
-    public CancellationToken RegisterStreaming(Guid messageId)
+    public class StreamingOperationManager
     {
-        var cts = new CancellationTokenSource();
-        if (!_streamingOperations.TryAdd(messageId, cts))
+        private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _operations = new();
+
+        public void RegisterOperation(Guid messageId, CancellationTokenSource cts)
         {
-            cts.Dispose();
-            throw new InvalidOperationException(
-                $"A streaming operation is already registered for message ID {messageId}.");
+            _operations[messageId] = cts;
         }
 
-        return cts.Token;
-    }
-
-    public void StopStreaming(Guid operationId)
-    {
-        if (_streamingOperations.TryRemove(operationId, out var cts))
+        public void StopStreaming(Guid messageId)
         {
-            Console.WriteLine($"Cancelling operation {operationId}");
-            cts.Cancel();
-            cts.Dispose();
+            if (_operations.TryRemove(messageId, out var cts))
+            {
+                cts.Cancel();
+                cts.Dispose();
+            }
         }
-        else
-        {
-            Console.WriteLine($"No operation found for {operationId}");
-        }
-    }
-
-    public void UnregisterStreaming(Guid messageId)
-    {
-        if (_streamingOperations.TryRemove(messageId, out var cts))
-        {
-            cts.Dispose();
-        }
-
-        Console.WriteLine($"No operation found for {messageId}");
     }
 }

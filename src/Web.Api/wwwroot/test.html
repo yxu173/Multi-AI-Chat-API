@@ -183,29 +183,18 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
     const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1YjI0MC1kZjZlLTc2NTMtOWE1OC1kMmUwYTg5YTE3OTMiLCJlbWFpbCI6Im1vaGFtZWRzYW1pckBvdXRsb29rLmNvbSIsIm5hbWUiOiJ5eHUiLCJqdGkiOiJjNDg3MTcyYy02YjBmLTQ4MzEtYjJiMi03YmZmNDhjYWZmZmUiLCJhdWQiOlsiU3dhZ2dlclVJIiwiU3dhZ2dlclVJIl0sIm5iZiI6MTc0MjYyMjM0NSwiZXhwIjoxNzQzMjI3MTQ1LCJpYXQiOjE3NDI2MjIzNDUsImlzcyI6IkludGVybnNoaXAtUGxhdGZvcm0ifQ.Jsa7aNpiMxkWOYNP8KyfMW_nH-ucQgIWhiXmp_m4yvA"; // Replace with your actual token
-    const chatId = "5915eae8-507e-4717-ba56-92338e485c67"; // Replace with your actual chat ID
+    const chatId = "fd7533ba-8f92-47cc-b413-10f9e6cc2385"; // Replace with your actual chat ID
 
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/chatHub", {accessTokenFactory: () => token})
         .withAutomaticReconnect()
+        .configureLogging(signalR.LogLevel.Information)
         .build();
 
     let currentMessageId = null;
     let editingMessageId = null;
+    let isStreaming = false;
 
-    // Connection management
-    async function start() {
-        try {
-            await connection.start();
-            console.log("Connected to hub");
-            await connection.invoke('JoinChatSession', chatId);
-        } catch (err) {
-            console.error(err);
-            setTimeout(start, 5000);
-        }
-    }
-
-    // Message sending
     async function sendMessage() {
         const messageInput = document.getElementById('messageInput');
         const content = messageInput.value.trim();
@@ -214,134 +203,157 @@
         try {
             await connection.invoke('SendMessage', chatId, content);
             messageInput.value = '';
+            messageInput.focus();
         } catch (error) {
             console.error('Error sending message:', error);
         }
     }
 
-    // Message handling
-    connection.on('ReceiveMessage', (message) => {
-        console.log("Received Message:", message);
-        const messagesList = document.getElementById('messagesList');
-
-        // Create or update message element
-        let messageDiv = messagesList.querySelector(`[data-message-id="${message.messageId}"]`);
-        if (!messageDiv) {
-            messageDiv = document.createElement('div');
-            messageDiv.className = `message ${message.isFromAi ? 'ai-message' : 'user-message'}`;
-            messageDiv.setAttribute('data-message-id', message.messageId);
-            messageDiv.innerHTML = `
-                <div class="message-content">${marked.parse(message.content)}</div>
-                ${!message.isFromAi ? '<div class="message-actions"><button class="edit-button" onclick="editMessage(\'' + message.messageId + '\')">Edit</button></div>' : ''}
-            `;
-            messagesList.appendChild(messageDiv);
+    // Modified connection management
+    async function start() {
+        try {
+            await connection.start();
+            console.log("Connected to hub");
+            await connection.invoke('JoinChatSession', chatId);
+            setupHubHandlers();
+        } catch (err) {
+            console.error("Connection error:", err);
+            setTimeout(start, 5000);
         }
+    }
 
-        // Update AI message state
-        if (message.isFromAi) {
-            currentMessageId = message.messageId;
-            document.getElementById('stopButton').disabled = false;
+    // Centralized hub handler setup
+    function setupHubHandlers() {
+        connection.on('ReceiveMessage', handleNewMessage);
+        connection.on('ReceiveMessageChunk', handleMessageChunk);
+        connection.on('ResponseCompleted', handleResponseComplete);
+        connection.on('MessageEdited', handleMessageEdited);
+        connection.on('TokenUsageUpdated', handleTokenUpdate);
+        connection.on('ResponseStopped', handleResponseStopped);
+    }
+
+    // Improved message handling
+    function handleNewMessage(message) {
+        const messagesList = document.getElementById('messagesList');
+        const existingMessage = messagesList.querySelector(`[data-message-id="${message.messageId}"]`);
+
+        if (!existingMessage) {
+            const messageDiv = createMessageElement(message);
+            messagesList.appendChild(messageDiv);
+
+            if (message.isFromAi) {
+                currentMessageId = message.messageId;
+                updateStreamingState(true);
+            }
         }
 
         messagesList.scrollTop = messagesList.scrollHeight;
-    });
+    }
 
-    // Streaming chunks handling
-    connection.on('ReceiveMessageChunk', (messageId, chunk) => {
-        console.log(`Received Chunk for Message ID: ${messageId}`, chunk);
+    function createMessageElement(message) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${message.isFromAi ? 'ai-message' : 'user-message'}`;
+        messageDiv.setAttribute('data-message-id', message.messageId);
+
+        const content = marked.parse(message.content);
+        messageDiv.innerHTML = `
+            <div class="message-content">${content}</div>
+            ${!message.isFromAi ? `
+                <div class="message-actions">
+                    <button class="edit-button" onclick="editMessage('${message.messageId}')">Edit</button>
+                </div>
+            ` : ''}
+        `;
+
+        return messageDiv;
+    }
+
+    // Enhanced chunk handling
+    function handleMessageChunk(messageId, chunk) {
         const messagesList = document.getElementById('messagesList');
-
-        // Get or create message element
         let messageElement = messagesList.querySelector(`[data-message-id="${messageId}"]`);
+
         if (!messageElement) {
-            messageElement = document.createElement('div');
-            messageElement.className = 'message ai-message';
-            messageElement.setAttribute('data-message-id', messageId);
-            messageElement.innerHTML = '<div class="message-content"></div>';
+            messageElement = createMessageElement({
+                messageId: messageId,
+                content: '',
+                isFromAi: true
+            });
             messagesList.appendChild(messageElement);
         }
 
-        // Update content
         const contentDiv = messageElement.querySelector('.message-content');
-        contentDiv.innerHTML = marked.parse(contentDiv.innerHTML + chunk);
-
-        // Update tokens
-        if (chunk.inputTokens && chunk.outputTokens) {
-            updateTokenDisplay(chunk.inputTokens, chunk.outputTokens);
-        }
-
+        contentDiv.innerHTML = marked.parse(contentDiv.textContent + chunk);
         messagesList.scrollTop = messagesList.scrollHeight;
-    });
+    }
 
-    // Stop response functionality
+    // Improved stop functionality
     async function stopResponse() {
-        if (currentMessageId) {
-            document.getElementById('stopButton').disabled = true; // Disable immediately
-            try {
-                console.log(`Stopping response for messageId: ${currentMessageId}`);
-                await connection.invoke('StopResponse', currentMessageId, chatId);
-                console.log('StopResponse invoked successfully');
-            } catch (error) {
-                console.error('Error stopping response:', error);
-                document.getElementById('stopButton').disabled = false; // Re-enable if error occurs
-            }
-        } else {
-            console.log('No current message to stop');
+        if (!currentMessageId || !isStreaming) return;
+
+        try {
+            updateStreamingState(false);
+            await connection.invoke('StopResponse', currentMessageId, chatId);
+            console.log('Stop request sent for message:', currentMessageId);
+        } catch (error) {
+            console.error('Stop error:', error);
+            updateStreamingState(true);
         }
     }
 
-    // Response completion handler
-    connection.on('ResponseCompleted', (messageId) => {
+    function handleResponseStopped(messageId) {
         if (messageId === currentMessageId) {
-            document.getElementById('stopButton').disabled = true;
+            const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+            if (messageElement) {
+                const contentDiv = messageElement.querySelector('.message-content');
+                contentDiv.innerHTML += marked.parse("\n[Response interrupted]");
+            }
+            updateStreamingState(false);
+        }
+    }
+
+    function handleResponseComplete(messageId) {
+        if (messageId === currentMessageId) {
+            updateStreamingState(false);
             currentMessageId = null;
         }
-    });
-
-    // Edit functionality
-    function editMessage(messageId) {
-        const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
-        const content = messageDiv.querySelector('.message-content').textContent;
-
-        messageDiv.querySelector('.message-content').innerHTML = `
-            <div class="edit-input-container">
-                <input class="edit-input" value="${content}" />
-                <button class="save-edit-button" onclick="saveEdit('${messageId}')">Save</button>
-                <button class="cancel-edit-button" onclick="cancelEdit('${messageId}')">Cancel</button>
-            </div>
-        `;
-        editingMessageId = messageId;
     }
 
-    async function saveEdit(messageId) {
-        const newContent = document.querySelector(`[data-message-id="${messageId}"] .edit-input`).value;
-        try {
-            await connection.invoke('EditLastMessage', chatId, newContent);
-            editingMessageId = null;
-        } catch (error) {
-            console.error('Error saving edit:', error);
+    // Enhanced edit handling
+    function handleMessageEdited(chatSessionId, messageId, newContent) {
+        const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+        if (messageElement) {
+            messageElement.querySelector('.message-content').innerHTML = marked.parse(newContent);
+
+            // Remove subsequent AI response
+            const nextElement = messageElement.nextElementSibling;
+            if (nextElement && nextElement.classList.contains('ai-message')) {
+                nextElement.remove();
+            }
         }
     }
 
-    function cancelEdit(messageId) {
-        const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
-        messageDiv.querySelector('.message-content').innerHTML = marked.parse(
-            messageDiv.querySelector('.edit-input').value
-        );
-        editingMessageId = null;
-    }
-
-    // Token display update
-    function updateTokenDisplay(inputTokens, outputTokens) {
+    // Token handling
+    function handleTokenUpdate(chatSessionId, inputTokens, outputTokens, totalCost) {
         document.getElementById('input-tokens').textContent = inputTokens;
         document.getElementById('output-tokens').textContent = outputTokens;
         document.getElementById('total-tokens').textContent = inputTokens + outputTokens;
+        document.getElementById('token-cost').textContent = `$${totalCost.toFixed(4)}`;
+    }
+
+    // State management
+    function updateStreamingState(streaming) {
+        isStreaming = streaming;
+        document.getElementById('stopButton').disabled = !streaming;
     }
 
     // Initialize
     start();
     document.getElementById('messageInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
     });
 </script>
 </body>

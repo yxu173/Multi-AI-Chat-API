@@ -261,7 +261,7 @@ public class ChatService
                     response.Content
                 ), cancellationToken);
 
-                await UpdateTokenUsageAsync(chatSessionId, response.InputTokens, response.OutputTokens);
+                await UpdateTokenUsageAsync(chatSessionId, response.InputTokens, response.OutputTokens, cancellationToken);
             }
         }
     }
@@ -322,30 +322,41 @@ public class ChatService
     /// <summary>
     /// Streams AI responses for a given user message with enhanced cancellation support
     /// </summary>
-    private async Task StreamAiResponseAsync(ChatSession chatSession, Guid userId, Message userMessage, string content,
-        CancellationToken cancellationToken = default)
-    {
-        var aiMessage = Message.CreateAiMessage(userId, chatSession.Id);
-        await _messageRepository.AddAsync(aiMessage, cancellationToken);
-        chatSession.AddMessage(aiMessage);
-        await _mediator.Publish(new MessageSentNotification(chatSession.Id,
-            new MessageDto(aiMessage.Content, true, aiMessage.Id)), cancellationToken);
+ private async Task StreamAiResponseAsync(ChatSession chatSession, Guid userId, Message userMessage, string content,
+    CancellationToken cancellationToken = default)
+{
+    // Create and persist the AI message
+    var aiMessage = Message.CreateAiMessage(userId, chatSession.Id);
+    await _messageRepository.AddAsync(aiMessage, cancellationToken);
+    chatSession.AddMessage(aiMessage);
+    await _mediator.Publish(new MessageSentNotification(chatSession.Id,
+        new MessageDto(aiMessage.Content, true, aiMessage.Id)), cancellationToken);
 
-        var token = _streamingOperationManager.RegisterStreaming(aiMessage.Id);
-        bool wasCanceled = false;
+    // Set up cancellation handling
+    var cts = new CancellationTokenSource();
+    _streamingOperationManager.RegisterOperation(aiMessage.Id, cts);
+    var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+    bool wasCanceled = false;
+
+    try
+    {
+        // Initialize AI service and token usage
+        var aiService = _aiModelServiceFactory.GetService(
+            chatSession.UserId,
+            chatSession.AiModelId,
+            chatSession.CustomApiKey ?? string.Empty);
+
+        var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, userMessage, content);
+        var (tokenUsage, previousInputTokens, previousOutputTokens, previousCost) =
+            await GetOrCreateTokenUsageAsync(chatSession.Id);
+
+        // Track response content for chunk processing
+        var responseContent = new StringBuilder();
+
         try
         {
-            var aiService = _aiModelServiceFactory.GetService(
-                chatSession.UserId,
-                chatSession.AiModelId,
-                chatSession.CustomApiKey ?? string.Empty);
-
-            var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, userMessage, content);
-            var (tokenUsage, previousInputTokens, previousOutputTokens, previousCost) =
-                await GetOrCreateTokenUsageAsync(chatSession.Id);
-
-            var responseContent = new StringBuilder();
-            await foreach (var response in aiService.StreamResponseAsync(messages, token))
+            // Stream responses and process each chunk
+            await foreach (var response in aiService.StreamResponseAsync(messages, linkedCts.Token))
             {
                 await ProcessStreamResponseChunkAsync(
                     chatSession,
@@ -356,43 +367,55 @@ public class ChatService
                     previousInputTokens,
                     previousOutputTokens,
                     previousCost,
-                    cancellationToken);
-            }
-
-
-            if (token.IsCancellationRequested)
-            {
-                wasCanceled = true;
-            }
-            else
-            {
-                await FinalizeAiMessageAsync(
-                    aiMessage,
-                    tokenUsage,
-                    chatSession,
-                    previousInputTokens,
-                    previousOutputTokens,
-                    previousCost,
-                    cancellationToken);
+                    linkedCts.Token);
             }
         }
-        finally
+        catch (Exception ex) when (!(ex is OperationCanceledException))
         {
-            _streamingOperationManager.UnregisterStreaming(aiMessage.Id);
-            if (wasCanceled)
-            {
-                aiMessage.AppendContent("\n[Response interrupted]");
-                aiMessage.InterruptMessage();
-                await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
-                await _mediator.Publish(
-                    new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
-                    cancellationToken);
-            }
-
-            await _mediator.Publish(new ResponseCompletedNotification(chatSession.Id, aiMessage.Id), cancellationToken);
+            // Handle non-cancellation errors
+            aiMessage.AppendContent("\n[Error occurred during response]");
+            aiMessage.InterruptMessage();
+            await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
+            await _mediator.Publish(
+                new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Error occurred during response]"),
+                cancellationToken);
         }
-    }
 
+        // Finalize the AI message after streaming completes
+        await FinalizeAiMessageAsync(
+            aiMessage,
+            tokenUsage,
+            chatSession,
+            previousInputTokens,
+            previousOutputTokens,
+            previousCost,
+            linkedCts.Token);
+    }
+    finally
+    {
+        // Cleanup and handle cancellation
+        if (linkedCts.IsCancellationRequested)
+        {
+            wasCanceled = true;
+        }
+        linkedCts.Dispose();
+        if (wasCanceled)
+        {
+            aiMessage.AppendContent("\n[Response interrupted]");
+            aiMessage.InterruptMessage();
+            await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
+            await _mediator.Publish(
+                new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
+                cancellationToken);
+            _streamingOperationManager.StopStreaming(aiMessage.Id);
+        }
+        else
+        {
+            _streamingOperationManager.StopStreaming(aiMessage.Id);
+        }
+        await _mediator.Publish(new ResponseCompletedNotification(chatSession.Id, aiMessage.Id), cancellationToken);
+    }
+}
     /// <summary>
     /// Prepares message history to send to AI
     /// </summary>
@@ -426,43 +449,69 @@ public class ChatService
     /// <summary>
     /// Processes a chunk of streaming response from AI
     /// </summary>
-    private async Task ProcessStreamResponseChunkAsync(
-        ChatSession chatSession,
-        Message aiMessage,
-        StreamResponse response,
-        StringBuilder responseContent,
-        ChatTokenUsage tokenUsage,
-        int previousInputTokens,
-        int previousOutputTokens,
-        decimal previousCost,
-        CancellationToken cancellationToken = default)
+   private async Task ProcessStreamResponseChunkAsync(
+    ChatSession chatSession,
+    Message aiMessage,
+    StreamResponse response,
+    StringBuilder responseContent,
+    ChatTokenUsage tokenUsage,
+    int previousInputTokens,
+    int previousOutputTokens,
+    decimal previousCost,
+    CancellationToken cancellationToken = default)
+{
+    // Extract chunk data
+    var chunk = response.Content;
+    var currentInputTokens = response.InputTokens;
+    var currentOutputTokens = response.OutputTokens;
+
+    // **Step 1: Update Token Usage Immediately**
+    // Token updates are lightweight and need to be accurate, so we process them per chunk
+    tokenUsage.UpdateTokenCounts(currentInputTokens, currentOutputTokens);
+    await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
+
+    decimal currentTotalCost = previousCost +
+                               CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens);
+
+    await _mediator.Publish(new TokenUsageUpdatedNotification(
+        chatSession.Id,
+        tokenUsage.InputTokens,
+        tokenUsage.OutputTokens,
+        currentTotalCost
+    ), cancellationToken);
+
+    // **Step 2: Debounce Database Updates**
+    // Append chunk to response content buffer
+    responseContent.Append(chunk);
+
+    // Use a Debouncer to delay database updates, reducing write frequency
+    var updateDebouncer = new Debouncer(TimeSpan.FromMilliseconds(200));
+    updateDebouncer.Debounce(async () =>
     {
-        var chunk = response.Content;
-        var currentInputTokens = response.InputTokens;
-        var currentOutputTokens = response.OutputTokens;
-
-        var totalInputTokens = previousInputTokens + currentInputTokens;
-        var totalOutputTokens = previousOutputTokens + currentOutputTokens;
-
-        tokenUsage.UpdateTokenCounts(currentInputTokens, currentOutputTokens);
-        await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
-
-        decimal currentTotalCost = previousCost +
-                                   CalculateCost(chatSession.AiModel, currentInputTokens, currentOutputTokens);
-
-        await _mediator.Publish(new TokenUsageUpdatedNotification(
-            chatSession.Id,
-            totalInputTokens,
-            totalOutputTokens,
-            currentTotalCost
-        ), cancellationToken);
-
-        responseContent.Append(chunk);
-        aiMessage.AppendContent(chunk);
+        aiMessage.AppendContent(responseContent.ToString());
         await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
-        await _mediator.Publish(new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, chunk),
+        responseContent.Clear(); // Clear buffer after update
+    });
+
+    // **Step 3: Batch Notifications with chunkBuffer and batchSize**
+    List<string> chunkBuffer = new();
+    int bufferSize = 0;
+    const int batchSize = 1000; // Batch size in characters for notifications
+
+    chunkBuffer.Add(chunk);
+    bufferSize += chunk.Length;
+
+    // Publish notification when buffer exceeds batchSize or chunk ends with a newline
+    if (bufferSize >= batchSize || chunk.EndsWith("\n"))
+    {
+        var combinedChunk = string.Join("", chunkBuffer);
+        await _mediator.Publish(
+            new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, combinedChunk),
             cancellationToken);
+        chunkBuffer.Clear(); // Clear buffer after publishing
+        bufferSize = 0;
     }
+}
 
     /// <summary>
     /// Finalizes an AI message after streaming is complete

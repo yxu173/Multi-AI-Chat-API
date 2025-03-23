@@ -10,16 +10,19 @@ namespace Infrastructure.Services.AiProvidersServices;
 public class OpenAiService : BaseAiService
 {
     private const string BaseUrl = "https://api.openai.com/v1/";
+    private readonly IResilienceService _resilienceService;
 
 
     public OpenAiService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
         string modelCode,
+        IResilienceService resilienceService,
         Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
         AiModel? aiModel = null)
         : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel)
     {
+        _resilienceService = resilienceService;
     }
 
     protected override void ConfigureHttpClient()
@@ -78,13 +81,24 @@ public class OpenAiService : BaseAiService
 
         var request = CreateRequest(CreateRequestBody(history));
 
-        using var response =
-            await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var pipeline = _resilienceService.CreatePluginResiliencePipeline<HttpResponseMessage>();
+        HttpResponseMessage response = null;
+
+        try
+        {
+            response = await pipeline.ExecuteAsync(async ct =>
+                await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            //_logger.LogError(ex, "Failed to initiate streaming after retries.");
+            throw;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "OpenAI");
         }
-
 
         if (cancellationToken.IsCancellationRequested)
         {
@@ -98,11 +112,13 @@ public class OpenAiService : BaseAiService
         while (true)
         {
             if (reader.EndOfStream || cancellationToken.IsCancellationRequested) yield break;
-            var readTask = reader.ReadLineAsync();
-            var delayTask = Task.Delay(Timeout.Infinite, cancellationToken);
-            var completedTask = await Task.WhenAny(readTask, delayTask);
-            if (completedTask == delayTask) yield break;
-            var line = await readTask;
+
+
+            // Apply per-chunk timeout using a linked cancellation token
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(10)); // 10-second timeout per chunk
+            var line = await reader.ReadLineAsync(cts.Token);
+
             if (string.IsNullOrWhiteSpace(line)) continue;
             if (line.StartsWith("data: ") && line.Trim() != "data: [DONE]")
             {
@@ -120,6 +136,7 @@ public class OpenAiService : BaseAiService
             }
         }
     }
+
 
     private record OpenAiMessage(string role, string content);
 

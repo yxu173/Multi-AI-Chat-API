@@ -14,19 +14,18 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IApplicationDbContext _dbContext;
-    private readonly IUserContext _userContext;
     private readonly IConfiguration _configuration;
+    private readonly IResilienceService _resilienceService;
 
     public AiModelServiceFactory(
         IServiceProvider serviceProvider,
         IApplicationDbContext dbContext,
-        IUserContext userContext,
-        IConfiguration configuration)
+        IConfiguration configuration, IResilienceService resilienceService)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _userContext = userContext ?? throw new ArgumentNullException(nameof(userContext));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _resilienceService = resilienceService;
     }
 
     public async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string customApiKey = null)
@@ -65,7 +64,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => CreateChatGptService(aiModel, apiKey, userSettings),
+            ModelType.OpenAi => CreateChatGptService(aiModel, apiKey, _resilienceService,userSettings),
             ModelType.Anthropic => CreateClaudeService(aiModel, apiKey, userSettings),
             ModelType.DeepSeek => CreateDeepSeekService(aiModel, apiKey, userSettings),
             ModelType.Gemini => CreateGeminiService(aiModel, apiKey, userSettings),
@@ -79,13 +78,17 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         return GetServiceAsync(userId, modelId, customApiKey).GetAwaiter().GetResult();
     }
 
-    private OpenAiService CreateChatGptService(AiModel aiModel, string apiKey, UserAiModelSettings? userSettings = null)
+    private OpenAiService CreateChatGptService(AiModel aiModel,
+        string apiKey,
+        IResilienceService resilienceService,
+        UserAiModelSettings? userSettings = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new OpenAiService(
             httpClientFactory,
             apiKey,
             aiModel.ModelCode,
+            resilienceService,
             userSettings,
             aiModel);
     }
