@@ -28,6 +28,7 @@ public sealed class
         return new UserAiModelSettingsResponse(
             settings.Id,
             settings.UserId,
+            settings.SystemMessage,
             settings.Temperature,
             settings.TopP,
             settings.TopK,

@@ -74,9 +74,6 @@ namespace Infrastructure.Database.Migrations
                     b.Property<DateTime?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("SystemPrompt")
-                        .HasColumnType("text");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -133,8 +130,7 @@ namespace Infrastructure.Database.Migrations
                     b.Property<string>("ProfilePictureUrl")
                         .HasColumnType("text");
 
-                    b.Property<string>("SystemPrompt")
-                        .IsRequired()
+                    b.Property<string>("SystemInstructions")
                         .HasColumnType("text");
 
                     b.Property<Guid>("UserId")
@@ -573,6 +569,9 @@ namespace Infrastructure.Database.Migrations
                     b.PrimitiveCollection<List<string>>("StopSequences")
                         .IsRequired()
                         .HasColumnType("text[]");
+
+                    b.Property<string>("SystemMessage")
+                        .HasColumnType("text");
 
                     b.Property<double?>("Temperature")
                         .HasColumnType("double precision");

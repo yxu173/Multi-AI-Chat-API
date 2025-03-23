@@ -32,7 +32,6 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
                 aiModelId: aiAgent.AiModelId,
                 folderId: request.FolderId,
                 aiAgent: request.AiAgentId);
-            chatSession.SetSystemPrompt(aiAgent.SystemPrompt);
             foreach (var plugin in aiAgent.AiAgentPlugins)
             {
                 chatSession.AddPlugin(plugin.PluginId, plugin.Order);

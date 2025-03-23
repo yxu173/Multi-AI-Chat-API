@@ -6,7 +6,7 @@ public sealed record CreateAiAgentCommand(
     Guid UserId,
     string Name,
     string Description,
-    string SystemPrompt,
+    string SystemInstructions,
     Guid AiModelId,
     string? IconUrl,
     List<string>? Categories,

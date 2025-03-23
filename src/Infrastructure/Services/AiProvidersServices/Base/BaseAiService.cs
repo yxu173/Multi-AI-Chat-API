@@ -65,6 +65,36 @@ public abstract class BaseAiService : IAiModelService
         throw new Exception($"{providerName} API Error: {response.StatusCode} - {errorContent}");
     }
     
+    // Get the system message from settings or use a default
+    protected string GetSystemMessage()
+    {
+        if (ModelSettings?.SystemMessage != null)
+        {
+            return ModelSettings.SystemMessage;
+        }
+        
+        return "Always respond using markdown formatting";
+    }
+    
+    // Apply system message to messages if needed
+    protected List<MessageDto> ApplySystemMessageToHistory(IEnumerable<MessageDto> history)
+    {
+        var messages = history.ToList();
+        
+        // Check if the first message is already a system message
+        bool hasSystemMessage = messages.Count > 0 && 
+                               messages[0].Content.StartsWith("system:") || 
+                               messages[0].Content.StartsWith("System:");
+        
+        // If not, add our system message
+        if (!hasSystemMessage)
+        {
+            var systemMessage = GetSystemMessage();
+            messages.Insert(0, new MessageDto("system: " + systemMessage, true, Guid.NewGuid()));
+        }
+        
+        return messages;
+    }
    
     protected Dictionary<string, object> ApplyUserSettings(Dictionary<string, object> requestObj, bool includeStopSequences = true)
     {

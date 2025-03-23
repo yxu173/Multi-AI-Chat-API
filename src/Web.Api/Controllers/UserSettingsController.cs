@@ -15,6 +15,7 @@ public class UserSettingsController : BaseController
         var command = new UpdateUserAiModelSettingsCommand
         (
             UserId,
+            request.SystemMessage,
             request.Temperature,
             request.TopP,
             request.TopK,

@@ -67,20 +67,16 @@ public class DeepSeekService : BaseAiService
         var contentBuffer = new List<string>();
         DeepSeekUsage? finalUsage = null;
 
-        try
-        {
-            while (true)
+       
+            while (!cancellationToken.IsCancellationRequested)
             {
                 if (reader.EndOfStream)
                     break;
 
-                var readTask = reader.ReadLineAsync();
-                var delayTask = Task.Delay(Timeout.Infinite, cancellationToken);
-                var completedTask = await Task.WhenAny(readTask, delayTask);
-                if (completedTask == delayTask)
-                    break;
+                var line = await reader.ReadLineAsync();
+                if (cancellationToken.IsCancellationRequested)
+                    yield break;
 
-                var line = await readTask;
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
                 if (line.StartsWith("data: "))
@@ -101,43 +97,17 @@ public class DeepSeekService : BaseAiService
                                 if (cancellationToken.IsCancellationRequested) yield break;
                                 yield return new StreamResponse(bufferedContent, finalUsage.prompt_tokens, finalUsage.completion_tokens);
                             }
-                            contentBuffer.Clear();
-
-                            if (!string.IsNullOrEmpty(delta?.content))
-                            {
-                                if (cancellationToken.IsCancellationRequested) yield break;
-                                yield return new StreamResponse(delta.content, finalUsage.prompt_tokens, finalUsage.completion_tokens);
-                            }
+                            break;
                         }
-                        else if (!string.IsNullOrEmpty(delta?.content))
+
+                        if (delta?.content != null)
                         {
-                            if (finalUsage != null)
-                            {
-                                if (cancellationToken.IsCancellationRequested) yield break;
-                                yield return new StreamResponse(delta.content, finalUsage.prompt_tokens, finalUsage.completion_tokens);
-                            }
-                            else
-                            {
-                                contentBuffer.Add(delta.content);
-                            }
+                            contentBuffer.Add(delta.content);
+                            yield return new StreamResponse(delta.content, finalUsage?.prompt_tokens ?? 0, finalUsage?.completion_tokens ?? 0);
                         }
                     }
                 }
             }
-
-            if (finalUsage != null && contentBuffer.Count > 0)
-            {
-                foreach (var bufferedContent in contentBuffer)
-                {
-                    if (cancellationToken.IsCancellationRequested) yield break;
-                    yield return new StreamResponse(bufferedContent, finalUsage.prompt_tokens, finalUsage.completion_tokens);
-                }
-            }
-        }
-        finally
-        {
-            response.Dispose();
-        }
     }
 
     private record DeepSeekMessage(string role, string content);

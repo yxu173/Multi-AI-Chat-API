@@ -29,7 +29,8 @@ public sealed class UpdateUserAiModelSettingsCommandHandler : ICommandHandler<Up
             request.TopP,
             request.TopK,
             request.FrequencyPenalty,
-            request.PresencePenalty
+            request.PresencePenalty,
+            request.SystemMessage
         );
 
         await _userAiModelSettingsRepository.UpdateAsync(settings, cancellationToken);

@@ -12,6 +12,7 @@ public sealed class UserAiModelSettings : BaseEntity
     public double? PresencePenalty { get; private set; }
     public bool IsDefault { get; private set; }
     public List<string> StopSequences { get; private set; } = new List<string>();
+    public string? SystemMessage { get; private set; }
 
     public User User { get; private set; } = null!;
 
@@ -32,7 +33,8 @@ public sealed class UserAiModelSettings : BaseEntity
             FrequencyPenalty = 0.0,
             PresencePenalty = 0.0,
             IsDefault = false,
-            StopSequences = new List<string>()
+            StopSequences = new List<string>(),
+            SystemMessage = "You are a helpful assistant that provides accurate and concise information."
         };
     }
 
@@ -41,13 +43,15 @@ public sealed class UserAiModelSettings : BaseEntity
         double? topP = null,
         int? topK = null,
         double? frequencyPenalty = null,
-        double? presencePenalty = null)
+        double? presencePenalty = null,
+        string? systemMessage = null)
     {
         if (temperature.HasValue) Temperature = temperature;
         if (topP.HasValue) TopP = topP;
         if (topK.HasValue) TopK = topK;
         if (frequencyPenalty.HasValue) FrequencyPenalty = frequencyPenalty;
         if (presencePenalty.HasValue) PresencePenalty = presencePenalty;
+        if (systemMessage != null) SystemMessage = systemMessage;
     }
 
     public void SetDefault(bool isDefault)

@@ -80,56 +80,52 @@ public class AnthropicService : BaseAiService
         int estimatedOutputTokens = 0;
         StringBuilder fullResponse = new StringBuilder();
 
-        while (true)
-        {
-            if (reader.EndOfStream)
-                break;
-
-            var readTask = reader.ReadLineAsync();
-            var delayTask = Task.Delay(Timeout.Infinite, cancellationToken);
-            var completedTask = await Task.WhenAny(readTask, delayTask);
-
-            if (completedTask == delayTask)
-                break;
-
-            var line = await readTask;
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            if (line.StartsWith("data: "))
+        
+            while (!cancellationToken.IsCancellationRequested)
             {
-                var json = line["data: ".Length..];
-                if (json == "[DONE]") break;
+                if (reader.EndOfStream)
+                    break;
 
-                using var doc = JsonDocument.Parse(json);
-                var type = doc.RootElement.GetProperty("type").GetString();
+                var line = await reader.ReadLineAsync(cancellationToken);
+                if (cancellationToken.IsCancellationRequested)
+                    yield break;
 
-                switch (type)
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                if (line.StartsWith("data: "))
                 {
-                    case "message_start":
-                        inputTokens = doc.RootElement.GetProperty("message").GetProperty("usage").GetProperty("input_tokens").GetInt32();
-                        break;
+                    var json = line["data: ".Length..];
+                    if (json == "[DONE]") break;
 
-                    case "content_block_delta":
-                        var text = doc.RootElement.GetProperty("delta").GetProperty("text").GetString();
-                        if (!string.IsNullOrEmpty(text))
-                        {
-                            fullResponse.Append(text);
-                            estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
-                            yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
-                        }
-                        break;
+                    using var doc = JsonDocument.Parse(json);
+                    var type = doc.RootElement.GetProperty("type").GetString();
 
-                    case "message_delta":
-                        if (doc.RootElement.TryGetProperty("usage", out var usageElement) &&
-                            usageElement.TryGetProperty("output_tokens", out var outputTokenElement))
-                        {
-                            outputTokens = outputTokenElement.GetInt32();
-                        }
-                        break;
+                    switch (type)
+                    {
+                        case "message_start":
+                            inputTokens = doc.RootElement.GetProperty("message").GetProperty("usage").GetProperty("input_tokens").GetInt32();
+                            break;
+
+                        case "content_block_delta":
+                            var text = doc.RootElement.GetProperty("delta").GetProperty("text").GetString();
+                            if (!string.IsNullOrEmpty(text))
+                            {
+                                fullResponse.Append(text);
+                                estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
+                                yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
+                            }
+                            break;
+
+                        case "message_delta":
+                            if (doc.RootElement.TryGetProperty("usage", out var usageElement) &&
+                                usageElement.TryGetProperty("output_tokens", out var outputTokenElement))
+                            {
+                                outputTokens = outputTokenElement.GetInt32();
+                            }
+                            break;
+                    }
                 }
             }
-        }
     }
 
     private record ClaudeMessage(string role, string content);

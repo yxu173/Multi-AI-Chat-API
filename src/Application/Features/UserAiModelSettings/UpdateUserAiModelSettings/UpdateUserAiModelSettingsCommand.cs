@@ -4,6 +4,7 @@ namespace Application.Features.UserAiModelSettings.UpdateUserAiModelSettings;
 
 public sealed record UpdateUserAiModelSettingsCommand(
     Guid UserId,
+    string SystemMessage,
     double? Temperature,
     double? TopP,
     int? TopK,

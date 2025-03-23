@@ -7,7 +7,7 @@ public sealed class AiAgent : BaseAuditableEntity
     public Guid UserId { get; private set; }
     public string Name { get; private set; }
     public string Description { get; private set; }
-    public string SystemPrompt { get; private set; }
+    public string? SystemInstructions { get; private set; }
     public Guid AiModelId { get; private set; }
     public string? IconUrl { get; private set; }
 
@@ -30,8 +30,8 @@ public sealed class AiAgent : BaseAuditableEntity
         Guid userId,
         string name,
         string description,
-        string systemPrompt,
         Guid aiModelId,
+        string? systemInstructions = null,
         string? iconUrl = null,
         List<string>? categories = null,
         bool assignCustomModelParameters = false,
@@ -40,8 +40,6 @@ public sealed class AiAgent : BaseAuditableEntity
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name cannot be empty.", nameof(name));
-        if (string.IsNullOrWhiteSpace(systemPrompt))
-            throw new ArgumentException("SystemPrompt cannot be empty.", nameof(systemPrompt));
         if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
 
         return new AiAgent
@@ -49,8 +47,8 @@ public sealed class AiAgent : BaseAuditableEntity
             Id = Guid.NewGuid(),
             UserId = userId,
             Name = name,
+            SystemInstructions = systemInstructions,
             Description = description,
-            SystemPrompt = systemPrompt,
             AiModelId = aiModelId,
             IconUrl = iconUrl,
             Categories = categories ?? new List<string>(),
@@ -64,8 +62,8 @@ public sealed class AiAgent : BaseAuditableEntity
     public void Update(
         string name,
         string description,
-        string systemPrompt,
         Guid aiModelId,
+        string? systemInstructions = null,
         string? iconUrl = null,
         List<string>? categories = null,
         bool? assignCustomModelParameters = null,
@@ -73,16 +71,14 @@ public sealed class AiAgent : BaseAuditableEntity
         string? profilePictureUrl = null)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name cannot be empty.", nameof(name));
-        if (string.IsNullOrWhiteSpace(systemPrompt))
-            throw new ArgumentException("SystemPrompt cannot be empty.", nameof(systemPrompt));
-        if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
+       if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
 
         Name = name;
         Description = description;
-        SystemPrompt = systemPrompt;
         AiModelId = aiModelId;
         IconUrl = iconUrl;
 
+        if (systemInstructions != null) SystemInstructions = systemInstructions;
         if (categories != null) Categories = categories;
         if (assignCustomModelParameters.HasValue) AssignCustomModelParameters = assignCustomModelParameters.Value;
         if (modelParameters != null) ModelParameters = modelParameters;
@@ -115,6 +111,14 @@ public sealed class AiAgent : BaseAuditableEntity
         if (enabled && !string.IsNullOrWhiteSpace(parameters))
         {
             ModelParameters = parameters;
+        }
+    }
+
+    public void SetSystemInstructions(string instructions)
+    {
+        if (!string.IsNullOrWhiteSpace(instructions))
+        {
+            SystemInstructions = instructions;
         }
     }
 

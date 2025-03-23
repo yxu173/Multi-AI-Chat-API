@@ -16,10 +16,7 @@ public class CreateAiAgentCommandValidator : AbstractValidator<CreateAiAgentComm
         RuleFor(command => command.Description)
             .MaximumLength(500).WithMessage("Description cannot exceed 500 characters.");
 
-        RuleFor(command => command.SystemPrompt)
-            .NotEmpty().WithMessage("System prompt is required.")
-            .MaximumLength(2000).WithMessage("System prompt cannot exceed 2000 characters.");
-
+       
         RuleFor(command => command.AiModelId)
             .NotEmpty().WithMessage("AI Model ID is required.");
 

@@ -53,4 +53,11 @@ public class ChatController : BaseController
         var result = await _mediator.Send(query);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
+
+    [HttpPost("StopResponse/{messageId}")]
+    public IResult StopResponse([FromRoute] Guid messageId, [FromServices] Application.Services.StreamingOperationManager streamingOperationManager)
+    {
+        streamingOperationManager.StopStreaming(messageId);
+        return Results.Ok();
+    }
 }
