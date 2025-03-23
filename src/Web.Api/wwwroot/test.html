@@ -262,16 +262,32 @@
                 <!-- Will be populated from API -->
             </select>
         </div>
+        <div class="input-group">
+            <label for="temperature">Temperature</label>
+            <input type="number" step="0.01" id="temperature" placeholder="e.g., 0.7" />
+        </div>
+        <div class="input-group">
+            <label for="presencePenalty">Presence Penalty</label>
+            <input type="number" step="0.01" id="presencePenalty" placeholder="e.g., 0.5" />
+        </div>
+        <div class="input-group">
+            <label for="maxTokens">Max Tokens</label>
+            <input type="number" id="maxTokens" placeholder="e.g., 2000" />
+        </div>
+        <div class="input-group">
+            <label for="topK">Top K</label>
+            <input type="number" id="topK" placeholder="e.g., 40" />
+        </div>
         <div class="button-group">
             <button id="connectButton" onclick="joinChatSession()">Connect</button>
             <button id="createSessionButton" onclick="createNewSession()">Create New Session</button>
         </div>
     </div>
 
-    <div id="agentSelectionPanel" class="agent-selection" style="display: none;">
+    <div id="agentSelectionPanel" class="agent-selection">
         <h3>Select AI Agent</h3>
         <div id="agentOptions">
-            <!-- Will be populated from API -->
+            <!-- populated from API -->
         </div>
     </div>
 
@@ -337,20 +353,11 @@
 
     // Fetch available AI agents
     async function fetchAiAgents() {
-        try {
-            const token = localStorage.getItem('userToken') || '';
-            const response = await fetch('/api/AiAgent/GetAll', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                aiAgents = data;
-                populateAgentOptions(data);
-            }
-        } catch (error) {
-            console.error('Error fetching AI agents:', error);
-        }
+        const response = await fetch('/api/AiAgent/GetAll', {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('userToken')}` }
+        });
+        const agents = await response.json();
+        populateAgentOptions(agents);
     }
 
     // Populate model select dropdown
@@ -369,24 +376,12 @@
     // Populate agent options
     function populateAgentOptions(agents) {
         const container = document.getElementById('agentOptions');
-        container.innerHTML = `
+        container.innerHTML = agents.map(agent => `
             <div class="agent-option">
-                <input type="radio" id="agent-none" name="agent" value="none" checked>
-                <label for="agent-none">No Agent (Default)</label>
+                <input type="radio" name="agent" value="${agent.id}" id="agent-${agent.id}">
+                <label for="agent-${agent.id}">${agent.name}</label>
             </div>
-        `;
-
-        agents.forEach(agent => {
-            const option = document.createElement('div');
-            option.className = 'agent-option';
-            option.innerHTML = `
-                <input type="radio" id="agent-${agent.id}" name="agent" value="${agent.id}">
-                <label for="agent-${agent.id}">${agent.name} - ${agent.description || 'No description'}</label>
-            `;
-            container.appendChild(option);
-        });
-
-        document.getElementById('agentSelectionPanel').style.display = 'block';
+        `).join('');
     }
 
     // Connect to chat session
@@ -616,60 +611,9 @@
     function sendMessage() {
         const content = messageInput.value.trim();
         const chatSessionId = document.getElementById('chatSessionId').value;
+        const selectedAgentId = document.querySelector('input[name="agent"]:checked')?.value;
 
-        if (!connection || !content || !chatSessionId) {
-            return;
-        }
-
-        // Get selected agent if any
-        const selectedAgent = document.querySelector('input[name="agent"]:checked')?.value;
-        const selectedAgentId = selectedAgent !== 'none' ? selectedAgent : null;
-
-        console.log('Attempting to send message:', {
-            chatSessionId,
-            content,
-            connectionState: connection.state,
-            connectionId: connection.connectionId
-        });
-
-        // Disable input while processing
-        messageInput.value = '';
-        messageInput.disabled = true;
-        sendButton.disabled = true;
-
-        // Verify connection state before sending
-        if (connection.state !== signalR.HubConnectionState.Connected) {
-            console.error('Connection not in connected state:', connection.state);
-            showSystemMessage('Connection error: Not connected to server. Try refreshing.');
-            messageInput.disabled = false;
-            sendButton.disabled = false;
-            return;
-        }
-
-        // Send message through SignalR
-        connection.invoke('SendMessage', chatSessionId, content)
-            .then(() => {
-                console.log('Message sent successfully to server');
-                // Manually add user message to chat if it doesn't appear from server
-                setTimeout(() => {
-                    const msgElement = document.getElementById(`message-${lastUserMessageId}`);
-                    if (!msgElement) {
-                        console.log('Adding message manually as fallback');
-                        const tempId = 'temp-' + new Date().getTime();
-                        addMessageToChat(content, false, tempId);
-                    }
-                }, 1000);
-            })
-            .catch(err => {
-                console.error('Error sending message:', err);
-                showSystemMessage('Failed to send message: ' + err.message);
-            })
-            .finally(() => {
-                // Re-enable input
-                messageInput.disabled = false;
-                sendButton.disabled = false;
-                messageInput.focus();
-            });
+        connection.invoke('SendMessage', chatSessionId, content, selectedAgentId);
     }
 
     // Handle Enter key to send message
