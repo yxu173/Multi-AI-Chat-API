@@ -9,4 +9,4 @@ public interface IAiModelService
         CancellationToken cancellationToken);
 }
 
-public record StreamResponse(string Content, int InputTokens, int OutputTokens);
+public record StreamResponse(string Content, int InputTokens, int OutputTokens, bool IsThinking = false);
