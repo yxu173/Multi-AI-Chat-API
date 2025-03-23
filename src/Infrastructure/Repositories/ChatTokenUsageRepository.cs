@@ -14,10 +14,10 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
         _dbContext = dbContext;
     }
 
-    public async Task<ChatTokenUsage> AddAsync(ChatTokenUsage tokenUsage)
+    public async Task<ChatTokenUsage> AddAsync(ChatTokenUsage tokenUsage, CancellationToken cancellationToken)
     {
-        var result = await _dbContext.ChatTokenUsages.AddAsync(tokenUsage);
-        await _dbContext.SaveChangesAsync();
+        var result = await _dbContext.ChatTokenUsages.AddAsync(tokenUsage, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
         return result.Entity;
     }
 

@@ -10,16 +10,21 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddScoped<ChatService>();
+        services.AddScoped<ChatSessionService>();
+        services.AddScoped<MessageService>();
+        services.AddScoped<PluginService>();
+        services.AddScoped<TokenUsageService>();
+        services.AddScoped<MessageStreamer>();
         services.AddSingleton<StreamingOperationManager>();
         services.AddMediatR(config =>
         {
             config.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly);
 
             config.AddOpenBehavior(typeof(RequestLoggingPipelineBehavior<,>));
-             config.AddOpenBehavior(typeof(ValidationPipelineBehavior<,>));
+            config.AddOpenBehavior(typeof(ValidationPipelineBehavior<,>));
         });
 
-         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
+        services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
         services.AddScoped<ParallelAiProcessingService>();
         return services;
     }

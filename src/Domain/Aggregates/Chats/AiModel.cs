@@ -49,4 +49,10 @@ public sealed class AiModel
     {
         IsEnabled = enabled;
     }
+    public decimal CalculateCost(int inputTokens, int outputTokens)
+    {
+        var inputCost = (decimal)(inputTokens * InputTokenPricePer1M / 1_000_000);
+        var outputCost = (decimal)(outputTokens * OutputTokenPricePer1M / 1_000_000);
+        return inputCost + outputCost;
+    }
 }

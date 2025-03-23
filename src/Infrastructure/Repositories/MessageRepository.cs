@@ -1,6 +1,7 @@
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using Infrastructure.Database;
+using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Repositories;
 
@@ -11,6 +12,12 @@ public class MessageRepository : IMessageRepository
     public MessageRepository(ApplicationDbContext context)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+    }
+
+    public async Task<Message?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return await _context.Messages.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
     }
 
     public async Task AddAsync(Message message, CancellationToken cancellationToken)

@@ -3,358 +3,200 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chat Demo</title>
+    <title>Chat Service Test</title>
     <style>
-        /* Keep all existing CSS styles unchanged */
-        .main-container {
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 20px;
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
         }
 
-        #messagesList {
-            height: 400px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            padding: 10px;
-            margin-bottom: 20px;
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
             display: flex;
             flex-direction: column;
+            height: 100vh;
         }
 
-        .message {
-            margin: 10px 0;
+        .top, .bottom {
             padding: 10px;
-            border-radius: 8px;
-            align-items: baseline;
-            word-break: break-word;
-            display: block;
-        }
-
-        .user-message {
-            background: #e3f2fd;
-            margin-left: auto;
-            justify-content: flex-end;
-        }
-
-        .ai-message {
-            background: #f5f5f5;
-            margin-right: auto;
-            justify-content: flex-start;
-        }
-
-        .message-content {
-            flex-grow: 1;
-        }
-
-        .message-actions {
-            margin-left: 10px;
-            display: none;
-        }
-
-        .user-message .message-actions {
-            display: block;
-        }
-
-        .edit-button {
-            padding: 5px 8px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            margin-left: 5px;
-        }
-
-        .input-container {
+            background-color: #f0f0f0;
             display: flex;
             gap: 10px;
-            position: relative;
         }
 
-        #messageInput {
+        .top input, .bottom input {
             flex: 1;
-            padding: 8px;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
         }
 
-        .instructions {
-            margin-bottom: 15px;
+        .chat {
+            flex: 1;
+            overflow-y: scroll;
             padding: 10px;
-            background: #fff3e0;
-            border-radius: 8px;
-            font-size: 0.9rem;
-        }
-
-        .token-stats-container {
-            margin: 20px 0;
-            padding: 15px;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #ccc;
+            border-radius: 5px;
             background-color: #f9f9f9;
         }
 
-        .token-stats {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            margin-top: 10px;
-        }
-
-        .stat-box {
+        .message {
+            margin-bottom: 10px;
             padding: 10px;
-            border-radius: 6px;
-            background-color: white;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            min-width: 120px;
+            border-radius: 10px;
+            max-width: 80%;
         }
 
-        .stat-label {
-            display: block;
-            font-size: 0.8rem;
+        .user {
+            align-self: flex-end;
+            background-color: #007bff;
+            color: white;
+        }
+
+        .ai {
+            align-self: flex-start;
+            background-color: #28a745;
+            color: white;
+        }
+
+        .timestamp {
+            font-size: 0.8em;
             color: #666;
-            margin-bottom: 5px;
+            margin-top: 5px;
+            text-align: right;
         }
 
-        .stat-value {
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: #333;
-        }
-
-        .stop-button {
+        button {
             padding: 5px 10px;
-            background-color: #ff4d4d;
+            background-color: #007bff;
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 5px;
             cursor: pointer;
-            margin-left: 10px;
         }
 
-        .edit-input-container {
-            display: flex;
-            gap: 10px;
-            margin-top: 5px;
+        button:hover {
+            background-color: #0056b3;
         }
-
-        /* Add any additional styles you need */
     </style>
 </head>
 <body>
-<div class="main-container">
-    <div class="instructions">
-        <strong>Tip:</strong> Start your message with <code>/search</code> or <code>/google</code> followed by a query
-        (e.g., "/search latest AI news") to use the web search plugin!
+<div class="container">
+    <div class="top">
+        <input type="text" id="userToken" placeholder="User Token" />
+        <input type="text" id="chatSessionId" placeholder="Chat Session ID" />
+        <button onclick="joinChatSession()">Join</button>
     </div>
-
-    <div id="messagesList"></div>
-
-    <div class="token-stats-container">
-        <h3>Token Usage</h3>
-        <div class="token-stats">
-            <div class="stat-box">
-                <span class="stat-label">Input Tokens:</span>
-                <span id="input-tokens" class="stat-value">0</span>
-            </div>
-            <div class="stat-box">
-                <span class="stat-label">Output Tokens:</span>
-                <span id="output-tokens" class="stat-value">0</span>
-            </div>
-            <div class="stat-box">
-                <span class="stat-label">Total Tokens:</span>
-                <span id="total-tokens" class="stat-value">0</span>
-            </div>
-            <div class="stat-box">
-                <span class="stat-label">Estimated Cost:</span>
-                <span id="token-cost" class="stat-value">$0.00</span>
-            </div>
-        </div>
-    </div>
-
-    <div class="input-container">
-        <input type="text" id="messageInput" placeholder="Type your message here (e.g., /search latest AI news)"/>
+    <div id="chat" class="chat"></div>
+    <div class="bottom">
+        <input type="text" id="messageInput" placeholder="Type your message" />
         <button onclick="sendMessage()">Send</button>
-        <button class="stop-button" id="stopButton" onclick="stopResponse()" disabled>Stop</button>
+        <button onclick="editLastMessage()">Edit Last Message</button>
+        <button onclick="stopResponse()">Stop Response</button>
     </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- Include SignalR library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/5.0.11/signalr.min.js"></script>
 <script>
-    const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk1YjI0MC1kZjZlLTc2NTMtOWE1OC1kMmUwYTg5YTE3OTMiLCJlbWFpbCI6Im1vaGFtZWRzYW1pckBvdXRsb29rLmNvbSIsIm5hbWUiOiJ5eHUiLCJqdGkiOiJjNDg3MTcyYy02YjBmLTQ4MzEtYjJiMi03YmZmNDhjYWZmZmUiLCJhdWQiOlsiU3dhZ2dlclVJIiwiU3dhZ2dlclVJIl0sIm5iZiI6MTc0MjYyMjM0NSwiZXhwIjoxNzQzMjI3MTQ1LCJpYXQiOjE3NDI2MjIzNDUsImlzcyI6IkludGVybnNoaXAtUGxhdGZvcm0ifQ.Jsa7aNpiMxkWOYNP8KyfMW_nH-ucQgIWhiXmp_m4yvA"; // Replace with your actual token
-    const chatId = "fd7533ba-8f92-47cc-b413-10f9e6cc2385"; // Replace with your actual chat ID
+    let connection;
 
-    const connection = new signalR.HubConnectionBuilder()
-        .withUrl("/chatHub", {accessTokenFactory: () => token})
-        .withAutomaticReconnect()
-        .configureLogging(signalR.LogLevel.Information)
-        .build();
+    function joinChatSession() {
+        const userToken = document.getElementById("userToken").value;
+        const chatSessionId = document.getElementById("chatSessionId").value;
 
-    let currentMessageId = null;
-    let editingMessageId = null;
-    let isStreaming = false;
+        if (!userToken || !chatSessionId) {
+            alert("Please enter both User Token and Chat Session ID.");
+            return;
+        }
 
-    async function sendMessage() {
-        const messageInput = document.getElementById('messageInput');
-        const content = messageInput.value.trim();
-        if (!content) return;
+        if (connection) {
+            connection.stop();
+        }
 
-        try {
-            await connection.invoke('SendMessage', chatId, content);
-            messageInput.value = '';
-            messageInput.focus();
-        } catch (error) {
-            console.error('Error sending message:', error);
+        connection = new signalR.HubConnectionBuilder()
+            .withUrl(`/chatHub?access_token=${userToken}`)
+            .build();
+
+        connection.on("MessageSent", (message) => {
+            addMessageToChat(message.content, message.isFromAi, message.messageId);
+        });
+
+        connection.on("MessageChunkReceived", (messageId, chunk) => {
+            updateMessageChunk(messageId, chunk);
+        });
+
+        connection.on("ResponseCompleted", (messageId) => {
+            console.log(`Response completed for message ${messageId}`);
+        });
+
+        connection.on("ResponseStopped", (messageId) => {
+            console.log(`Response stopped for message ${messageId}`);
+        });
+
+        connection.on("Error", (error) => {
+            console.error(error);
+        });
+
+        connection.start()
+            .then(() => {
+                console.log("Connected to hub");
+                return connection.invoke("JoinChatSession", chatSessionId);
+            })
+            .then(() => console.log("Joined chat session"))
+            .catch(err => console.error("Error connecting: ", err));
+    }
+
+    function sendMessage() {
+        const chatSessionId = document.getElementById("chatSessionId").value;
+        const content = document.getElementById("messageInput").value;
+        if (connection && content) {
+            connection.invoke("SendMessage", chatSessionId, content);
+            document.getElementById("messageInput").value = "";
         }
     }
 
-    // Modified connection management
-    async function start() {
-        try {
-            await connection.start();
-            console.log("Connected to hub");
-            await connection.invoke('JoinChatSession', chatId);
-            setupHubHandlers();
-        } catch (err) {
-            console.error("Connection error:", err);
-            setTimeout(start, 5000);
+    function editLastMessage() {
+        const chatSessionId = document.getElementById("chatSessionId").value;
+        const newContent = prompt("Enter new content for the last message:");
+        if (connection && newContent) {
+            connection.invoke("EditLastMessage", chatSessionId, newContent);
         }
     }
 
-    // Centralized hub handler setup
-    function setupHubHandlers() {
-        connection.on('ReceiveMessage', handleNewMessage);
-        connection.on('ReceiveMessageChunk', handleMessageChunk);
-        connection.on('ResponseCompleted', handleResponseComplete);
-        connection.on('MessageEdited', handleMessageEdited);
-        connection.on('TokenUsageUpdated', handleTokenUpdate);
-        connection.on('ResponseStopped', handleResponseStopped);
-    }
-
-    // Improved message handling
-    function handleNewMessage(message) {
-        const messagesList = document.getElementById('messagesList');
-        const existingMessage = messagesList.querySelector(`[data-message-id="${message.messageId}"]`);
-
-        if (!existingMessage) {
-            const messageDiv = createMessageElement(message);
-            messagesList.appendChild(messageDiv);
-
-            if (message.isFromAi) {
-                currentMessageId = message.messageId;
-                updateStreamingState(true);
-            }
-        }
-
-        messagesList.scrollTop = messagesList.scrollHeight;
-    }
-
-    function createMessageElement(message) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${message.isFromAi ? 'ai-message' : 'user-message'}`;
-        messageDiv.setAttribute('data-message-id', message.messageId);
-
-        const content = marked.parse(message.content);
-        messageDiv.innerHTML = `
-            <div class="message-content">${content}</div>
-            ${!message.isFromAi ? `
-                <div class="message-actions">
-                    <button class="edit-button" onclick="editMessage('${message.messageId}')">Edit</button>
-                </div>
-            ` : ''}
-        `;
-
-        return messageDiv;
-    }
-
-    // Enhanced chunk handling
-    function handleMessageChunk(messageId, chunk) {
-        const messagesList = document.getElementById('messagesList');
-        let messageElement = messagesList.querySelector(`[data-message-id="${messageId}"]`);
-
-        if (!messageElement) {
-            messageElement = createMessageElement({
-                messageId: messageId,
-                content: '',
-                isFromAi: true
-            });
-            messagesList.appendChild(messageElement);
-        }
-
-        const contentDiv = messageElement.querySelector('.message-content');
-        contentDiv.innerHTML = marked.parse(contentDiv.textContent + chunk);
-        messagesList.scrollTop = messagesList.scrollHeight;
-    }
-
-    // Improved stop functionality
-    async function stopResponse() {
-        if (!currentMessageId || !isStreaming) return;
-
-        try {
-            updateStreamingState(false);
-            await connection.invoke('StopResponse', currentMessageId, chatId);
-            console.log('Stop request sent for message:', currentMessageId);
-        } catch (error) {
-            console.error('Stop error:', error);
-            updateStreamingState(true);
+    function stopResponse() {
+        const messageId = prompt("Enter the message ID to stop response:");
+        const chatSessionId = document.getElementById("chatSessionId").value;
+        if (connection && messageId) {
+            connection.invoke("StopResponse", messageId, chatSessionId);
         }
     }
 
-    function handleResponseStopped(messageId) {
-        if (messageId === currentMessageId) {
-            const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
-            if (messageElement) {
-                const contentDiv = messageElement.querySelector('.message-content');
-                contentDiv.innerHTML += marked.parse("\n[Response interrupted]");
-            }
-            updateStreamingState(false);
+    function addMessageToChat(content, isFromAi, messageId) {
+        const chatDiv = document.getElementById("chat");
+        const messageDiv = document.createElement("div");
+        messageDiv.className = "message " + (isFromAi ? "ai" : "user");
+        messageDiv.id = `message-${messageId}`;
+
+        const timestamp = new Date().toLocaleTimeString();
+        messageDiv.innerHTML = `<div>${content}</div><div class="timestamp">${timestamp}</div>`;
+
+        chatDiv.appendChild(messageDiv);
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    function updateMessageChunk(messageId, chunk) {
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (messageDiv) {
+            const contentDiv = messageDiv.querySelector("div:first-child");
+            contentDiv.innerHTML += chunk;
+            document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
         }
     }
-
-    function handleResponseComplete(messageId) {
-        if (messageId === currentMessageId) {
-            updateStreamingState(false);
-            currentMessageId = null;
-        }
-    }
-
-    // Enhanced edit handling
-    function handleMessageEdited(chatSessionId, messageId, newContent) {
-        const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
-        if (messageElement) {
-            messageElement.querySelector('.message-content').innerHTML = marked.parse(newContent);
-
-            // Remove subsequent AI response
-            const nextElement = messageElement.nextElementSibling;
-            if (nextElement && nextElement.classList.contains('ai-message')) {
-                nextElement.remove();
-            }
-        }
-    }
-
-    // Token handling
-    function handleTokenUpdate(chatSessionId, inputTokens, outputTokens, totalCost) {
-        document.getElementById('input-tokens').textContent = inputTokens;
-        document.getElementById('output-tokens').textContent = outputTokens;
-        document.getElementById('total-tokens').textContent = inputTokens + outputTokens;
-        document.getElementById('token-cost').textContent = `$${totalCost.toFixed(4)}`;
-    }
-
-    // State management
-    function updateStreamingState(streaming) {
-        isStreaming = streaming;
-        document.getElementById('stopButton').disabled = !streaming;
-    }
-
-    // Initialize
-    start();
-    document.getElementById('messageInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
 </script>
 </body>
 </html>

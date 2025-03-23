@@ -40,10 +40,10 @@ public class ChatHub : Hub
         await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content);
     }
 
-    public async Task EditLastMessage(string chatSessionId, string newContent)
+    public async Task EditMessage(string chatSessionId, string messageId, string newContent)
     {
         var userId = Guid.Parse(Context.UserIdentifier);
-        await _chatService.EditLastUserMessageAsync(Guid.Parse(chatSessionId), userId, newContent);
+        await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId), newContent);
     }
 
     public async Task StopResponse(string messageId, string chatSessionId)
