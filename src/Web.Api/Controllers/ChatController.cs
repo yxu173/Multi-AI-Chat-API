@@ -57,7 +57,14 @@ public class ChatController : BaseController
     [HttpPost("StopResponse/{messageId}")]
     public IResult StopResponse([FromRoute] Guid messageId, [FromServices] Application.Services.StreamingOperationManager streamingOperationManager)
     {
-        streamingOperationManager.StopStreaming(messageId);
-        return Results.Ok();
+        bool stopped = streamingOperationManager.StopStreaming(messageId);
+        if (stopped)
+        {
+            return Results.Ok(new { Message = "Streaming stopped successfully." });
+        }
+        else
+        {
+            return Results.NotFound(new { Message = "No active streaming operation found for the provided message ID." });
+        }
     }
 }

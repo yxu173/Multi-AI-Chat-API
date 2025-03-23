@@ -65,7 +65,7 @@ public abstract class BaseAiService : IAiModelService
         throw new Exception($"{providerName} API Error: {response.StatusCode} - {errorContent}");
     }
     
-    // Get the system message from settings or use a default
+  
     protected string GetSystemMessage()
     {
         if (ModelSettings?.SystemMessage != null)
@@ -76,7 +76,7 @@ public abstract class BaseAiService : IAiModelService
         return "Always respond using markdown formatting";
     }
     
-    // Apply system message to messages if needed
+    
     protected List<MessageDto> ApplySystemMessageToHistory(IEnumerable<MessageDto> history)
     {
         var messages = history.ToList();

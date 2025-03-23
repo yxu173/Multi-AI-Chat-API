@@ -4,22 +4,29 @@ using System.Threading;
 
 namespace Application.Services
 {
-    public class StreamingOperationManager
+  public class StreamingOperationManager
+{
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _operations = new();
+
+    public void RegisterOperation(Guid messageId, CancellationTokenSource cts)
     {
-        private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _operations = new();
-
-        public void RegisterOperation(Guid messageId, CancellationTokenSource cts)
+        if (_operations.TryRemove(messageId, out var existingCts))
         {
-            _operations[messageId] = cts;
+            existingCts.Cancel();
+            existingCts.Dispose();
         }
-
-        public void StopStreaming(Guid messageId)
-        {
-            if (_operations.TryRemove(messageId, out var cts))
-            {
-                cts.Cancel();
-                cts.Dispose();
-            }
-        }
+        _operations[messageId] = cts;
     }
+
+   public bool StopStreaming(Guid messageId)
+    {
+        if (_operations.TryGetValue(messageId, out var cts))
+        {
+            cts.Cancel();
+            _operations.TryRemove(messageId, out _);
+            return true;
+        }
+        return false;
+    }
+}
 }

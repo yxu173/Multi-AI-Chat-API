@@ -45,17 +45,4 @@ public class ChatHub : Hub
         var userId = Guid.Parse(Context.UserIdentifier);
         await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId), newContent);
     }
-
-    public async Task StopResponse(string messageId, string chatSessionId)
-    {
-        try
-        {
-            _streamingOperationManager.StopStreaming(Guid.Parse(messageId));
-            await Clients.Group(chatSessionId).SendAsync("ResponseStopped", messageId);
-        }
-        catch (FormatException)
-        {
-            await Clients.Caller.SendAsync("Error", "Invalid message ID format");
-        }
-    }
 }

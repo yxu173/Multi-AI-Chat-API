@@ -29,86 +29,71 @@ public class MessageStreamer
     {
         var cts = new CancellationTokenSource();
         _streamingOperationManager.RegisterOperation(aiMessage.Id, cts);
-        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
-        bool wasCanceled = false;
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+
+        var tokenUsage = await _tokenUsageService.GetOrCreateTokenUsageAsync(chatSession.Id, cancellationToken);
+        var previousInputTokens = tokenUsage.InputTokens;
+        var previousOutputTokens = tokenUsage.OutputTokens;
+        var previousCost = tokenUsage.TotalCost;
+        var responseContent = new StringBuilder();
 
         try
         {
-            var tokenUsage = await _tokenUsageService.GetOrCreateTokenUsageAsync(chatSession.Id, linkedCts.Token);
-            var previousInputTokens = tokenUsage.InputTokens;
-            var previousOutputTokens = tokenUsage.OutputTokens;
-            var previousCost = tokenUsage.TotalCost;
-            var responseContent = new StringBuilder();
-
-            try
+            await foreach (var response in aiService.StreamResponseAsync(messages, linkedCts.Token))
             {
-                await foreach (var response in aiService.StreamResponseAsync(messages, linkedCts.Token))
+                if (linkedCts.Token.IsCancellationRequested)
                 {
-                    if (linkedCts.IsCancellationRequested)
-                        break;
-
-                    await ProcessChunkAsync(chatSession, aiMessage, response, responseContent, tokenUsage,
-                        previousInputTokens, previousOutputTokens, previousCost, linkedCts.Token);
+                    await HandleCancellation(chatSession, aiMessage);
+                    break;
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                wasCanceled = true;
-                throw;
-            }
-            catch (Exception ex)
-            {
-                aiMessage.AppendContent("\n[Error occurred during response]");
-                aiMessage.InterruptMessage();
-                await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
-                await _mediator.Publish(
-                    new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id,
-                        "[Error occurred during response]"), cancellationToken);
+
+                await ProcessChunkAsync(chatSession, aiMessage, response, responseContent, tokenUsage,
+                    previousInputTokens, previousOutputTokens, previousCost, linkedCts.Token);
             }
 
-            // Only send ResponseCompleted if we completed naturally
-            if (!wasCanceled && !linkedCts.IsCancellationRequested)
+            if (!linkedCts.Token.IsCancellationRequested)
             {
-                await FinalizeMessageAsync(aiMessage, tokenUsage, chatSession, previousInputTokens, previousOutputTokens,
-                    previousCost, cancellationToken);
-                    
-                await _mediator.Publish(new ResponseCompletedNotification(chatSession.Id, aiMessage.Id), cancellationToken);
+                await FinalizeMessageAsync(aiMessage, tokenUsage, chatSession, previousInputTokens,
+                    previousOutputTokens, previousCost, cancellationToken);
+                await _mediator.Publish(new ResponseCompletedNotification(chatSession.Id, aiMessage.Id),
+                    cancellationToken);
             }
         }
         catch (OperationCanceledException)
         {
-            wasCanceled = true;
+            await HandleCancellation(chatSession, aiMessage);
         }
         finally
         {
-            // Cancel the operation immediately
-            cts.Cancel();
-            
-            if (linkedCts.IsCancellationRequested) wasCanceled = true;
-            linkedCts.Dispose();
-            
             _streamingOperationManager.StopStreaming(aiMessage.Id);
-
-            // Only send ResponseStopped if we actually canceled
-            if (wasCanceled)
-            {
-                // Only add the interrupted message if we actually canceled
-                aiMessage.AppendContent("\n[Response interrupted]");
-                aiMessage.InterruptMessage();
-                await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
-                await _mediator.Publish(
-                    new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
-                    cancellationToken);
-                    
-                await _mediator.Publish(new ResponseStoppedNotification(chatSession.Id, aiMessage.Id), cancellationToken);
-            }
+            cts.Dispose();
         }
+    }
+
+    private async Task HandleCancellation(ChatSession chatSession, Message aiMessage)
+    {
+        
+            aiMessage.AppendContent("\n[Response interrupted]");
+            aiMessage.InterruptMessage();
+            await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
+            await _mediator.Publish(
+                new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
+                CancellationToken.None);
+            await _mediator.Publish(
+                new ResponseStoppedNotification(chatSession.Id, aiMessage.Id),
+                CancellationToken.None);
     }
 
     private async Task ProcessChunkAsync(ChatSession chatSession, Message aiMessage, StreamResponse response,
         StringBuilder responseContent, ChatTokenUsage tokenUsage, int previousInputTokens, int previousOutputTokens,
         decimal previousCost, CancellationToken cancellationToken)
     {
+        // Early exit if cancellation is requested
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
         var chunk = response.Content;
         var currentInputTokens = response.InputTokens;
         var currentOutputTokens = response.OutputTokens;
@@ -117,6 +102,11 @@ public class MessageStreamer
         var cost = chatSession.AiModel.CalculateCost(currentInputTokens, currentOutputTokens);
         await _tokenUsageService.UpdateTokenUsageAsync(chatSession.Id, currentInputTokens, currentOutputTokens, cost,
             cancellationToken);
+        
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
 
         responseContent.Append(chunk);
         aiMessage.AppendContent(chunk);

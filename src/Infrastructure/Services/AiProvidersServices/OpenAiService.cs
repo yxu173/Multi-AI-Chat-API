@@ -70,6 +70,10 @@ public class OpenAiService : BaseAiService
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
         CancellationToken cancellationToken)
     {
+        // Create a local cancellation token source linked to the passed token
+        using var localCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var combinedToken = localCts.Token;
+
         var tokenizer = Tiktoken.ModelToEncoder.For(ModelCode);
         var messages = ((List<OpenAiMessage>)((dynamic)CreateRequestBody(history))["messages"]);
 
@@ -87,7 +91,12 @@ public class OpenAiService : BaseAiService
         try
         {
             response = await pipeline.ExecuteAsync(async ct =>
-                await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct), cancellationToken);
+                await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct), combinedToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Just exit if canceled
+            yield break;
         }
         catch (Exception ex)
         {
@@ -98,45 +107,77 @@ public class OpenAiService : BaseAiService
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "OpenAI");
+            yield break;
         }
 
-        if (cancellationToken.IsCancellationRequested)
+        if (combinedToken.IsCancellationRequested)
         {
             yield break;
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        // Set up a task to monitor for cancellation
+        var cancellationTask = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(Timeout.Infinite, combinedToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // This will be triggered when cancellation is requested
+                localCts.Cancel(); // Ensure local cancellation occurs
+            }
+        });
+
+        await using var stream = await response.Content.ReadAsStreamAsync(combinedToken);
         using var reader = new StreamReader(stream);
 
         int outputTokens = 0;
-        while (true)
+        try
         {
-            if (reader.EndOfStream || cancellationToken.IsCancellationRequested) yield break;
-
-
-            // Apply per-chunk timeout using a linked cancellation token
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(10)); // 10-second timeout per chunk
-            var line = await reader.ReadLineAsync(cts.Token);
-
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            if (line.StartsWith("data: ") && line.Trim() != "data: [DONE]")
+            while (!combinedToken.IsCancellationRequested)
             {
-                var json = line["data: ".Length..];
-                var chunk = JsonSerializer.Deserialize<OpenAiResponse>(json);
-                if (chunk?.choices is { Length: > 0 } choices)
+                if (reader.EndOfStream) yield break;
+
+                // Read with potential timeout and cancellation
+                var readTask = Task.Run(() => reader.ReadLineAsync(combinedToken).AsTask());
+                var completedTask = await Task.WhenAny(readTask, cancellationTask);
+                if (completedTask == cancellationTask || combinedToken.IsCancellationRequested)
                 {
-                    var delta = choices[0].delta;
-                    if (!string.IsNullOrEmpty(delta?.content))
+                    yield break; // Exit immediately if cancellation is requested
+                }
+
+                var line = await readTask;
+
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                if (line.StartsWith("data: ") && line.Trim() != "data: [DONE]")
+                {
+                    var json = line["data: ".Length..];
+                    var chunk = JsonSerializer.Deserialize<OpenAiResponse>(json);
+                    if (chunk?.choices is { Length: > 0 } choices)
                     {
-                        outputTokens += tokenizer.Encode(delta.content).Count;
-                        yield return new StreamResponse(delta.content, inputTokens, outputTokens);
+                        var delta = choices[0].delta;
+                        if (!string.IsNullOrEmpty(delta?.content))
+                        {
+                            outputTokens += tokenizer.Encode(delta.content).Count;
+                            yield return new StreamResponse(delta.content, inputTokens, outputTokens);
+                        }
                     }
+                }
+
+                // Check cancellation after processing each line
+                if (combinedToken.IsCancellationRequested)
+                {
+                    yield break;
                 }
             }
         }
+        finally
+        {
+            // Ensure cleanup
+            localCts.Cancel();
+        }
     }
-
 
     private record OpenAiMessage(string role, string content);
 

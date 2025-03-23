@@ -4,6 +4,9 @@ using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
 using Infrastructure.Services.AiProvidersServices.Base;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -61,71 +64,63 @@ public class AnthropicService : BaseAiService
         return requestWithSettings;
     }
 
-    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, CancellationToken cancellationToken)
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var request = CreateRequest(CreateRequestBody(history));
+        using var response = await HttpClient.SendAsync(
+            CreateRequest(CreateRequestBody(history)),
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
 
-        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            await HandleApiErrorAsync(response, "Claude");
-            yield break;
-        }
+        response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
 
         int inputTokens = 0;
-        int outputTokens = 0;
         int estimatedOutputTokens = 0;
         StringBuilder fullResponse = new StringBuilder();
 
-        
-            while (!cancellationToken.IsCancellationRequested)
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            if (line.StartsWith("data: "))
             {
-                if (reader.EndOfStream)
-                    break;
+                var json = line["data: ".Length..];
+                if (json == "[DONE]") break;
 
-                var line = await reader.ReadLineAsync(cancellationToken);
-                if (cancellationToken.IsCancellationRequested)
-                    yield break;
+                using var doc = JsonDocument.Parse(json);
+                var type = doc.RootElement.GetProperty("type").GetString();
 
-                if (string.IsNullOrWhiteSpace(line)) continue;
-
-                if (line.StartsWith("data: "))
+                switch (type)
                 {
-                    var json = line["data: ".Length..];
-                    if (json == "[DONE]") break;
+                    case "message_start":
+                        if (doc.RootElement.TryGetProperty("message", out var messageElement) &&
+                            messageElement.TryGetProperty("usage", out var usageElement) &&
+                            usageElement.TryGetProperty("input_tokens", out var inputTokensElement))
+                        {
+                            inputTokens = inputTokensElement.GetInt32();
+                        }
+                        break;
 
-                    using var doc = JsonDocument.Parse(json);
-                    var type = doc.RootElement.GetProperty("type").GetString();
-
-                    switch (type)
-                    {
-                        case "message_start":
-                            inputTokens = doc.RootElement.GetProperty("message").GetProperty("usage").GetProperty("input_tokens").GetInt32();
-                            break;
-
-                        case "content_block_delta":
-                            var text = doc.RootElement.GetProperty("delta").GetProperty("text").GetString();
+                    case "content_block_delta":
+                        if (doc.RootElement.TryGetProperty("delta", out var deltaElement) &&
+                            deltaElement.TryGetProperty("text", out var textElement))
+                        {
+                            var text = textElement.GetString();
                             if (!string.IsNullOrEmpty(text))
                             {
                                 fullResponse.Append(text);
                                 estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
                                 yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
                             }
-                            break;
-
-                        case "message_delta":
-                            if (doc.RootElement.TryGetProperty("usage", out var usageElement) &&
-                                usageElement.TryGetProperty("output_tokens", out var outputTokenElement))
-                            {
-                                outputTokens = outputTokenElement.GetInt32();
-                            }
-                            break;
-                    }
+                        }
+                        break;
                 }
             }
+        }
     }
 
     private record ClaudeMessage(string role, string content);
