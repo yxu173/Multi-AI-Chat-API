@@ -4,6 +4,7 @@ using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
+using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices;
@@ -17,8 +18,9 @@ public class GeminiService : BaseAiService
         string apiKey,
         string modelCode,
         Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
-        AiModel? aiModel = null)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel)
+        AiModel? aiModel = null,
+        ModelParameters? customModelParameters = null)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
     {
     }
 
@@ -30,12 +32,45 @@ public class GeminiService : BaseAiService
 
     protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
-        var validHistory = history
-            .Where(m => !string.IsNullOrWhiteSpace(m.Content))
-            .TakeLast(2)
-            .ToList();
+        // Handle system message if present
+        var messagesList = history.ToList();
+        string systemPrompt = "";
+        
+        if (messagesList.Count > 0 && messagesList[0].Content.StartsWith("system:"))
+        {
+            systemPrompt = messagesList[0].Content.Substring(7).Trim();
+            messagesList.RemoveAt(0);
+        }
+        else
+        {
+            systemPrompt = GetSystemMessage();
+        }
 
-        var contents = validHistory.Select(m => new
+        // Check if thinking mode is enabled using base class method
+        bool enableThinking = ShouldEnableThinking();
+
+        // For Gemini, we need to modify the messages to include the system prompt and thinking instructions
+        var modifiedMessages = new List<MessageDto>();
+        
+        // Add the system prompt as a user message for Gemini (since it doesn't have a system role)
+        if (!string.IsNullOrEmpty(systemPrompt))
+        {
+            string userPrompt = systemPrompt;
+            
+            // If thinking is enabled, add thinking instructions
+            if (enableThinking && AiModel?.SupportsThinking == true)
+            {
+                userPrompt += "\n\nWhen solving complex problems, first show your step-by-step thinking process " +
+                    "marked as '### Thinking:' before giving the final answer marked as '### Answer:'.";
+            }
+            
+            modifiedMessages.Add(new MessageDto(userPrompt, false, Guid.NewGuid()));
+        }
+        
+        // Add the most recent messages (Gemini has context limitations)
+        modifiedMessages.AddRange(messagesList.TakeLast(10));
+        
+        var contents = modifiedMessages.Select(m => new
         {
             role = m.IsFromAi ? "model" : "user",
             parts = new[] { new { text = m.Content } }
@@ -43,30 +78,76 @@ public class GeminiService : BaseAiService
 
         var generationConfig = new Dictionary<string, object>();
 
+        // Set default parameters
         if (AiModel?.MaxOutputTokens.HasValue == true)
         {
             generationConfig["maxOutputTokens"] = AiModel.MaxOutputTokens.Value;
         }
 
-        if (ModelSettings != null)
-        {
-            generationConfig["temperature"] = ModelSettings.Temperature ?? 0.7;
-            generationConfig["topP"] = ModelSettings.TopP ?? 0.8;
-            generationConfig["topK"] = ModelSettings.TopK ?? 40;
+        // Apply user settings
+        var userSettings = ApplyUserSettings(generationConfig);
 
-            if (ModelSettings.StopSequences != null && ModelSettings.StopSequences.Any())
-            {
-                generationConfig["stopSequences"] = ModelSettings.StopSequences;
-            }
-        }
-        else
+        // Create the request object structure required by Gemini
+        var jsonObject = new
         {
-            generationConfig["temperature"] = 0.7;
-            generationConfig["topP"] = 0.8;
-            generationConfig["topK"] = 40;
+            contents,
+            generationConfig = userSettings
+        };
+
+        // Gemini specific parameter cleanup - REMOVE UNSUPPORTED PARAMETERS
+        if (userSettings.ContainsKey("frequency_penalty"))
+            userSettings.Remove("frequency_penalty");
+            
+        if (userSettings.ContainsKey("presence_penalty"))
+            userSettings.Remove("presence_penalty");
+            
+        if (userSettings.ContainsKey("max_tokens"))
+            userSettings.Remove("max_tokens");
+            
+        if (userSettings.ContainsKey("thinking"))
+            userSettings.Remove("thinking");
+            
+        if (userSettings.ContainsKey("enable_thinking"))
+            userSettings.Remove("enable_thinking");
+            
+        if (userSettings.ContainsKey("enable_cot"))
+            userSettings.Remove("enable_cot");
+            
+        if (userSettings.ContainsKey("enable_reasoning"))
+            userSettings.Remove("enable_reasoning");
+            
+        if (userSettings.ContainsKey("reasoning_mode"))
+            userSettings.Remove("reasoning_mode");
+            
+        if (userSettings.ContainsKey("context_limit"))
+            userSettings.Remove("context_limit");
+            
+        if (userSettings.ContainsKey("stop_sequences"))
+            userSettings.Remove("stop_sequences");
+            
+        if (userSettings.ContainsKey("reasoning_effort"))
+            userSettings.Remove("reasoning_effort");
+            
+        if (userSettings.ContainsKey("safety_settings"))
+            userSettings.Remove("safety_settings");
+
+        // Convert top_p to topP for Gemini API
+        if (userSettings.ContainsKey("top_p"))
+        {
+            double topP = (double)userSettings["top_p"];
+            userSettings["topP"] = topP;
+            userSettings.Remove("top_p");
         }
 
-        return new { contents, generationConfig };
+        // Convert top_k to topK for Gemini API
+        if (userSettings.ContainsKey("top_k"))
+        {
+            int topK = (int)userSettings["top_k"];
+            userSettings["topK"] = topK;
+            userSettings.Remove("top_k");
+        }
+
+        return jsonObject;
     }
 
     protected override HttpRequestMessage CreateRequest(object requestBody)
@@ -87,7 +168,12 @@ public class GeminiService : BaseAiService
         var request = CreateRequest(CreateRequestBody(history));
         using var response =
             await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        
+        if (!response.IsSuccessStatusCode)
+        {
+            await HandleApiErrorAsync(response, "Gemini");
+            yield break;
+        }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
@@ -98,6 +184,9 @@ public class GeminiService : BaseAiService
 
             if (responseArray.HasValue && responseArray.Value.ValueKind != JsonValueKind.Null)
             {
+                var fullResponse = new StringBuilder();
+                bool isThinking = false;
+                
                 foreach (var root in responseArray.Value.EnumerateArray())
                 {
                     // Check for cancellation within the loop
@@ -132,7 +221,25 @@ public class GeminiService : BaseAiService
 
                     if (!string.IsNullOrEmpty(text))
                     {
-                        yield return new StreamResponse(text, promptTokens, outputTokens);
+                        // Check for thinking section markers
+                        if (text.Contains("### Thinking:"))
+                        {
+                            isThinking = true;
+                        }
+                        else if (text.Contains("### Answer:"))
+                        {
+                            isThinking = false;
+                        }
+                        
+                        // Add to full response for context tracking
+                        fullResponse.Append(text);
+                        
+                        // Determine if this chunk is part of thinking
+                        bool isCurrentChunkThinking = isThinking || 
+                                                (fullResponse.ToString().Contains("### Thinking:") && 
+                                                !fullResponse.ToString().Contains("### Answer:"));
+                        
+                        yield return new StreamResponse(text, promptTokens, outputTokens, isCurrentChunkThinking);
                     }
                 }
             }

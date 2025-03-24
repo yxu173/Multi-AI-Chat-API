@@ -4,5 +4,5 @@ namespace Application.Abstractions.Interfaces;
 
 public interface IAiModelServiceFactory
 {
-    IAiModelService GetService(Guid userId, Guid modelId, string customApiKey = null);
+    IAiModelService GetService(Guid userId, Guid modelId, string customApiKey = null, Guid? aiAgentId = null);
 }

@@ -8,4 +8,8 @@ public sealed record CreateAiModelCommand(
     Guid AiProvider,
     double InputTokenPricePer1K,
     double OutputTokenPricePer1K,
-    string ModelCode) : ICommand<Guid>;
+    string ModelCode,
+    int MaxInputTokens,
+    int MaxOutputTokens,
+    bool IsEnabled,
+    bool SupportsThinking) : ICommand<Guid>;

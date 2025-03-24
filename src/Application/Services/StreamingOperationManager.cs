@@ -28,5 +28,10 @@ namespace Application.Services
         }
         return false;
     }
+    
+    public bool IsStreamingActive(Guid messageId)
+    {
+        return _operations.ContainsKey(messageId);
+    }
 }
 }

@@ -4,9 +4,11 @@ using Application.Abstractions.Interfaces;
 using Domain.Aggregates.Chats;
 using Domain.Aggregates.Users;
 using Domain.Enums;
+using Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -28,7 +30,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         _resilienceService = resilienceService;
     }
 
-    public async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string customApiKey = null)
+    private async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string? customApiKey = null, Guid? aiAgentId = null)
     {
         var aiModel = await _dbContext.AiModels
             .Include(m => m.AiProvider)
@@ -39,7 +41,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
         }
 
-        string apiKey = customApiKey;
+        string apiKey = customApiKey ?? string.Empty;
 
         if (string.IsNullOrEmpty(apiKey))
         {
@@ -62,26 +64,41 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var userSettings = await _dbContext.UserAiModelSettings
             .FirstOrDefaultAsync(s => s.UserId == userId);
 
+        // Get AI agent if specified
+        ModelParameters? customModelParameters = null;
+        if (aiAgentId.HasValue)
+        {
+            var aiAgent = await _dbContext.AiAgents
+                .FirstOrDefaultAsync(a => a.Id == aiAgentId.Value);
+            
+            if (aiAgent != null && aiAgent.AssignCustomModelParameters && aiAgent.ModelParameter != null)
+            {
+                customModelParameters = aiAgent.ModelParameter;
+            }
+        }
+
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => CreateChatGptService(aiModel, apiKey, _resilienceService,userSettings),
-            ModelType.Anthropic => CreateClaudeService(aiModel, apiKey, userSettings),
-            ModelType.DeepSeek => CreateDeepSeekService(aiModel, apiKey, userSettings),
-            ModelType.Gemini => CreateGeminiService(aiModel, apiKey, userSettings),
+            ModelType.OpenAi => CreateChatGptService(aiModel, apiKey, _resilienceService, userSettings, customModelParameters),
+            ModelType.Anthropic => CreateClaudeService(aiModel, apiKey, userSettings, customModelParameters),
+            ModelType.DeepSeek => CreateDeepSeekService(aiModel, apiKey, userSettings, customModelParameters),
+            ModelType.Gemini => CreateGeminiService(aiModel, apiKey, userSettings, customModelParameters),
             //ModelType.Imagen3 => CreateImagen3Service(aiModel),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
     }
 
-    public IAiModelService GetService(Guid userId, Guid modelId, string customApiKey = null)
+    public IAiModelService GetService(Guid userId, Guid modelId, string? customApiKey = null, Guid? aiAgentId = null)
     {
-        return GetServiceAsync(userId, modelId, customApiKey).GetAwaiter().GetResult();
+        return GetServiceAsync(userId, modelId, customApiKey, aiAgentId).GetAwaiter().GetResult();
     }
 
-    private OpenAiService CreateChatGptService(AiModel aiModel,
+    private OpenAiService CreateChatGptService(
+        AiModel aiModel,
         string apiKey,
         IResilienceService resilienceService,
-        UserAiModelSettings? userSettings = null)
+        UserAiModelSettings? userSettings = null,
+        ModelParameters? customModelParameters = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new OpenAiService(
@@ -90,11 +107,15 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             aiModel.ModelCode,
             resilienceService,
             userSettings,
-            aiModel);
+            aiModel,
+            customModelParameters);
     }
 
-    private AnthropicService CreateClaudeService(AiModel aiModel, string apiKey,
-        UserAiModelSettings? userSettings = null)
+    private AnthropicService CreateClaudeService(
+        AiModel aiModel, 
+        string apiKey,
+        UserAiModelSettings? userSettings = null,
+        ModelParameters? customModelParameters = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new AnthropicService(
@@ -102,28 +123,40 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             apiKey,
             aiModel.ModelCode,
             userSettings,
-            aiModel);
+            aiModel,
+            customModelParameters);
     }
 
-    private DeepSeekService CreateDeepSeekService(AiModel aiModel, string apiKey,
-        UserAiModelSettings? userSettings = null)
+    private DeepSeekService CreateDeepSeekService(
+        AiModel aiModel, 
+        string apiKey,
+        UserAiModelSettings? userSettings = null,
+        ModelParameters? customModelParameters = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new DeepSeekService(
             httpClientFactory,
             apiKey,
             aiModel.ModelCode,
-            userSettings);
+            userSettings,
+            aiModel,
+            customModelParameters);
     }
 
-    private GeminiService CreateGeminiService(AiModel aiModel, string apiKey, UserAiModelSettings? userSettings = null)
+    private GeminiService CreateGeminiService(
+        AiModel aiModel, 
+        string apiKey, 
+        UserAiModelSettings? userSettings = null,
+        ModelParameters? customModelParameters = null)
     {
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new GeminiService(
             httpClientFactory,
             apiKey,
             aiModel.ModelCode,
-            userSettings);
+            userSettings,
+            aiModel,
+            customModelParameters);
     }
 
     private ImagenService CreateImagen3Service(AiModel aiModel)

@@ -16,7 +16,21 @@ public class FileUploadedNotificationHandler : INotificationHandler<FileUploaded
 
     public async Task Handle(FileUploadedNotification notification, CancellationToken cancellationToken)
     {
+        var fileAttachment = notification.FileAttachment;
+        
+        // Create a simplified object for the client to avoid serialization issues
+        var fileInfo = new
+        {
+            Id = fileAttachment.Id,
+            MessageId = fileAttachment.MessageId,
+            FileName = fileAttachment.FileName,
+            ContentType = fileAttachment.ContentType,
+            FileType = fileAttachment.FileType.ToString(),
+            Size = fileAttachment.FileSize,
+            Url = $"/api/Files/{fileAttachment.Id}"
+        };
+        
         await _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("ReceiveFile", notification.FileAttachment, cancellationToken);
+            .SendAsync("ReceiveFile", fileInfo, cancellationToken);
     }
 }

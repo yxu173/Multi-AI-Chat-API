@@ -31,7 +31,9 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
                 userId: request.UserId,
                 aiModelId: aiAgent.AiModelId,
                 folderId: request.FolderId,
-                aiAgent: request.AiAgentId);
+                customApiKey: request.CustomApiKey,
+                aiAgent: request.AiAgentId,
+                enableThinking: request.EnableThinking);
             foreach (var plugin in aiAgent.AiAgentPlugins)
             {
                 chatSession.AddPlugin(plugin.PluginId, plugin.Order);
@@ -39,7 +41,13 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
         }
         else if (request.ModelId.HasValue)
         {
-            chatSession = ChatSession.Create(request.UserId, request.ModelId.Value, request.FolderId);
+            chatSession = ChatSession.Create(
+                request.UserId, 
+                request.ModelId.Value, 
+                request.FolderId, 
+                request.CustomApiKey, 
+                null, 
+                request.EnableThinking);
         }
         else
         {

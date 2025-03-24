@@ -9,6 +9,7 @@ public sealed class ChatSession : BaseAuditableEntity
     public string? CustomApiKey { get; private set; }
     public Guid? FolderId { get; private set; }
     public Guid? AiAgentId { get; private set; }
+    public bool EnableThinking { get; private set; }
     private readonly List<Message> _messages = new();
     private readonly List<ChatSessionPlugin> _chatSessionPlugins = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
@@ -24,7 +25,8 @@ public sealed class ChatSession : BaseAuditableEntity
     public static ChatSession Create(Guid userId, Guid aiModelId,
         Guid? folderId = null,
         string? customApiKey = null,
-        Guid? aiAgent = null)
+        Guid? aiAgent = null,
+        bool enableThinking = false)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
@@ -38,6 +40,7 @@ public sealed class ChatSession : BaseAuditableEntity
             CustomApiKey = customApiKey,
             FolderId = folderId,
             AiAgentId = aiAgent,
+            EnableThinking = enableThinking,
             CreatedAt = DateTime.UtcNow
         };
     }
@@ -85,6 +88,12 @@ public sealed class ChatSession : BaseAuditableEntity
     {
         FolderId = null;
         Folder = null;
+        LastModifiedAt = DateTime.UtcNow;
+    }
+
+    public void ToggleThinking(bool enable)
+    {
+        EnableThinking = enable;
         LastModifiedAt = DateTime.UtcNow;
     }
 }

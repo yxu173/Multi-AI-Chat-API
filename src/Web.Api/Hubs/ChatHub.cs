@@ -2,6 +2,11 @@ using Microsoft.AspNetCore.SignalR;
 using Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using Domain.Aggregates.Chats;
+using Domain.Repositories;
+using MediatR;
+using Application.Notifications;
+using System.Threading;
 
 namespace Web.Api.Hubs;
 
@@ -10,11 +15,22 @@ public class ChatHub : Hub
 {
     private readonly ChatService _chatService;
     private readonly StreamingOperationManager _streamingOperationManager;
+    private readonly IMessageRepository _messageRepository;
+    private readonly IFileAttachmentRepository _fileAttachmentRepository;
+    private readonly IMediator _mediator;
 
-    public ChatHub(ChatService chatService, StreamingOperationManager streamingOperationManager)
+    public ChatHub(
+        ChatService chatService, 
+        StreamingOperationManager streamingOperationManager,
+        IMessageRepository messageRepository,
+        IFileAttachmentRepository fileAttachmentRepository,
+        IMediator mediator)
     {
         _chatService = chatService;
         _streamingOperationManager = streamingOperationManager;
+        _messageRepository = messageRepository;
+        _fileAttachmentRepository = fileAttachmentRepository;
+        _mediator = mediator;
     }
 
     public override async Task OnConnectedAsync()
@@ -44,5 +60,34 @@ public class ChatHub : Hub
     {
         var userId = Guid.Parse(Context.UserIdentifier);
         await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId), newContent);
+    }
+
+    public async Task NotifyFileUploaded(string chatSessionId, string messageId, string fileId)
+    {
+        if (!Guid.TryParse(fileId, out var fileGuid) || 
+            !Guid.TryParse(messageId, out var messageGuid) || 
+            !Guid.TryParse(chatSessionId, out var chatSessionGuid))
+        {
+            return;
+        }
+
+        var userId = Guid.Parse(Context.UserIdentifier);
+        
+        // Get the file attachment
+        var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileGuid, CancellationToken.None);
+        if (fileAttachment == null)
+        {
+            return;
+        }
+        
+        // Get the message
+        var message = await _messageRepository.GetByIdAsync(messageGuid, CancellationToken.None);
+        if (message == null || message.UserId != userId)
+        {
+            return;
+        }
+        
+        // Notify other clients in the chat group
+        await _mediator.Publish(new FileUploadedNotification(chatSessionGuid, fileAttachment));
     }
 }

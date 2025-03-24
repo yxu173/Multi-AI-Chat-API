@@ -68,6 +68,9 @@ namespace Infrastructure.Database.Migrations
                     b.Property<string>("CustomApiKey")
                         .HasColumnType("text");
 
+                    b.Property<bool>("EnableThinking")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("FolderId")
                         .HasColumnType("uuid");
 
@@ -101,37 +104,41 @@ namespace Infrastructure.Database.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<bool>("AssignCustomModelParameters")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
-                    b.PrimitiveCollection<List<string>>("Categories")
+                    b.Property<string>("Categories")
                         .IsRequired()
-                        .HasColumnType("text[]");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("IconUrl")
-                        .HasColumnType("text");
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<DateTime?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ModelParameters")
-                        .HasColumnType("text");
-
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("ProfilePictureUrl")
-                        .HasColumnType("text");
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("SystemInstructions")
-                        .HasColumnType("text");
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
@@ -140,7 +147,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("AiModelId");
 
-                    b.ToTable("AiAgents");
+                    b.ToTable("AiAgents", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.AiAgentPlugin", b =>
@@ -153,7 +160,9 @@ namespace Infrastructure.Database.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<int>("Order")
                         .HasColumnType("integer");
@@ -163,11 +172,12 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AiAgentId");
-
                     b.HasIndex("PluginId");
 
-                    b.ToTable("AiAgentPlugins");
+                    b.HasIndex("AiAgentId", "PluginId")
+                        .IsUnique();
+
+                    b.ToTable("AiAgentPlugins", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.AiModel", b =>
@@ -209,6 +219,9 @@ namespace Infrastructure.Database.Migrations
 
                     b.Property<double>("OutputTokenPricePer1M")
                         .HasColumnType("double precision");
+
+                    b.Property<bool>("SupportsThinking")
+                        .HasColumnType("boolean");
 
                     b.HasKey("Id");
 
@@ -316,6 +329,14 @@ namespace Infrastructure.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Base64Content")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -325,6 +346,13 @@ namespace Infrastructure.Database.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FileType")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<Guid>("MessageId")
                         .HasColumnType("uuid");
@@ -557,6 +585,9 @@ namespace Infrastructure.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("EnableThinking")
+                        .HasColumnType("boolean");
+
                     b.Property<double?>("FrequencyPenalty")
                         .HasColumnType("double precision");
 
@@ -776,7 +807,76 @@ namespace Infrastructure.Database.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.OwnsOne("Domain.ValueObjects.ModelParameters", "ModelParameter", b1 =>
+                        {
+                            b1.Property<Guid>("AiAgentId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("ContextLimit")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("ContextLimit");
+
+                            b1.Property<bool?>("EnableThinking")
+                                .HasColumnType("boolean")
+                                .HasColumnName("EnableThinking");
+
+                            b1.Property<double?>("FrequencyPenalty")
+                                .HasPrecision(3, 2)
+                                .HasColumnType("double precision")
+                                .HasColumnName("FrequencyPenalty");
+
+                            b1.Property<int?>("MaxTokens")
+                                .HasColumnType("integer")
+                                .HasColumnName("MaxTokens");
+
+                            b1.Property<double?>("PresencePenalty")
+                                .HasPrecision(3, 2)
+                                .HasColumnType("double precision")
+                                .HasColumnName("PresencePenalty");
+
+                            b1.Property<bool?>("PromptCaching")
+                                .HasColumnType("boolean")
+                                .HasColumnName("PromptCaching");
+
+                            b1.Property<int?>("ReasoningEffort")
+                                .HasColumnType("integer")
+                                .HasColumnName("ReasoningEffort");
+
+                            b1.Property<string>("SafetySettings")
+                                .HasMaxLength(1000)
+                                .HasColumnType("character varying(1000)")
+                                .HasColumnName("SafetySettings");
+
+                            b1.Property<string>("StopSequences")
+                                .HasColumnType("text")
+                                .HasColumnName("StopSequences");
+
+                            b1.Property<double?>("Temperature")
+                                .HasPrecision(3, 2)
+                                .HasColumnType("double precision")
+                                .HasColumnName("Temperature");
+
+                            b1.Property<int?>("TopK")
+                                .HasColumnType("integer")
+                                .HasColumnName("TopK");
+
+                            b1.Property<double?>("TopP")
+                                .HasPrecision(3, 2)
+                                .HasColumnType("double precision")
+                                .HasColumnName("TopP");
+
+                            b1.HasKey("AiAgentId");
+
+                            b1.ToTable("AiAgents");
+
+                            b1.WithOwner()
+                                .HasForeignKey("AiAgentId");
+                        });
+
                     b.Navigation("AiModel");
+
+                    b.Navigation("ModelParameter");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.AiAgentPlugin", b =>

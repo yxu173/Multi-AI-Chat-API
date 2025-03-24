@@ -4,6 +4,7 @@ using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
+using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices;
@@ -19,8 +20,9 @@ public class DeepSeekService : BaseAiService
         string apiKey,
         string modelCode,
         Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
-        AiModel? aiModel = null)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel)
+        AiModel? aiModel = null,
+        ModelParameters? customModelParameters = null)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
     {
     }
 
@@ -63,16 +65,35 @@ public class DeepSeekService : BaseAiService
         int maxTokens = AiModel?.MaxOutputTokens ?? DefaultMaxTokens;
         maxTokens = Math.Min(maxTokens, MaxAllowedTokens);
 
+        // Check if thinking should be enabled using the base class method
+        bool enableThinking = ShouldEnableThinking();
+
         var requestObj = new Dictionary<string, object>
         {
             ["model"] = ModelCode,
             ["messages"] = messages,
             ["stream"] = true,
-            ["max_tokens"] = maxTokens,
-            ["enable_cot"] = true // Placeholder; replace with actual parameter if needed
+            ["max_tokens"] = maxTokens
         };
+        
+        // Only enable chain-of-thought if the setting is enabled
+        if (enableThinking)
+        {
+            requestObj["enable_cot"] = true;
+            requestObj["enable_reasoning"] = true;
+            requestObj["reasoning_mode"] = "chain_of_thought";
+        }
 
         var requestWithSettings = ApplyUserSettings(requestObj);
+        
+        // DeepSeek specific parameter cleanup - REMOVE UNSUPPORTED PARAMETERS
+        requestWithSettings.Remove("thinking");
+        requestWithSettings.Remove("enable_thinking");
+        requestWithSettings.Remove("maxOutputTokens");
+        requestWithSettings.Remove("max_output_tokens");
+        requestWithSettings.Remove("reasoning_effort");
+        requestWithSettings.Remove("safety_settings");
+        
         return requestWithSettings;
     }
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(

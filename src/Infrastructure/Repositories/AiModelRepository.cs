@@ -20,6 +20,7 @@ public class AiModelRepository : IAiModelRepository
     {
         return await _dbContext.AiModels
             .Include(m => m.AiProvider)
+            .AsNoTracking()
             .FirstOrDefaultAsync(m => m.Id == id);
     }
 
@@ -27,6 +28,7 @@ public class AiModelRepository : IAiModelRepository
     {
         return await _dbContext.AiModels
             .Include(m => m.AiProvider)
+            .AsNoTracking()
             .ToListAsync();
     }
 
@@ -35,6 +37,7 @@ public class AiModelRepository : IAiModelRepository
         return await _dbContext.AiModels
             .Include(m => m.AiProvider)
             .Where(m => m.AiProviderId == providerId)
+            .AsNoTracking()
             .ToListAsync();
     }
 
@@ -43,6 +46,7 @@ public class AiModelRepository : IAiModelRepository
         return await _dbContext.AiModels
             .Include(m => m.AiProvider)
             .Where(m => m.ModelType == modelType)
+            .AsNoTracking()
             .ToListAsync();
     }
 
@@ -51,25 +55,33 @@ public class AiModelRepository : IAiModelRepository
         return await _dbContext.AiModels
             .Include(m => m.AiProvider)
             .Where(m => m.IsEnabled && m.AiProvider.IsEnabled)
+            .AsNoTracking()
             .ToListAsync();
     }
 
     public async Task<IReadOnlyList<AiModel>> GetEnabledByUserIdAsync(Guid userId)
     {
+        // First get the user-specific model preferences
+        var userModels = await _dbContext.UserAiModels
+            .Where(um => um.UserId == userId)
+            .ToListAsync();
+
+        // Get the IDs of models that should be hidden
+        var hiddenModelIds = userModels
+            .Where(um => !um.IsEnabled)
+            .Select(um => um.AiModelId)
+            .ToHashSet();
+
+        // Get all enabled models from the system that are not explicitly hidden for this user
         var enabledModels = await _dbContext.AiModels
-            .Where(m => m.IsEnabled)
+            .Include(m => m.AiProvider)
+            .Where(m => m.IsEnabled
+                        && m.AiProvider.IsEnabled
+                        && !hiddenModelIds.Contains(m.Id))
+            .AsNoTracking()
             .ToListAsync();
 
-        var disabledModelIds = await _dbContext.UserAiModels
-            .Where(x => x.UserId == userId && !x.IsEnabled)
-            .Select(x => x.AiModelId)
-            .ToListAsync();
-
-        var userEnabledModels = enabledModels
-            .Where(m => !disabledModelIds.Contains(m.Id))
-            .ToList();
-
-        return userEnabledModels;
+        return enabledModels;
     }
 
     public async Task<IReadOnlyList<AiModel>> GetUserAiModelsAsync(Guid userId)
@@ -94,21 +106,21 @@ public class AiModelRepository : IAiModelRepository
 
     public async Task UpdateAsync(AiModel aiModel)
     {
-        _dbContext.AiModels.Update(aiModel);
+        _dbContext.Entry(aiModel).State = EntityState.Modified;
         await _dbContext.SaveChangesAsync();
     }
 
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var model = await _dbContext.AiModels.FindAsync(id);
-        if (model == null)
+        var aiModel = await _dbContext.AiModels.FindAsync(id);
+        if (aiModel != null)
         {
-            return false;
+            _dbContext.AiModels.Remove(aiModel);
+            await _dbContext.SaveChangesAsync();
+            return true;
         }
 
-        _dbContext.AiModels.Remove(model);
-        await _dbContext.SaveChangesAsync();
-        return true;
+        return false;
     }
 
     public async Task<bool> ExistsAsync(Guid id)
@@ -116,10 +128,25 @@ public class AiModelRepository : IAiModelRepository
         return await _dbContext.AiModels.AnyAsync(m => m.Id == id);
     }
 
-    public async Task<UserAiModel> GetUserAiModelAsync(Guid userId, Guid aiModelId)
+    public async Task<UserAiModel> GetUserAiModelAsync(Guid userId, Guid modelId)
     {
-        return await _dbContext.UserAiModels
-            .FirstOrDefaultAsync(x => x.UserId == userId && x.AiModelId == aiModelId);
+        var userAiModel = await _dbContext.UserAiModels
+            .FirstOrDefaultAsync(u => u.UserId == userId && u.AiModelId == modelId);
+
+        if (userAiModel == null)
+        {
+            var aiModel = await GetByIdAsync(modelId);
+            if (aiModel == null)
+            {
+                throw new ArgumentException($"AI Model with ID {modelId} not found.");
+            }
+
+            userAiModel = UserAiModel.Create(userId, modelId);
+            _dbContext.UserAiModels.Add(userAiModel);
+            await _dbContext.SaveChangesAsync();
+        }
+
+        return userAiModel;
     }
 
     public async Task AddUserAiModelAsync(UserAiModel userAiModel)

@@ -16,7 +16,17 @@ public class MessageRepository : IMessageRepository
 
     public async Task<Message?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
     {
-        return await _context.Messages.AsNoTracking()
+        return await _context.Messages
+            .AsNoTracking()
+            .Include(m => m.FileAttachments)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+    }
+
+    public async Task<Message?> GetByIdWithFileAttachmentsAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return await _context.Messages
+            .AsNoTracking()
+            .Include(m => m.FileAttachments)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
     }
 

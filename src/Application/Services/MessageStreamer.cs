@@ -36,6 +36,9 @@ public class MessageStreamer
         var previousOutputTokens = tokenUsage.OutputTokens;
         var previousCost = tokenUsage.TotalCost;
         var responseContent = new StringBuilder();
+        
+        // Check if thinking should be enabled for this chat
+        bool shouldEnableThinking = chatSession.EnableThinking && chatSession.AiModel.SupportsThinking;
 
         try
         {
@@ -47,8 +50,17 @@ public class MessageStreamer
                     break;
                 }
 
-                await ProcessChunkAsync(chatSession, aiMessage, response, responseContent, tokenUsage,
-                    previousInputTokens, previousOutputTokens, previousCost, linkedCts.Token);
+                // Handle thinking responses differently if thinking is enabled
+                if (shouldEnableThinking && response.IsThinking)
+                {
+                    await ProcessThinkingChunkAsync(chatSession, aiMessage, response, tokenUsage,
+                        previousInputTokens, previousOutputTokens, previousCost, linkedCts.Token);
+                }
+                else
+                {
+                    await ProcessChunkAsync(chatSession, aiMessage, response, responseContent, tokenUsage,
+                        previousInputTokens, previousOutputTokens, previousCost, linkedCts.Token);
+                }
             }
 
             if (!linkedCts.Token.IsCancellationRequested)
@@ -82,6 +94,37 @@ public class MessageStreamer
             await _mediator.Publish(
                 new ResponseStoppedNotification(chatSession.Id, aiMessage.Id),
                 CancellationToken.None);
+    }
+
+    private async Task ProcessThinkingChunkAsync(ChatSession chatSession, Message aiMessage, StreamResponse response,
+        ChatTokenUsage tokenUsage, int previousInputTokens, int previousOutputTokens,
+        decimal previousCost, CancellationToken cancellationToken)
+    {
+        // Early exit if cancellation is requested
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var chunk = response.Content;
+        var currentInputTokens = response.InputTokens;
+        var currentOutputTokens = response.OutputTokens;
+
+        tokenUsage.UpdateTokenCounts(currentInputTokens, currentOutputTokens);
+        var cost = chatSession.AiModel.CalculateCost(currentInputTokens, currentOutputTokens);
+        await _tokenUsageService.UpdateTokenUsageAsync(chatSession.Id, currentInputTokens, currentOutputTokens, cost,
+            cancellationToken);
+        
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        // We don't append thinking output to the actual message content
+        // Instead we send it as a special notification type for the frontend to display differently
+        await _mediator.Publish(
+            new ThinkingChunkReceivedNotification(chatSession.Id, aiMessage.Id, chunk),
+            cancellationToken);
     }
 
     private async Task ProcessChunkAsync(ChatSession chatSession, Message aiMessage, StreamResponse response,

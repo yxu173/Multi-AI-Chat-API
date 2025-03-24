@@ -3,6 +3,7 @@ using Application.Features.Chats.DeleteChatById;
 using Application.Features.Chats.GetAllChatsByUserId;
 using Application.Features.Chats.GetChatById;
 using Application.Features.Chats.GetChatBySeacrh;
+using Application.Features.Chats.UpdateChatSession;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.Chats;
@@ -17,7 +18,14 @@ public class ChatController : BaseController
     [HttpPost("Create")]
     public async Task<IResult> CreateChatSession([FromBody] CreateChatSessionRequest request)
     {
-        var command = new CreateChatSessionCommand(UserId, request.ModelId, request.FolderId);
+        var command = new CreateChatSessionCommand(
+            UserId, 
+            request.ModelId, 
+            request.FolderId, 
+            request.AiAgentId, 
+            request.CustomApiKey, 
+            request.EnableThinking);
+            
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
@@ -65,6 +73,33 @@ public class ChatController : BaseController
         else
         {
             return Results.NotFound(new { Message = "No active streaming operation found for the provided message ID." });
+        }
+    }
+
+    [HttpPost("ToggleThinking/{chatId}")]
+    public async Task<IResult> ToggleThinking([FromRoute] Guid chatId, [FromBody] ToggleThinkingRequest request, 
+        [FromServices] Application.Services.ChatSessionService chatSessionService)
+    {
+        try
+        {
+            var session = await chatSessionService.GetChatSessionAsync(chatId);
+            
+            // Check if the chat belongs to the current user
+            if (session.UserId != UserId)
+            {
+                return Results.Forbid();
+            }
+            
+            // Toggle thinking mode
+            session.ToggleThinking(request.Enable);
+            
+            await _mediator.Send(new UpdateChatSessionCommand(chatId, session.Title, session.FolderId));
+            
+            return Results.Ok(new { Enabled = request.Enable });
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem(ex.Message);
         }
     }
 }

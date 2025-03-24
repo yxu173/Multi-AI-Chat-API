@@ -22,10 +22,14 @@ public class AiModelController : BaseController
         var command = new CreateAiModelCommand(
             request.Name,
             request.ModelType,
-            request.AiProvider,
+            request.AiProviderId,
             request.InputTokenPricePer1K,
             request.OutputTokenPricePer1K,
-            request.ModelCode
+            request.ModelCode,
+            request.MaxInputTokens,
+            request.MaxOutputTokens,
+            request.IsEnabled,
+            request.SupportsThinking
         );
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);

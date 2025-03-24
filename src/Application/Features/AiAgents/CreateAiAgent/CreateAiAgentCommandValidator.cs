@@ -23,12 +23,7 @@ public class CreateAiAgentCommandValidator : AbstractValidator<CreateAiAgentComm
         RuleFor(command => command.Categories)
             .Must(categories => categories == null || categories.Count <= 5)
             .WithMessage("You can select up to 5 categories.");
-
-        RuleFor(command => command.ModelParameters)
-            .Must((command, parameters) => !command.AssignCustomModelParameters || !string.IsNullOrWhiteSpace(parameters))
-            .When(command => command.AssignCustomModelParameters)
-            .WithMessage("Model parameters must be provided when custom parameters are enabled.");
-
+        
         RuleFor(command => command.Plugins)
             .Must(plugins => plugins == null || plugins.Count <= 10)
             .WithMessage("You can add up to 10 plugins.");

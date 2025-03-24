@@ -6,7 +6,7 @@ using MediatR;
 
 namespace Application.Services;
 
-public record MessageDto(string Content, bool IsFromAi, Guid MessageId);
+//public record MessageDto(string Content, bool IsFromAi, Guid MessageId);
 
 public class ChatService
 {
@@ -61,7 +61,7 @@ public class ChatService
 
         var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
         var aiService =
-            _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty);
+            _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
 
         // Fetch AI agent if associated with the chat session
         AiAgent aiAgent = null;
@@ -129,7 +129,7 @@ public class ChatService
 
         // Stream the AI response
         var aiService =
-            _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty);
+            _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
         await _messageStreamer.StreamResponseAsync(chatSession, aiMessage, aiService, messages, cancellationToken);
     }
 

@@ -22,7 +22,11 @@ public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelC
             request.AiProvider,
             request.InputTokenPricePer1K,
             request.OutputTokenPricePer1K,
-            request.ModelCode
+            request.ModelCode,
+            request.MaxInputTokens,
+            request.MaxOutputTokens,
+            request.IsEnabled,
+            request.SupportsThinking
         );
         await _aiModelRepository.AddAsync(aiModel);
         return Result.Success(aiModel.Id);

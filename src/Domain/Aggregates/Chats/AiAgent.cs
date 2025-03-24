@@ -1,4 +1,6 @@
 using Domain.Common;
+using Domain.ValueObjects;
+using System.Text.Json;
 
 namespace Domain.Aggregates.Chats;
 
@@ -13,7 +15,10 @@ public sealed class AiAgent : BaseAuditableEntity
 
     public List<string> Categories { get; private set; } = new();
     public bool AssignCustomModelParameters { get; private set; }
-    public string? ModelParameters { get; private set; }
+    
+    // Owned entity for ModelParameters
+    public ModelParameters? ModelParameter { get; private set; }
+    
     public string? ProfilePictureUrl { get; private set; }
 
     // Plugins related properties
@@ -35,14 +40,14 @@ public sealed class AiAgent : BaseAuditableEntity
         string? iconUrl = null,
         List<string>? categories = null,
         bool assignCustomModelParameters = false,
-        string? modelParameters = null,
+        ModelParameters? modelParameters = null,
         string? profilePictureUrl = null)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name cannot be empty.", nameof(name));
         if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
 
-        return new AiAgent
+        var agent = new AiAgent
         {
             Id = Guid.NewGuid(),
             UserId = userId,
@@ -53,10 +58,16 @@ public sealed class AiAgent : BaseAuditableEntity
             IconUrl = iconUrl,
             Categories = categories ?? new List<string>(),
             AssignCustomModelParameters = assignCustomModelParameters,
-            ModelParameters = modelParameters,
             ProfilePictureUrl = profilePictureUrl,
             CreatedAt = DateTime.UtcNow
         };
+
+        if (assignCustomModelParameters && modelParameters != null)
+        {
+            agent.ModelParameter = modelParameters;
+        }
+
+        return agent;
     }
 
     public void Update(
@@ -67,11 +78,11 @@ public sealed class AiAgent : BaseAuditableEntity
         string? iconUrl = null,
         List<string>? categories = null,
         bool? assignCustomModelParameters = null,
-        string? modelParameters = null,
+        ModelParameters? modelParameters = null,
         string? profilePictureUrl = null)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name cannot be empty.", nameof(name));
-       if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
+        if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
 
         Name = name;
         Description = description;
@@ -81,7 +92,7 @@ public sealed class AiAgent : BaseAuditableEntity
         if (systemInstructions != null) SystemInstructions = systemInstructions;
         if (categories != null) Categories = categories;
         if (assignCustomModelParameters.HasValue) AssignCustomModelParameters = assignCustomModelParameters.Value;
-        if (modelParameters != null) ModelParameters = modelParameters;
+        if (modelParameters != null && AssignCustomModelParameters) ModelParameter = modelParameters;
         if (profilePictureUrl != null) ProfilePictureUrl = profilePictureUrl;
 
         LastModifiedAt = DateTime.UtcNow;
@@ -105,13 +116,25 @@ public sealed class AiAgent : BaseAuditableEntity
         Categories.Clear();
     }
     
-    public void SetCustomModelParameters(bool enabled, string? parameters = null)
+    public void SetCustomModelParameters(bool enabled, ModelParameters? parameters = null)
     {
         AssignCustomModelParameters = enabled;
-        if (enabled && !string.IsNullOrWhiteSpace(parameters))
+        if (enabled && parameters != null)
         {
-            ModelParameters = parameters;
+            ModelParameter = parameters;
         }
+        else if (!enabled)
+        {
+            ModelParameter = null;
+        }
+    }
+
+    public ModelParameters? GetModelParameters()
+    {
+        if (!AssignCustomModelParameters)
+            return null;
+            
+        return ModelParameter;
     }
 
     public void SetSystemInstructions(string instructions)

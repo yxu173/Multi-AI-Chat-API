@@ -8,5 +8,6 @@ public record CreateChatSessionCommand(
     Guid? ModelId,
     Guid? FolderId = null,
     Guid? AiAgentId = null,
-    string? CustomApiKey = null
+    string? CustomApiKey = null,
+    bool EnableThinking = false
 ) : ICommand<Guid>;

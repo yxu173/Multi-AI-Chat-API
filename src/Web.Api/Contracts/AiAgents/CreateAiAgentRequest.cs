@@ -1,14 +1,31 @@
 namespace Web.Api.Contracts.AiAgents;
 
-public sealed record CreateAiAgentRequest(
+public record CreateAiAgentRequest(
     string Name,
     string Description,
-    string SystemPrompt,
+    string? SystemPrompt,
     Guid AiModelId,
-    string? IconUrl,
-    List<string>? Categories,
-    bool AssignCustomModelParameters,
-    string? ModelParameters,
-    string? ProfilePictureUrl,
-    List<PluginRequest>? Plugins);
-public sealed record PluginRequest(Guid PluginId, int Order, bool IsActive);
+    string? IconUrl = null,
+    List<string>? Categories = null,
+    bool AssignCustomModelParameters = false,
+    double? Temperature = null,
+    double? PresencePenalty = null,
+    double? FrequencyPenalty = null,
+    double? TopP = null,
+    int? TopK = null,
+    int? MaxTokens = null,
+    bool? EnableThinking = null,
+    List<string>? StopSequences = null,
+    int? ReasoningEffort = null,
+    bool? PromptCaching = null,
+    string? ContextLimit = null,
+    string? SafetySettings = null,
+    string? ProfilePictureUrl = null,
+    List<PluginRequest>? Plugins = null
+);
+
+public record PluginRequest(
+    Guid PluginId,
+    int Order,
+    bool IsActive = true
+);

@@ -4,8 +4,10 @@ using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
+using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -13,18 +15,22 @@ public class AnthropicService : BaseAiService
 {
     private const string BaseUrl = "https://api.anthropic.com/v1/";
     private const string AnthropicVersion = "2023-06-01";
-    private const int DefaultMaxTokens = 4096; // Safe default below 8192
-    private const int MaxAllowedTokens = 8192; // Anthropic's max for Claude 3.5 Sonnet
-    private const int DefaultThinkingBudget = 4096; // Default budget for thinking trace
+    private const int DefaultMaxTokens = 20000; // Default for final response
+    private const int MaxAllowedTokens = 32768; // Claude's max limit
+    private const int DefaultThinkingBudget = 16000; // Default thinking budget
+    private readonly ILogger<AnthropicService>? _logger;
 
     public AnthropicService(
         IHttpClientFactory httpClientFactory,
         string apiKey,
         string modelCode,
         Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
-        AiModel? aiModel = null)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel)
+        AiModel? aiModel = null,
+        ModelParameters? customModelParameters = null,
+        ILogger<AnthropicService>? logger = null)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
     {
+        _logger = logger;
     }
 
     protected override void ConfigureHttpClient()
@@ -46,21 +52,41 @@ public class AnthropicService : BaseAiService
         int maxTokens = AiModel?.MaxOutputTokens ?? DefaultMaxTokens;
         maxTokens = Math.Min(maxTokens, MaxAllowedTokens);
 
-        // Set thinking budget: Half of max_tokens or default, capped at max allowed
-        int thinkingBudget = Math.Min(DefaultThinkingBudget, maxTokens / 2);
+        // Set thinking budget: Use DefaultThinkingBudget (16000) or specified value
+        int thinkingBudget = DefaultThinkingBudget;
+
+        // Allow custom parameters to override thinking budget if specified
+        if (CustomModelParameters?.ReasoningEffort.HasValue == true)
+        {
+            // Map reasoning effort to thinking budget by scaling from 0-100 to 1000-24000
+            thinkingBudget = Math.Min(24000, 1000 + (CustomModelParameters.ReasoningEffort.Value * 230));
+        }
+
+        // Check if thinking should be enabled using the base class method
+        bool enableThinking = ShouldEnableThinking();
 
         var requestObj = new Dictionary<string, object>
         {
             ["model"] = ModelCode,
             ["max_tokens"] = maxTokens,
-            ["stream"] = true,
-            ["thinking"] = new Dictionary<string, object>
-            {
-                { "type", "enabled" },
-                { "budget_tokens", thinkingBudget }
-            },
-            ["messages"] = messages
+            ["stream"] = true
         };
+
+        // Only add thinking configuration if enabled and model supports it
+        if (enableThinking && AiModel?.SupportsThinking == true)
+        {
+            // For Anthropic, when thinking is enabled, temperature MUST be 1.0
+            requestObj["temperature"] = 1.0;
+
+            // For Anthropic, we use a minimal thinking object structure to avoid nesting issues
+            requestObj["thinking"] = new Dictionary<string, object>
+            {
+                ["type"] = "enabled",
+                ["budget_tokens"] = thinkingBudget
+            };
+        }
+
+        requestObj["messages"] = messages;
 
         // Add system message separately if present
         var systemMessage = GetSystemMessage();
@@ -69,9 +95,9 @@ public class AnthropicService : BaseAiService
             requestObj["system"] = systemMessage;
         }
 
-        // Apply user settings (e.g., temperature, top_p, etc.)
-        var requestWithSettings = ApplyUserSettings(requestObj, false);
-        requestWithSettings["temperature"] = 1.0;
+        // Apply user settings (e.g., temperature, top_p, etc.) - but don't overwrite temperature when thinking is enabled
+        var requestWithSettings = ApplyUserSettings(requestObj, false, !enableThinking);
+
         // Remove unsupported parameters for Anthropic
         requestWithSettings.Remove("frequency_penalty");
         requestWithSettings.Remove("presence_penalty");
@@ -79,6 +105,17 @@ public class AnthropicService : BaseAiService
         requestWithSettings.Remove("max_output_tokens");
         requestWithSettings.Remove("top_k");
         requestWithSettings.Remove("top_p");
+        requestWithSettings.Remove("topP");
+        requestWithSettings.Remove("enable_thinking");
+        requestWithSettings.Remove("enable_cot");
+        requestWithSettings.Remove("enable_reasoning");
+        requestWithSettings.Remove("reasoning_mode");
+        requestWithSettings.Remove("context_limit");
+        requestWithSettings.Remove("safety_settings");
+        requestWithSettings.Remove("stop_sequences");
+
+        // Log the final request structure
+        _logger?.LogDebug("Anthropic API request: {Request}", JsonSerializer.Serialize(requestWithSettings));
 
         return requestWithSettings;
     }
@@ -87,7 +124,9 @@ public class AnthropicService : BaseAiService
         IEnumerable<MessageDto> history,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var request = CreateRequest(CreateRequestBody(history));
+        var requestBody = CreateRequestBody(history);
+        var request = CreateRequest(requestBody);
+
         using var response = await HttpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
@@ -99,24 +138,39 @@ public class AnthropicService : BaseAiService
             yield break;
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
+        await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(contentStream);
 
         var contentBlockTypes = new Dictionary<int, string>();
-        int inputTokens = 0;
-        int estimatedOutputTokens = 0;
+        var inputTokens = 0;
+        var estimatedOutputTokens = 0;
         var fullResponse = new StringBuilder();
 
         while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
         {
-            var line = await reader.ReadLineAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            string? line;
 
-            if (line.StartsWith("data: "))
+            try
             {
-                var json = line["data: ".Length..];
-                if (json == "[DONE]") break;
+                line = await reader.ReadLineAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error reading response stream line");
+                break;
+            }
 
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (!line.StartsWith("data: ")) continue;
+
+            var json = line["data: ".Length..];
+            if (json == "[DONE]") break;
+
+            StreamResponse? streamResponse = null;
+
+            try
+            {
+                // Try to extract a StreamResponse from the json
                 using var doc = JsonDocument.Parse(json);
                 var type = doc.RootElement.GetProperty("type").GetString();
 
@@ -129,6 +183,7 @@ public class AnthropicService : BaseAiService
                         {
                             inputTokens = inputTokensElement.GetInt32();
                         }
+
                         break;
 
                     case "content_block_start":
@@ -139,6 +194,7 @@ public class AnthropicService : BaseAiService
                             var blockType = contentBlockElement.GetProperty("type").GetString();
                             contentBlockTypes[index] = blockType;
                         }
+
                         break;
 
                     case "content_block_delta":
@@ -148,26 +204,30 @@ public class AnthropicService : BaseAiService
                             var deltaIndex = deltaIndexElement.GetInt32();
                             if (contentBlockTypes.TryGetValue(deltaIndex, out var blockType))
                             {
-                                if (blockType == "thinking" && deltaElement.TryGetProperty("thinking", out var thinkingElement))
+                                if (blockType == "thinking" &&
+                                    deltaElement.TryGetProperty("thinking", out var thinkingElement))
                                 {
                                     var thinkingText = thinkingElement.GetString();
                                     if (!string.IsNullOrEmpty(thinkingText))
                                     {
-                                        yield return new StreamResponse(thinkingText, inputTokens, 0, IsThinking: true);
+                                        streamResponse = new StreamResponse(thinkingText, inputTokens, 0,
+                                            IsThinking: true);
                                     }
                                 }
-                                else if (blockType == "text" && deltaElement.TryGetProperty("text", out var textElement))
+                                else if (blockType == "text" &&
+                                         deltaElement.TryGetProperty("text", out var textElement))
                                 {
                                     var text = textElement.GetString();
                                     if (!string.IsNullOrEmpty(text))
                                     {
                                         fullResponse.Append(text);
                                         estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
-                                        yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
+                                        streamResponse = new StreamResponse(text, inputTokens, estimatedOutputTokens);
                                     }
                                 }
                             }
                         }
+
                         break;
 
                     case "message_stop":
@@ -177,8 +237,19 @@ public class AnthropicService : BaseAiService
                         {
                             estimatedOutputTokens = outputTokensElement.GetInt32();
                         }
+
                         break;
                 }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error processing response JSON: {Json}", json);
+            }
+
+            // If we extracted a valid StreamResponse, yield it
+            if (streamResponse != null)
+            {
+                yield return streamResponse;
             }
         }
     }

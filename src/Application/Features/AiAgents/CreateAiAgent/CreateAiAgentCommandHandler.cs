@@ -1,6 +1,7 @@
 using Application.Abstractions.Messaging;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
+using Domain.ValueObjects;
 using SharedKernel;
 
 namespace Application.Features.AiAgents.CreateAiAgent;
@@ -20,7 +21,6 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
 
     public async Task<Result<Guid>> Handle(CreateAiAgentCommand request, CancellationToken cancellationToken)
     {
-       
         var model = await _aiModelRepository.GetByIdAsync(request.AiModelId);
         if (model == null)
         {
@@ -31,6 +31,25 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
 
         try
         {
+            // Create ModelParameters value object from direct properties
+            ModelParameters? modelParameters = null;
+            if (request.AssignCustomModelParameters)
+            {
+                modelParameters = ModelParameters.Create(
+                    temperature: request.Temperature,
+                    presencePenalty: request.PresencePenalty,
+                    frequencyPenalty: request.FrequencyPenalty,
+                    topP: request.TopP,
+                    topK: request.TopK,
+                    maxTokens: request.MaxTokens,
+                    enableThinking: request.EnableThinking,
+                    stopSequences: request.StopSequences,
+                    reasoningEffort: request.ReasoningEffort,
+                    promptCaching: request.PromptCaching,
+                    contextLimit: request.ContextLimit,
+                    safetySettings: request.SafetySettings
+                );
+            }
             
             var agent = AiAgent.Create(
                 request.UserId,
@@ -41,11 +60,10 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                 request.IconUrl,
                 request.Categories,
                 request.AssignCustomModelParameters,
-                request.ModelParameters,
+                modelParameters,
                 request.ProfilePictureUrl
             );
 
-          
             if (request.Plugins != null && request.Plugins.Count > 0)
             {
                 foreach (var plugin in request.Plugins)
@@ -53,7 +71,6 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                     agent.AddPlugin(plugin.PluginId, plugin.Order, plugin.IsActive);
                 }
             }
-
             
             await _aiAgentRepository.AddAsync(agent, cancellationToken);
 
