@@ -11,6 +11,7 @@ using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Infrastructure.Services;
 using Infrastructure.Services.AiProvidersServices;
+using Infrastructure.Services.AiProvidersServices.Base;
 using Infrastructure.Services.Caching;
 using Infrastructure.Services.Plugins;
 using Infrastructure.Services.Resilience;

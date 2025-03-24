@@ -33,268 +33,413 @@ public abstract class BaseAiService : IAiModelService
         ModelSettings = modelSettings;
         AiModel = aiModel;
         CustomModelParameters = customModelParameters;
-
         ConfigureHttpClient();
     }
 
-  
+    // Abstract methods for provider-specific behavior
     protected abstract void ConfigureHttpClient();
+    protected abstract string GetEndpointPath();
+    public abstract IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, CancellationToken cancellationToken);
 
-   
-    protected abstract object CreateRequestBody(IEnumerable<MessageDto> history);
+    // Standard message preparation
+    protected virtual List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
+    {
+        var messages = new List<(string Role, string Content)>();
+        var systemMessage = GetSystemMessage();
+        if (!string.IsNullOrEmpty(systemMessage))
+        {
+            messages.Add(("system", systemMessage));
+        }
+        if (ShouldEnableThinking())
+        {
+            messages.Add(("system", "When solving complex problems, show your step-by-step thinking process marked as '### Thinking:' before the final answer marked as '### Answer:'"));
+        }
+        foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
+        {
+            messages.Add((msg.IsFromAi ? "assistant" : "user", msg.Content.Trim()));
+        }
+        return messages;
+    }
 
-  
+    // Standard parameter collection
+    protected virtual Dictionary<string, object> GetModelParameters()
+    {
+        var parameters = new Dictionary<string, object>();
+        if (CustomModelParameters != null)
+        {
+            if (CustomModelParameters.Temperature.HasValue) parameters["temperature"] = CustomModelParameters.Temperature.Value;
+            if (CustomModelParameters.TopP.HasValue) parameters["top_p"] = CustomModelParameters.TopP.Value;
+            if (CustomModelParameters.TopK.HasValue) parameters["top_k"] = CustomModelParameters.TopK.Value;
+            if (CustomModelParameters.FrequencyPenalty.HasValue) parameters["frequency_penalty"] = CustomModelParameters.FrequencyPenalty.Value;
+            if (CustomModelParameters.PresencePenalty.HasValue) parameters["presence_penalty"] = CustomModelParameters.PresencePenalty.Value;
+            if (CustomModelParameters.MaxTokens.HasValue) parameters["max_tokens"] = CustomModelParameters.MaxTokens.Value;
+            if (CustomModelParameters.StopSequences?.Any() == true) parameters["stop"] = CustomModelParameters.StopSequences;
+        }
+        else if (ModelSettings != null)
+        {
+            if (ModelSettings.Temperature.HasValue) parameters["temperature"] = ModelSettings.Temperature.Value;
+            if (ModelSettings.TopP.HasValue) parameters["top_p"] = ModelSettings.TopP.Value;
+            if (ModelSettings.TopK.HasValue) parameters["top_k"] = ModelSettings.TopK.Value;
+            if (ModelSettings.FrequencyPenalty.HasValue) parameters["frequency_penalty"] = ModelSettings.FrequencyPenalty.Value;
+            if (ModelSettings.PresencePenalty.HasValue) parameters["presence_penalty"] = ModelSettings.PresencePenalty.Value;
+            if (ModelSettings.StopSequences.Any()) parameters["stop"] = ModelSettings.StopSequences;
+        }
+        if (!parameters.ContainsKey("max_tokens") && AiModel?.MaxOutputTokens.HasValue == true)
+        {
+            parameters["max_tokens"] = AiModel.MaxOutputTokens.Value;
+        }
+        return parameters;
+    }
+
+    // Virtual method for provider-specific request tweaks
+    protected virtual void AddProviderSpecificParameters(Dictionary<string, object> requestObj) { }
+
+    // Common request body creation
+    protected virtual object CreateRequestBody(IEnumerable<MessageDto> history)
+    {
+        var requestObj = new Dictionary<string, object>
+        {
+            ["model"] = ModelCode,
+            ["stream"] = true
+        };
+        
+        var parameters = GetModelParameters();
+        
+        // Filter parameters based on model support and transform parameter names if needed
+        foreach (var param in parameters)
+        {
+            string providerParamName = GetProviderParameterName(param.Key);
+            
+            // Skip parameters not supported by this model
+            if (!SupportsParameter(providerParamName))
+            {
+                Console.WriteLine($"Skipping unsupported parameter '{param.Key}' for model {ModelCode}");
+                continue;
+            }
+            
+            // Add the parameter with the provider-specific name
+            requestObj[providerParamName] = param.Value;
+        }
+        
+        // Add provider-specific parameters
+        AddProviderSpecificParameters(requestObj);
+        
+        return requestObj;
+    }
+
+    // Common SSE streaming utility
+    protected async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync();
+            if (line?.StartsWith("data: ") == true)
+            {
+                var json = line["data: ".Length..];
+                if (json != "[DONE]") yield return json;
+            }
+        }
+    }
+
     protected virtual HttpRequestMessage CreateRequest(object requestBody)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath());
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
-            "application/json");
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = false
+        };
+        
+        var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath())
+        {
+            Content = new StringContent(JsonSerializer.Serialize(requestBody, jsonOptions), Encoding.UTF8, "application/json")
+        };
         return request;
     }
 
-   
-    protected abstract string GetEndpointPath();
-
-    
-    public abstract IAsyncEnumerable<StreamResponse> StreamResponseAsync(
-        IEnumerable<MessageDto> history,
-        CancellationToken cancellationToken);
-
-   
-    protected async Task HandleApiErrorAsync(HttpResponseMessage response, string providerName)
+    protected async Task<(bool Success, HttpResponseMessage? RetryResponse, Dictionary<string, object>? CorrectedBody)> AttemptAutoCorrection(
+        HttpResponseMessage response, 
+        object originalRequestBody,
+        string errorType,
+        string errorParam,
+        string providerName)
     {
-        var errorContent = await response.Content.ReadAsStringAsync();
-        throw new Exception($"{providerName} API Error: {response.StatusCode} - {errorContent}");
-    }
-    
-  
-    protected string GetSystemMessage()
-    {
-        if (ModelSettings?.SystemMessage != null)
+        if (originalRequestBody is not Dictionary<string, object> correctedBody)
         {
-            return ModelSettings.SystemMessage;
+            return (false, null, null);
         }
         
-        return "Always respond using markdown formatting";
-    }
-    
-    
-    protected List<MessageDto> ApplySystemMessageToHistory(IEnumerable<MessageDto> history)
-    {
-        var messages = history.ToList();
+        // Create a deep copy to avoid modifying the original
+        correctedBody = new Dictionary<string, object>(correctedBody);
         
-        // Check if the first message is already a system message
-        bool hasSystemMessage = messages.Count > 0 && 
-                               messages[0].Content.StartsWith("system:") || 
-                               messages[0].Content.StartsWith("System:");
+        // Get response content to analyze the error
+        string errorContent = await response.Content.ReadAsStringAsync();
         
-        // If not, add our system message
-        if (!hasSystemMessage)
+        // Handle OpenAI specific parameters
+        if (providerName == "OpenAI")
         {
-            var systemMessage = GetSystemMessage();
-            messages.Insert(0, new MessageDto("system: " + systemMessage, true, Guid.NewGuid()));
-        }
-        
-        return messages;
-    }
-   
-    protected Dictionary<string, object> ApplyUserSettings(Dictionary<string, object> requestObj, bool includeStopSequences = true, bool applyTemperature = true)
-    {
-        // If custom model options are provided, apply them first
-        if (CustomModelParameters != null)
-        {
-            ApplyCustomModelOptions(requestObj, CustomModelParameters, applyTemperature);
-        }
-       
-        // Then apply model default limits if available
-        if (AiModel != null)
-        {
-            if (AiModel.MaxOutputTokens.HasValue && !CustomModelParameters?.MaxTokens.HasValue == true)
+            // Always remove top_k for OpenAI as it's not supported
+            if (correctedBody.ContainsKey("top_k"))
             {
-                if (!requestObj.ContainsKey("max_tokens"))
-                    requestObj["max_tokens"] = AiModel.MaxOutputTokens.Value;
-                if (!requestObj.ContainsKey("maxOutputTokens"))
-                    requestObj["maxOutputTokens"] = AiModel.MaxOutputTokens.Value;
-                if (!requestObj.ContainsKey("max_output_tokens"))
-                    requestObj["max_output_tokens"] = AiModel.MaxOutputTokens.Value;
-            }
-        }
-        
-        // If no user settings or custom options, set some reasonable defaults
-        if (ModelSettings == null && CustomModelParameters == null)
-        {
-            if (!requestObj.ContainsKey("max_tokens") && !requestObj.ContainsKey("maxOutputTokens") && !requestObj.ContainsKey("max_output_tokens"))
-                requestObj["max_tokens"] = 2000;
-            
-            return requestObj;
-        }
-        
-        // If we have user settings but no custom options, apply the user settings
-        if (ModelSettings != null && CustomModelParameters == null)
-        {
-            var settingsToApply = new Dictionary<string, object>();
-            
-            if (ModelSettings.Temperature.HasValue && applyTemperature)
-            {
-                settingsToApply["temperature"] = ModelSettings.Temperature.Value;
+                correctedBody.Remove("top_k");
+                Console.WriteLine("Auto-corrected: Removed unsupported parameter top_k");
             }
             
-            if (ModelSettings.TopP.HasValue)
+            // Handle reasoning_effort parameter
+            if (errorContent.Contains("reasoning_effort") && providerName == "OpenAI")
             {
-                settingsToApply["top_p"] = ModelSettings.TopP.Value;
-                settingsToApply["topP"] = ModelSettings.TopP.Value;
-            }
-            
-            if (ModelSettings.TopK.HasValue)
-            {
-                settingsToApply["top_k"] = ModelSettings.TopK.Value;
-                settingsToApply["topK"] = ModelSettings.TopK.Value;
-            }
-            
-            if (ModelSettings.FrequencyPenalty.HasValue)
-            {
-                settingsToApply["frequency_penalty"] = ModelSettings.FrequencyPenalty.Value;
-            }
-            
-            if (ModelSettings.PresencePenalty.HasValue)
-            {
-                settingsToApply["presence_penalty"] = ModelSettings.PresencePenalty.Value;
-            }
-            
-            if (includeStopSequences && ModelSettings.StopSequences.Any())
-            {
-                settingsToApply["stop"] = ModelSettings.StopSequences;
-                settingsToApply["stop_sequences"] = ModelSettings.StopSequences;
-            }
-            
-            // Apply the settings
-            foreach (var setting in settingsToApply)
-            {
-                if (requestObj.ContainsKey(setting.Key))
+                if (correctedBody.ContainsKey("reasoning_effort"))
                 {
-                    requestObj[setting.Key] = setting.Value;
+                    correctedBody.Remove("reasoning_effort");
+                    Console.WriteLine("Auto-corrected: Removed unsupported parameter reasoning_effort");
                 }
-                else
-                {
-                    // Only add key if it's a standard parameter
-                    switch (setting.Key)
+            }
+        }
+        
+        // Try to auto-correct known issues based on error message
+        if (errorType == "invalid_request_error" && !string.IsNullOrEmpty(errorParam))
+        {
+            switch (errorParam)
+            {
+                // Handle typical parameter errors
+                case "top_k" when providerName == "OpenAI":
+                    correctedBody.Remove("top_k");
+                    Console.WriteLine("Auto-corrected: Removed unsupported parameter top_k");
+                    break;
+                    
+                case "reasoning_effort" when providerName == "OpenAI":
+                    correctedBody.Remove("reasoning_effort");
+                    Console.WriteLine("Auto-corrected: Removed unsupported parameter reasoning_effort");
+                    break;
+                
+                case "temperature":
+                    if (correctedBody.TryGetValue("temperature", out var tempValue) && tempValue is double temp)
                     {
-                        case "max_tokens":
-                        case "temperature":
-                        case "top_p":
-                        case "top_k":
-                        case "frequency_penalty":
-                        case "presence_penalty":
-                        case "stop":
-                            requestObj[setting.Key] = setting.Value;
-                            break;
+                        // Fix temperature out of range
+                        if (temp < 0) 
+                        {
+                            correctedBody["temperature"] = 0.0;
+                            Console.WriteLine($"Auto-corrected: temperature from {temp} to 0.0");
+                        }
+                        else if (temp > 2)
+                        {
+                            correctedBody["temperature"] = 1.0;
+                            Console.WriteLine($"Auto-corrected: temperature from {temp} to 1.0");
+                        }
+                    }
+                    break;
+                    
+                // Add more parameter-specific corrections here
+                
+                default:
+                    // For unknown parameters, try removing them
+                    if (correctedBody.ContainsKey(errorParam))
+                    {
+                        correctedBody.Remove(errorParam);
+                        Console.WriteLine($"Auto-corrected: Removed problematic parameter '{errorParam}'");
+                    }
+                    break;
+            }
+        }
+        else if (errorContent.Contains("Unrecognized request arguments"))
+        {
+            // Handle unrecognized arguments error
+            var argMatches = System.Text.RegularExpressions.Regex.Matches(errorContent, "Unrecognized request arguments supplied: ([^,\"]+)");
+            
+            if (argMatches.Count > 0)
+            {
+                foreach (System.Text.RegularExpressions.Match match in argMatches)
+                {
+                    string[] invalidParams = match.Groups[1].Value.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(p => p.Trim())
+                        .ToArray();
+                        
+                    foreach (var param in invalidParams)
+                    {
+                        if (correctedBody.ContainsKey(param))
+                        {
+                            correctedBody.Remove(param);
+                            Console.WriteLine($"Auto-corrected: Removed unrecognized parameter '{param}'");
+                        }
                     }
                 }
             }
         }
         
-        return requestObj;
+        // Attempt request with corrected parameters
+        var retryRequest = CreateRequest(correctedBody);
+        
+        try
+        {
+            var retryResponse = await HttpClient.SendAsync(retryRequest, HttpCompletionOption.ResponseHeadersRead);
+            
+            // If we got a successful response, return it
+            if (retryResponse.IsSuccessStatusCode)
+            {
+                return (true, retryResponse, correctedBody);
+            }
+            
+            // Otherwise, return that the correction failed
+            Console.WriteLine($"Auto-correction attempted but still got error: {retryResponse.StatusCode}");
+            return (false, null, null);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error during auto-correction request: {ex.Message}");
+            return (false, null, null);
+        }
     }
 
-    private void ApplyCustomModelOptions(Dictionary<string, object> requestObj, ModelParameters options, bool applyTemperature = true)
+    protected async Task HandleApiErrorAsync(HttpResponseMessage response, string providerName)
     {
-        if (options.Temperature.HasValue && applyTemperature)
+        try
         {
-            requestObj["temperature"] = options.Temperature.Value;
-        }
-        
-        if (options.TopP.HasValue)
-        {
-            requestObj["top_p"] = options.TopP.Value;
-            requestObj["topP"] = options.TopP.Value;
-        }
-        
-        if (options.TopK.HasValue)
-        {
-            requestObj["top_k"] = options.TopK.Value;
-            requestObj["topK"] = options.TopK.Value;
-        }
-        
-        if (options.FrequencyPenalty.HasValue)
-        {
-            requestObj["frequency_penalty"] = options.FrequencyPenalty.Value;
-        }
-        
-        if (options.PresencePenalty.HasValue)
-        {
-            requestObj["presence_penalty"] = options.PresencePenalty.Value;
-        }
-        
-        if (options.MaxTokens.HasValue)
-        {
-            requestObj["max_tokens"] = options.MaxTokens.Value;
-            requestObj["maxOutputTokens"] = options.MaxTokens.Value;
-            requestObj["max_output_tokens"] = options.MaxTokens.Value;
-        }
-        
-        if (options.StopSequences != null && options.StopSequences.Any())
-        {
-            requestObj["stop"] = options.StopSequences;
-            requestObj["stop_sequences"] = options.StopSequences;
-        }
-
-        // Context window size - model specific implementation may override
-        if (!string.IsNullOrEmpty(options.ContextLimit))
-        {
-            requestObj["context_limit"] = options.ContextLimit;
-        }
-
-        // Apply thinking if supported
-        if (AiModel?.SupportsThinking == true && ShouldEnableThinking())
-        {
-            requestObj["enable_thinking"] = true;
-            requestObj["enable_cot"] = true;
+            var errorContent = await response.Content.ReadAsStringAsync();
             
-            // Each model might have a different way to enable thinking
-            // Use a simpler structure to avoid nesting issues
-            requestObj["thinking"] = new Dictionary<string, object> {
-                { "type", "enabled" }
-            };
-        }
-
-        // Reasoning effort (for models that support it)
-        if (options.ReasoningEffort.HasValue)
-        {
-            requestObj["reasoning_effort"] = options.ReasoningEffort.Value;
-        }
-
-        // Safety settings
-        if (!string.IsNullOrEmpty(options.SafetySettings))
-        {
-            try {
-                var safetySettings = JsonSerializer.Deserialize<object>(options.SafetySettings);
-                if (safetySettings != null)
+            // Try to extract specific error information for better diagnostics
+            string detailedError = errorContent;
+            string errorType = "unknown";
+            string apiErrorMessage = errorContent;
+            string errorParam = "none";
+            
+            try
+            {
+                var errorJson = JsonSerializer.Deserialize<JsonElement>(errorContent);
+                if (errorJson.TryGetProperty("error", out var errorObj))
                 {
-                    requestObj["safety_settings"] = safetySettings;
+                    // Extract error details
+                    errorType = errorObj.TryGetProperty("type", out var type) ? type.GetString() ?? "unknown" : "unknown";
+                    apiErrorMessage = errorObj.TryGetProperty("message", out var message) ? message.GetString() ?? errorContent : errorContent;
+                    errorParam = errorObj.TryGetProperty("param", out var param) ? param.GetString() ?? "none" : "none";
+                    
+                    Console.WriteLine($"API Error Details - Provider: {providerName}, Type: {errorType}, Param: {errorParam}, Message: {apiErrorMessage}");
+                    
+                    detailedError = $"{apiErrorMessage} (Parameter: {errorParam}, Type: {errorType})";
                 }
             }
-            catch {
-                // Ignore parsing errors for safety settings
+            catch
+            {
+                // If error parsing fails, use the raw content
+                detailedError = errorContent;
             }
+            
+            var errorMessage = $"{providerName} API Error: {response.StatusCode} - {detailedError}";
+            
+            // Log detailed error information
+            Console.WriteLine(errorMessage);
+            
+            throw new Exception(errorMessage);
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException && ex.GetType().Name != "Exception")
+        {
+            // Handle error response parsing errors
+            throw new Exception($"{providerName} API Error: {response.StatusCode} - Unable to parse error response: {ex.Message}");
         }
     }
 
-    /// <summary>
-    /// Helper method to determine if thinking mode should be enabled based on model and user settings
-    /// </summary>
-    protected bool ShouldEnableThinking()
+    protected string GetSystemMessage() => ModelSettings?.SystemMessage ?? "Always respond using markdown formatting";
+
+    protected bool ShouldEnableThinking() =>
+        AiModel?.SupportsThinking == true && (CustomModelParameters?.EnableThinking ?? true);
+
+    // Helper methods for detecting model families
+    protected bool IsOpenAIModel()
     {
-        // Only enable thinking if the model supports it
-        if (AiModel?.SupportsThinking != true)
-            return false;
+        return ModelCode.Contains("gpt") || ModelCode.Contains("text-embedding") || ModelCode.Contains("dall-e");
+    }
+    
+    protected bool IsAnthropicModel()
+    {
+        return ModelCode.Contains("claude");
+    }
+    
+    protected bool IsGeminiModel()
+    {
+        return ModelCode.Contains("gemini");
+    }
+    
+    protected bool IsDeepSeekModel()
+    {
+        return ModelCode.Contains("deepseek");
+    }
+    
+    // Method to determine if a model is an API-hosted model vs. a local model
+    protected bool IsCloudHostedModel()
+    {
+        return IsOpenAIModel() || IsAnthropicModel() || IsGeminiModel() || IsDeepSeekModel();
+    }
+    
+    // Method to check if a model supports a specific parameter
+    protected virtual bool SupportsParameter(string paramName)
+    {
+        // Default supported parameters across most models
+        var commonSupportedParams = new HashSet<string> { "model", "messages", "stream" };
+        
+        if (commonSupportedParams.Contains(paramName))
+            return true;
             
-        // Check custom parameters
-        if (CustomModelParameters?.EnableThinking.HasValue == true)
-            return CustomModelParameters.EnableThinking.Value;
-           
-        // By default, enable thinking for models that support it
+        // OpenAI GPT models generally support these parameters
+        if (IsOpenAIModel())
+        {
+            if (ModelCode.Contains("gpt-4") || ModelCode.Contains("gpt-3.5"))
+            {
+                // Modern OpenAI models use different parameter names
+                if (paramName == "max_completion_tokens")
+                    return true;
+                    
+                // Some older parameters may still be supported
+                if (new[] { "temperature", "top_p", "frequency_penalty", "presence_penalty" }.Contains(paramName))
+                {
+                    // For the newer model versions, some of these may not be supported
+                    // The auto-correction will handle this case
+                    return !ModelCode.Contains("o3") && !ModelCode.Contains("claude-3");
+                }
+            }
+        }
+        
+        // Anthropic Claude models
+        if (IsAnthropicModel())
+        {
+            return new[] { "max_tokens", "temperature", "top_k", "top_p", "system" }.Contains(paramName);
+        }
+        
+        // Gemini models
+        if (IsGeminiModel())
+        {
+            return new[] { "temperature", "topP", "topK", "maxOutputTokens" }.Contains(paramName);
+        }
+        
+        // For any unknown model, return true and let the API decide
         return true;
+    }
+    
+    // Method to get a provider-appropriate name for a parameter
+    protected virtual string GetProviderParameterName(string standardName)
+    {
+        if (IsOpenAIModel())
+        {
+            // OpenAI specific parameter mappings
+            return standardName switch
+            {
+                "max_tokens" => "max_completion_tokens",
+                _ => standardName
+            };
+        }
+        
+        if (IsGeminiModel())
+        {
+            // Gemini specific parameter mappings
+            return standardName switch
+            {
+                "top_p" => "topP",
+                "top_k" => "topK",
+                "max_tokens" => "maxOutputTokens",
+                _ => standardName
+            };
+        }
+        
+        // Default to original name
+        return standardName;
     }
 }

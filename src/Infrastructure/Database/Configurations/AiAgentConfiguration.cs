@@ -1,6 +1,9 @@
 using Domain.Aggregates.Chats;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using System.Collections.Generic;
+using System.Linq;
+using System.Collections;
 
 namespace Infrastructure.Database.Configurations;
 
@@ -37,7 +40,12 @@ public class AiAgentConfiguration : IEntityTypeConfiguration<AiAgent>
                 v => string.Join(',', v),
                 v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList()
             )
-            .HasColumnType("text");
+            .HasColumnType("text")
+            .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>>(
+                (c1, c2) => c1 != null && c2 != null && c1.SequenceEqual(c2),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList()
+            ));
 
         builder.Property(a => a.AssignCustomModelParameters)
             .IsRequired()
@@ -46,6 +54,11 @@ public class AiAgentConfiguration : IEntityTypeConfiguration<AiAgent>
         // Configure ModelParameter as an owned entity
         builder.OwnsOne(a => a.ModelParameter, mp =>
         {
+            // Add a shadow property to identify the entity even when all properties are null
+            mp.Property<bool>("_hasModelParameters")
+                .HasDefaultValue(true)
+                .HasColumnName("HasModelParameters");
+                
             mp.Property(p => p.ContextLimit)
                 .HasMaxLength(100)
                 .HasColumnName("ContextLimit");
@@ -81,7 +94,12 @@ public class AiAgentConfiguration : IEntityTypeConfiguration<AiAgent>
                     v => v != null ? v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() : null
                 )
                 .HasColumnName("StopSequences")
-                .HasColumnType("text");
+                .HasColumnType("text")
+                .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>?>(
+                    (c1, c2) => c1 == null && c2 == null || (c1 != null && c2 != null && c1.SequenceEqual(c2)),
+                    c => c == null ? 0 : c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                    c => c == null ? null : c.ToList()
+                ));
 
             mp.Property(p => p.ReasoningEffort)
                 .HasColumnName("ReasoningEffort");

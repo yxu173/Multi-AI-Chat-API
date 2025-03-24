@@ -4,27 +4,17 @@ using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Users;
 using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
-
-namespace Infrastructure.Services.AiProvidersServices;
 
 public class DeepSeekService : BaseAiService
 {
     private const string BaseUrl = "https://api.deepseek.com/v1/";
-    private const int DefaultMaxTokens = 4096; // Default for final response
-    private const int MaxAllowedTokens = 8192; // Max for final response
 
-    public DeepSeekService(
-        IHttpClientFactory httpClientFactory,
-        string apiKey,
-        string modelCode,
-        Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
-        AiModel? aiModel = null,
-        ModelParameters? customModelParameters = null)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
-    {
-    }
+    public DeepSeekService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
+        UserAiModelSettings? modelSettings = null, AiModel? aiModel = null, ModelParameters? customModelParameters = null)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters) { }
 
     protected override void ConfigureHttpClient()
     {
@@ -33,155 +23,109 @@ public class DeepSeekService : BaseAiService
 
     protected override string GetEndpointPath() => "chat/completions";
 
-    protected override object CreateRequestBody(IEnumerable<MessageDto> history)
+    protected override List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
     {
-        var messages = new List<DeepSeekMessage>
+        var messages = new List<(string Role, string Content)>();
+        var systemMessage = GetSystemMessage();
+        if (!string.IsNullOrEmpty(systemMessage))
         {
-            new("system", "You are a helpful AI assistant.")
-        };
-
-        var mergedHistory = new List<MessageDto>();
-
-        foreach (var message in history.Where(m => !string.IsNullOrEmpty(m.Content)))
+            messages.Add(("system", systemMessage));
+        }
+        if (ShouldEnableThinking())
         {
-            if (mergedHistory.Count == 0 || mergedHistory[^1].IsFromAi != message.IsFromAi)
+            messages.Add(("system", "When solving complex problems, please show your detailed step-by-step thinking process marked as '### Thinking:' before providing the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly."));
+        }
+        string lastRole = messages.Count > 0 ? "system" : null;
+        MessageDto? pendingMsg = null;
+        foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
+        {
+            string currentRole = msg.IsFromAi ? "assistant" : "user";
+            if (currentRole == lastRole && pendingMsg != null)
             {
-                // Add a new message if the list is empty or the role changes
-                mergedHistory.Add(message);
+                pendingMsg = new MessageDto(
+                    pendingMsg.Content + "\n\n" + msg.Content.Trim(),
+                    pendingMsg.IsFromAi,
+                    pendingMsg.MessageId,
+                    pendingMsg.FileAttachments,
+                    pendingMsg.Base64Content
+                );
             }
             else
             {
-                // Merge with the previous message
-                var lastMessage = mergedHistory[^1];
-                var updatedContent = lastMessage.Content + "\n" + message.Content;
-                mergedHistory[^1] = lastMessage with { Content = updatedContent };
+                if (pendingMsg != null)
+                {
+                    messages.Add((lastRole, pendingMsg.Content.Trim()));
+                }
+                pendingMsg = msg;
+                lastRole = currentRole;
             }
         }
-
-        messages.AddRange(mergedHistory
-            .Select(m => new DeepSeekMessage(m.IsFromAi ? "assistant" : "user", m.Content)));
-
-        // Determine max_tokens for the final response
-        int maxTokens = AiModel?.MaxOutputTokens ?? DefaultMaxTokens;
-        maxTokens = Math.Min(maxTokens, MaxAllowedTokens);
-
-        // Check if thinking should be enabled using the base class method
-        bool enableThinking = ShouldEnableThinking();
-
-        var requestObj = new Dictionary<string, object>
+        if (pendingMsg != null)
         {
-            ["model"] = ModelCode,
-            ["messages"] = messages,
-            ["stream"] = true,
-            ["max_tokens"] = maxTokens
+            messages.Add((lastRole, pendingMsg.Content.Trim()));
+        }
+        return messages;
+    }
+
+    protected override object CreateRequestBody(IEnumerable<MessageDto> history)
+    {
+        var messages = PrepareMessageList(history)
+            .Select(m => new { role = m.Role, content = m.Content }).ToList();
+        var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
+        
+        // Define known supported parameters for DeepSeek models
+        var standardSupportedParams = new HashSet<string>() 
+        { 
+            "model", "messages", "stream", "temperature", "top_p", 
+            "max_tokens", "enable_cot", "enable_reasoning", "reasoning_mode" 
         };
         
-        // Only enable chain-of-thought if the setting is enabled
-        if (enableThinking)
+        // Remove unsupported parameters
+        var keysToRemove = requestObj.Keys
+            .Where(k => !standardSupportedParams.Contains(k))
+            .ToList();
+            
+        foreach (var key in keysToRemove)
+        {
+            Console.WriteLine($"Preemptively removing unsupported parameter for DeepSeek: {key}");
+            requestObj.Remove(key);
+        }
+        
+        requestObj["messages"] = messages;
+        return requestObj;
+    }
+
+    protected override void AddProviderSpecificParameters(Dictionary<string, object> requestObj)
+    {
+        if (ShouldEnableThinking())
         {
             requestObj["enable_cot"] = true;
             requestObj["enable_reasoning"] = true;
             requestObj["reasoning_mode"] = "chain_of_thought";
         }
-
-        var requestWithSettings = ApplyUserSettings(requestObj);
-        
-        // DeepSeek specific parameter cleanup - REMOVE UNSUPPORTED PARAMETERS
-        requestWithSettings.Remove("thinking");
-        requestWithSettings.Remove("enable_thinking");
-        requestWithSettings.Remove("maxOutputTokens");
-        requestWithSettings.Remove("max_output_tokens");
-        requestWithSettings.Remove("reasoning_effort");
-        requestWithSettings.Remove("safety_settings");
-        
-        return requestWithSettings;
     }
-    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(
-        IEnumerable<MessageDto> history,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var request = CreateRequest(CreateRequestBody(history));
-
         using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        if (!response.IsSuccessStatusCode) { await HandleApiErrorAsync(response, "DeepSeek"); yield break; }
+
+        var fullResponse = new StringBuilder();
+        await foreach (var json in ReadStreamAsync(response, cancellationToken))
         {
-            await HandleApiErrorAsync(response, "DeepSeek");
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-
-        var reasoningBuffer = new List<string>();
-        var contentBuffer = new List<string>();
-        DeepSeekUsage? finalUsage = null;
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            if (reader.EndOfStream)
-                break;
-
-            var line = await reader.ReadLineAsync();
-            if (cancellationToken.IsCancellationRequested)
-                yield break;
-
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-            if (line.StartsWith("data: "))
-            {
-                var json = line["data: ".Length..];
-                if (json == "[DONE]") break;
-
-                var chunk = JsonSerializer.Deserialize<DeepSeekResponse>(json);
-                if (chunk?.choices is { Length: > 0 } choices)
+           
+                var chunk = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+                if (chunk.TryGetValue("choices", out var choicesObj) && choicesObj is JsonElement choices && choices[0].TryGetProperty("delta", out var delta))
                 {
-                    var delta = choices[0].delta;
-
-                    if (choices[0].finish_reason != null && chunk.usage != null)
+                    if (delta.TryGetProperty("content", out var content))
                     {
-                        finalUsage = chunk.usage;
-                        // Yield final CoT and content with actual token usage
-                        var reasoningContent = string.Join("", reasoningBuffer);
-                        var finalContent = string.Join("", contentBuffer);
-                        if (!string.IsNullOrEmpty(reasoningContent))
-                        {
-                            yield return new StreamResponse(reasoningContent, finalUsage.prompt_tokens, finalUsage.completion_tokens, IsThinking: true);
-                        }
-                        if (!string.IsNullOrEmpty(finalContent))
-                        {
-                            yield return new StreamResponse(finalContent, finalUsage.prompt_tokens, finalUsage.completion_tokens);
-                        }
-                        break;
-                    }
-
-                    if (delta?.reasoning_content != null)
-                    {
-                        reasoningBuffer.Add(delta.reasoning_content);
-                        yield return new StreamResponse(delta.reasoning_content, finalUsage?.prompt_tokens ?? 0, finalUsage?.completion_tokens ?? 0, IsThinking: true);
-                    }
-                    else if (delta?.content != null)
-                    {
-                        contentBuffer.Add(delta.content);
-                        yield return new StreamResponse(delta.content, finalUsage?.prompt_tokens ?? 0, finalUsage?.completion_tokens ?? 0);
+                        var text = content.GetString();
+                        if (!string.IsNullOrEmpty(text)) fullResponse.Append(text);
+                        yield return new StreamResponse(text, 0, fullResponse.Length / 4);
                     }
                 }
-            }
+            
         }
     }
-
-    private record DeepSeekMessage(string role, string content);
-
-    private record DeepSeekResponse(
-        string id,
-        string @object,
-        int created,
-        string model,
-        DeepSeekChoice[] choices,
-        DeepSeekUsage? usage = null
-    );
-
-    private record DeepSeekChoice(DeepSeekDelta delta, int index, string? finish_reason);
-
-    private record DeepSeekDelta(string? reasoning_content, string? content);
-
-    private record DeepSeekUsage(int prompt_tokens, int completion_tokens, int total_tokens);
 }

@@ -585,9 +585,6 @@ namespace Infrastructure.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<bool>("EnableThinking")
-                        .HasColumnType("boolean");
-
                     b.Property<double?>("FrequencyPenalty")
                         .HasColumnType("double precision");
 

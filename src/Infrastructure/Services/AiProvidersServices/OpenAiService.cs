@@ -1,27 +1,21 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Users;
 using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
-using Microsoft.Extensions.Caching.Memory;
-
-namespace Infrastructure.Services.AiProvidersServices;
 
 public class OpenAiService : BaseAiService
 {
     private const string BaseUrl = "https://api.openai.com/v1/";
     private readonly IResilienceService _resilienceService;
 
-    public OpenAiService(
-        IHttpClientFactory httpClientFactory,
-        string apiKey,
-        string modelCode,
+    public OpenAiService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
         IResilienceService resilienceService,
-        Domain.Aggregates.Users.UserAiModelSettings? modelSettings = null,
-        AiModel? aiModel = null,
+        UserAiModelSettings? modelSettings = null, AiModel? aiModel = null,
         ModelParameters? customModelParameters = null)
         : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
     {
@@ -35,253 +29,287 @@ public class OpenAiService : BaseAiService
 
     protected override string GetEndpointPath() => "chat/completions";
 
+    protected override List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
+    {
+        var messages = new List<(string Role, string Content)>();
+        var systemMessage = GetSystemMessage();
+        if (!string.IsNullOrEmpty(systemMessage))
+        {
+            messages.Add(("system", systemMessage));
+        }
+        
+        if (ShouldEnableThinking())
+        {
+            var reasoningEffort = GetReasoningEffort();
+            var thinkingPrompt = GetThinkingPromptForEffort(reasoningEffort);
+            messages.Add(("system", thinkingPrompt));
+        }
+        
+        foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
+        {
+            messages.Add((msg.IsFromAi ? "assistant" : "user", msg.Content.Trim()));
+        }
+        
+        return messages;
+    }
+
+    private string GetThinkingPromptForEffort(string reasoningEffort)
+    {
+        return reasoningEffort switch
+        {
+            "low" => "For simpler questions, provide a brief explanation under '### Thinking:' then give your answer under '### Answer:'. Keep your thinking concise.",
+            
+            "high" => "When solving problems, use thorough step-by-step reasoning:\n" +
+                      "1. First, under '### Thinking:', carefully explore the problem from multiple perspectives\n" +
+                      "2. Analyze all relevant factors and potential approaches\n" +
+                      "3. Consider edge cases and alternative solutions\n" +
+                      "4. Then provide your comprehensive final answer under '### Answer:'\n" +
+                      "Make your thinking process explicit, detailed, and logically structured.",
+                      
+            _ => "When solving problems, use step-by-step reasoning:\n" +
+                 "1. First, walk through your thought process under '### Thinking:'\n" +
+                 "2. Then provide your final answer under '### Answer:'\n" +
+                 "Make your thinking process clear and logical."
+        };
+    }
+
+    private string GetReasoningEffort()
+    {
+        // Get reasoning effort from model parameters
+        if (CustomModelParameters?.ReasoningEffort.HasValue == true)
+        {
+            return CustomModelParameters.ReasoningEffort.Value switch
+            {
+                <= 33 => "low",
+                >= 66 => "high",
+                _ => "medium"
+            };
+        }
+        
+        
+        // Default to medium
+        return "medium";
+    }
+
     protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
-        // Start with a system message
-        var systemMessage = "Always respond using markdown formatting";
-        var messages = new List<object>();
-
-        // Handle system instructions from history
-        var messagesList = history.ToList();
-        if (messagesList.Count > 0 && messagesList[0].Content.StartsWith("system:"))
+        var messages = PrepareMessageList(history).Select(m => new { role = m.Role, content = m.Content }).ToList();
+        var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
+        
+        // Identify specific model type
+        bool isGpt4o = ModelCode.Contains("gpt-4o");
+        bool isGpt4 = ModelCode.Contains("gpt-4") && !isGpt4o;
+        bool isGpt35 = ModelCode.Contains("gpt-3.5");
+        bool isClaude = ModelCode.Contains("claude");
+        bool isO3 = ModelCode.Contains("o3");
+        
+        // Special parameters to remove for certain models
+        var parametersToRemove = new List<string>();
+        
+        // Handle special models like Claude and similar
+        if (isClaude || isO3)
         {
-            // Get the system message from history
-            systemMessage = messagesList[0].Content.Substring(7).Trim();
-            messagesList.RemoveAt(0);
-        }
-
-        // Add system message
-        messages.Add(new { role = "system", content = systemMessage });
-
-        // Check if thinking mode is enabled using base class method
-        bool enableThinking = ShouldEnableThinking();
-
-        // If thinking is enabled, add the thinking instruction as another system message
-        if (enableThinking && (ModelCode.Contains("gpt-4") || ModelCode.Contains("gpt-3.5")) &&
-            !ModelCode.Contains("gpt-4o") && !ModelCode.Contains("gpt-4-turbo") && !ModelCode.Contains("gpt-4-vision"))
-        {
-            messages.Add(new
-            {
-                role = "system",
-                content = "When tackling complex questions, first solve them step by step in a thinking section " +
-                          "that starts with '### Thinking' and ends with '### Answer'. " +
-                          "This section helps you work through the problem methodically. " +
-                          "After completing your thinking process, provide a clear, concise answer in the Answer section."
+            // Claude and similar models don't support most standard parameters
+            parametersToRemove.AddRange(new[] {
+                "temperature", "top_p", "top_k", "frequency_penalty", 
+                "presence_penalty", "reasoning_effort", "seed", "response_format"
             });
         }
-
-        // Add the rest of the messages
-        foreach (var msg in messagesList.Where(m => !string.IsNullOrEmpty(m.Content)))
+        // For older GPT models, remove reasoning_effort which is only for GPT-4o
+        else if (isGpt4 || isGpt35)
         {
-            messages.Add(new
-            {
-                role = msg.IsFromAi ? "assistant" : "user",
-                content = msg.Content
-            });
+            parametersToRemove.Add("reasoning_effort");
         }
-
-        var requestObj = new Dictionary<string, object>
+        
+        // For all OpenAI models, remove top_k which is not supported
+        parametersToRemove.Add("top_k");
+        
+        // Remove identified unsupported parameters
+        foreach (var param in parametersToRemove)
         {
-            ["model"] = ModelCode,
-            ["messages"] = messages,
-            ["stream"] = true
-        };
-
-        // Apply user/custom settings
-        var requestWithSettings = ApplyUserSettings(requestObj);
-
-        // OpenAI specific parameter cleanup - REMOVE UNSUPPORTED PARAMETERS
-        requestWithSettings.Remove("top_k");
-        requestWithSettings.Remove("topK");
-        requestWithSettings.Remove("maxOutputTokens");
-        requestWithSettings.Remove("max_output_tokens");
-        requestWithSettings.Remove("enable_thinking"); // OpenAI doesn't support this directly
-        requestWithSettings.Remove("thinking"); // Remove thinking parameter
-        requestWithSettings.Remove("reasoning_effort"); // Remove reasoning_effort parameter
-        requestWithSettings.Remove("enable_cot"); // Remove enable_cot parameter
-        requestWithSettings.Remove("enable_reasoning"); // Remove enable_reasoning parameter
-        requestWithSettings.Remove("reasoning_mode"); // Remove reasoning_mode parameter
-        requestWithSettings.Remove("context_limit"); // Remove context_limit parameter
-        requestWithSettings.Remove("stop_sequences"); // Remove stop_sequences parameter
-        requestWithSettings.Remove("topP"); // Remove topP parameter (duplicate of top_p)
-        requestWithSettings.Remove("safety_settings"); // Remove safety_settings parameter
-
-        // Only add reasoning_effort if using GPT-4o (which supports it)
-        if (enableThinking && ModelCode.Contains("gpt-4o"))
-        {
-            // Add reasoning_effort parameter for models that support it
-            string reasoningEffort = "medium"; // Default value
-
-            // Get from custom model parameters if available
-            if (CustomModelParameters?.ReasoningEffort.HasValue == true)
+            if (requestObj.ContainsKey(param))
             {
-                // Convert the numeric reasoning effort to OpenAI's low/medium/high values
-                reasoningEffort = CustomModelParameters.ReasoningEffort.Value switch
-                {
-                    <= 33 => "low",
-                    >= 66 => "high",
-                    _ => "medium"
-                };
-
-                requestWithSettings["response_format"] = new { type = "text" };
-                requestWithSettings["seed"] = 42; // Consistent results
+                requestObj.Remove(param);
+                Console.WriteLine($"Preemptively removed {param} parameter for model {ModelCode}");
             }
         }
-
-        // Cap tokens to OpenAI limits
-        if (requestWithSettings.TryGetValue("max_tokens", out var maxTokensObj) &&
-            maxTokensObj is int maxTokens && maxTokens > 16384)
+        
+        // Handle max_tokens conversion for all OpenAI models
+        if (requestObj.ContainsKey("max_tokens"))
         {
-            requestWithSettings["max_tokens"] = 16384;
+            var maxTokensValue = requestObj["max_tokens"];
+            requestObj.Remove("max_tokens");
+            requestObj["max_completion_tokens"] = maxTokensValue;
         }
+        
+        requestObj["messages"] = messages;
+        return requestObj;
+    }
 
-        return requestWithSettings;
+    protected override void AddProviderSpecificParameters(Dictionary<string, object> requestObj)
+    {
+        if (ShouldEnableThinking())
+        {
+            string reasoningEffort = GetReasoningEffort();
+            
+            // Only GPT-4o actually supports reasoning_effort parameter
+            if (ModelCode.Contains("gpt-4o")) 
+            {
+                requestObj["reasoning_effort"] = reasoningEffort;
+                
+                // Ensure we have a text response format
+                requestObj["response_format"] = new { type = "text" };
+                
+                // Add seed for consistency if not already set
+                if (!requestObj.ContainsKey("seed"))
+                {
+                    requestObj["seed"] = 42;
+                }
+            }
+        }
     }
 
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
-        [System.Runtime.CompilerServices.EnumeratorCancellation]
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // Create a local cancellation token source linked to the passed token
-        using var localCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var combinedToken = localCts.Token;
-
-        var tokenizer = Tiktoken.ModelToEncoder.For(ModelCode);
-        var messages = ((List<object>)((dynamic)CreateRequestBody(history))["messages"]);
-
-        int inputTokens = 0;
-        foreach (var msg in messages)
+        var requestBody = CreateRequestBody(history);
+        
+        // Pre-emptively clean up parameters that we know aren't supported
+        if (requestBody is Dictionary<string, object> requestDict)
         {
-            inputTokens += tokenizer.Encode(msg.ToString()).Count;
+            // Remove top_k (it's never supported by OpenAI)
+            if (requestDict.ContainsKey("top_k"))
+            {
+                requestDict.Remove("top_k");
+                Console.WriteLine("Pre-emptively removed top_k parameter for OpenAI");
+            }
+            
+            // Remove reasoning_effort for non-GPT-4o models
+            if (requestDict.ContainsKey("reasoning_effort") && !ModelCode.Contains("gpt-4o"))
+            {
+                requestDict.Remove("reasoning_effort");
+                Console.WriteLine("Pre-emptively removed reasoning_effort parameter for non-GPT-4o model");
+            }
         }
-
-        var request = CreateRequest(CreateRequestBody(history));
-
-        var pipeline = _resilienceService.CreatePluginResiliencePipeline<HttpResponseMessage>();
-        HttpResponseMessage response = null;
-
+        
+        var request = CreateRequest(requestBody);
+        
+        HttpResponseMessage response;
+        
         try
         {
-            response = await pipeline.ExecuteAsync(async ct =>
-                await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct), combinedToken);
+            response = await _resilienceService.CreatePluginResiliencePipeline<HttpResponseMessage>()
+                .ExecuteAsync(async ct => await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct),
+                    cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
-            // Just exit if canceled
-            yield break;
+            Console.WriteLine($"Error sending request to OpenAI: {ex.Message}");
+            throw;
         }
-
+        
+        // Auto-correction loop - try up to 3 times to fix parameter issues
+        int maxRetries = 3;
+        int retryCount = 0;
+        Dictionary<string, object>? currentRequestBody = requestBody as Dictionary<string, object>;
+        
+        while (!response.IsSuccessStatusCode && retryCount < maxRetries && currentRequestBody != null)
+        {
+            retryCount++;
+            
+            try
+            {
+                // Extract error details for possible auto-correction
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                string errorType = "unknown";
+                string errorParam = "none";
+                
+                try
+                {
+                    var errorJson = JsonSerializer.Deserialize<JsonElement>(errorContent);
+                    if (errorJson.TryGetProperty("error", out var errorObj))
+                    {
+                        errorType = errorObj.TryGetProperty("type", out var type) ? type.GetString() ?? "unknown" : "unknown";
+                        errorParam = errorObj.TryGetProperty("param", out var param) ? param.GetString() ?? "none" : "none";
+                    }
+                }
+                catch
+                {
+                    // If we can't parse error details, continue with default values
+                }
+                
+                // Attempt auto-correction if applicable
+                var (correctionSuccess, retryResponse, correctedBody) = 
+                    await AttemptAutoCorrection(response, currentRequestBody, errorType, errorParam, "OpenAI");
+                
+                if (correctionSuccess && retryResponse != null && correctedBody != null)
+                {
+                    Console.WriteLine($"Auto-correction attempt {retryCount} successful, continuing with corrected request");
+                    response = retryResponse;
+                    currentRequestBody = correctedBody;
+                }
+                else
+                {
+                    // If auto-correction failed, give up and handle the original error
+                    Console.WriteLine($"Auto-correction attempt {retryCount} failed, giving up");
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during auto-correction attempt {retryCount}: {ex.Message}");
+                break; // Exit the retry loop on exception
+            }
+        }
+        
+        // If we still have an error after retries, handle it
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "OpenAI");
             yield break;
         }
 
-        if (combinedToken.IsCancellationRequested)
-        {
-            yield break;
-        }
+        var fullResponse = new StringBuilder();
+        var tokenCount = 0;
 
-        // Set up a task to monitor for cancellation
-        var cancellationTask = Task.Run(async () =>
+        await foreach (var json in ReadStreamAsync(response, cancellationToken))
         {
+            if (cancellationToken.IsCancellationRequested)
+                break;
+                
+            string? text = null;
+            
             try
             {
-                await Task.Delay(Timeout.Infinite, combinedToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // This will be triggered when cancellation is requested
-                localCts.Cancel(); // Ensure local cancellation occurs
-            }
-        });
-
-        await using var stream = await response.Content.ReadAsStreamAsync(combinedToken);
-        using var reader = new StreamReader(stream);
-
-        int outputTokens = 0;
-        bool isThinking = false;
-        var fullResponse = new StringBuilder();
-
-        try
-        {
-            while (!combinedToken.IsCancellationRequested)
-            {
-                if (reader.EndOfStream) yield break;
-
-                // Read with potential timeout and cancellation
-                var readTask = Task.Run(() => reader.ReadLineAsync(combinedToken).AsTask());
-                var completedTask = await Task.WhenAny(readTask, cancellationTask);
-                if (completedTask == cancellationTask || combinedToken.IsCancellationRequested)
+                var chunk = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+                if (chunk == null) continue;
+                
+                if (chunk.TryGetValue("choices", out var choicesObj) && choicesObj is JsonElement choices &&
+                    choices[0].TryGetProperty("delta", out var delta))
                 {
-                    yield break; // Exit immediately if cancellation is requested
-                }
-
-                var line = await readTask;
-
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                if (line.StartsWith("data: ") && line.Trim() != "data: [DONE]")
-                {
-                    var json = line["data: ".Length..];
-                    var chunk = JsonSerializer.Deserialize<OpenAiResponse>(json);
-                    if (chunk?.choices is { Length: > 0 } choices)
+                    if (delta.TryGetProperty("content", out var content))
                     {
-                        var delta = choices[0].delta;
-                        if (!string.IsNullOrEmpty(delta?.content))
-                        {
-                            // Check for thinking section markers
-                            if (delta.content.Contains("### Thinking"))
-                            {
-                                isThinking = true;
-                            }
-                            else if (delta.content.Contains("### Answer"))
-                            {
-                                isThinking = false;
-                            }
-
-                            // Add to output tokens count
-                            outputTokens += tokenizer.Encode(delta.content).Count;
-
-                            // Add to full response for context tracking
-                            fullResponse.Append(delta.content);
-
-                            // Determine if this chunk is part of thinking
-                            bool isCurrentChunkThinking = isThinking ||
-                                                          (fullResponse.ToString().Contains("### Thinking") &&
-                                                           !fullResponse.ToString().Contains("### Answer"));
-
-                            // Yield the chunk with appropriate thinking flag
-                            yield return new StreamResponse(delta.content, inputTokens, outputTokens,
-                                isCurrentChunkThinking);
-                        }
+                        text = content.GetString();
                     }
                 }
-
-                // Check cancellation after processing each line
-                if (combinedToken.IsCancellationRequested)
-                {
-                    yield break;
-                }
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"Error processing OpenAI response chunk: {ex.Message}");
+            }
+            
+            if (!string.IsNullOrEmpty(text))
+            {
+                fullResponse.Append(text);
+                tokenCount = EstimateTokenCount(fullResponse.ToString());
+                yield return new StreamResponse(text, tokenCount, fullResponse.Length);
             }
         }
-        finally
-        {
-            // Ensure cleanup
-            localCts.Cancel();
-        }
     }
-
-    //  private record OpenAiMessage(string role, string content);
-
-    private record OpenAiResponse(
-        string id,
-        string @object,
-        int created,
-        string model,
-        Choice[] choices
-    );
-
-    private record Choice(Delta delta, int index, string finish_reason);
-
-    private record Delta(string content);
+    
+    private int EstimateTokenCount(string text)
+    {
+        // OpenAI models use approximately 4 characters per token for English text
+        return text.Length / 4;
+    }
 }
