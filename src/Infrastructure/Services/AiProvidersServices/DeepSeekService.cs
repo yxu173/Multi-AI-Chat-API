@@ -45,15 +45,31 @@ public class DeepSeekService : BaseAiService
         MessageDto? pendingMsg = null;
         foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
         {
+            // Process content to handle image and file tags
+            string processedContent = msg.Content;
+            
+            // Replace image tags with text descriptions
+            var imgRegex = new System.Text.RegularExpressions.Regex(@"<image\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
+            processedContent = imgRegex.Replace(processedContent, match => {
+                string fileName = match.Groups[2].Value;
+                return $"[Image: {fileName}]";
+            });
+            
+            // Replace file tags with text descriptions
+            var fileRegex = new System.Text.RegularExpressions.Regex(@"<file\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
+            processedContent = fileRegex.Replace(processedContent, match => {
+                string mimeType = match.Groups[1].Value;
+                string fileName = match.Groups[2].Value;
+                return $"[File: {fileName} ({mimeType})]";
+            });
+            
             string currentRole = msg.IsFromAi ? "assistant" : "user";
             if (currentRole == lastRole && pendingMsg != null)
             {
                 pendingMsg = new MessageDto(
-                    pendingMsg.Content + "\n\n" + msg.Content.Trim(),
+                    pendingMsg.Content + "\n\n" + processedContent.Trim(),
                     pendingMsg.IsFromAi,
-                    pendingMsg.MessageId,
-                    pendingMsg.FileAttachments,
-                    pendingMsg.Base64Content
+                    pendingMsg.MessageId
                 );
             }
             else
@@ -63,7 +79,11 @@ public class DeepSeekService : BaseAiService
                     messages.Add((lastRole, pendingMsg.Content.Trim()));
                 }
 
-                pendingMsg = msg;
+                pendingMsg = new MessageDto(
+                    processedContent.Trim(),
+                    msg.IsFromAi,
+                    msg.MessageId
+                );
                 lastRole = currentRole;
             }
         }

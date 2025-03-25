@@ -20,7 +20,7 @@ public sealed class Message : BaseAuditableEntity
     {
     }
 
-    public static Message CreateUserMessage(Guid userId, Guid chatSessionId, string content)
+    public static Message CreateUserMessage(Guid userId, Guid chatSessionId, string content, IEnumerable<FileAttachment>? fileAttachments = null)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (chatSessionId == Guid.Empty)
@@ -28,7 +28,7 @@ public sealed class Message : BaseAuditableEntity
         if (string.IsNullOrWhiteSpace(content))
             throw new ArgumentException("Content cannot be empty.", nameof(content));
 
-        return new Message
+        var message = new Message
         {
             Id = Guid.NewGuid(),
             UserId = userId,
@@ -38,6 +38,17 @@ public sealed class Message : BaseAuditableEntity
             Status = MessageStatus.Completed,
             CreatedAt = DateTime.UtcNow
         };
+
+        // Add file attachments if provided
+        if (fileAttachments != null)
+        {
+            foreach (var attachment in fileAttachments)
+            {
+                message.AddFileAttachment(attachment);
+            }
+        }
+
+        return message;
     }
 
     public static Message CreateAiMessage(Guid userId, Guid chatSessionId)

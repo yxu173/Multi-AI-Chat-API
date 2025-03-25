@@ -16,7 +16,28 @@ public class MessageSentNotificationHandler : INotificationHandler<MessageSentNo
 
     public async Task Handle(MessageSentNotification notification, CancellationToken cancellationToken)
     {
+        var message = notification.Message;
+        
+        // Create a simplified object for the client to avoid serialization issues
+        var messageInfo = new
+        {
+            Content = message.Content,
+            IsFromAi = message.IsFromAi,
+            MessageId = message.MessageId,
+            FileAttachments = message.FileAttachments?.Select(fa => new
+            {
+                Id = fa.Id,
+                MessageId = fa.MessageId,
+                FileName = fa.FileName,
+                ContentType = fa.ContentType,
+                FileType = fa.FileType.ToString(),
+                Size = fa.FileSize,
+                HasBase64 = fa.Base64Content != null,
+                Url = $"/api/Files/{fa.Id}"
+            }).ToList()
+        };
+        
         await _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("ReceiveMessage", notification.Message, cancellationToken);
+            .SendAsync("ReceiveMessage", messageInfo, cancellationToken);
     }
 }

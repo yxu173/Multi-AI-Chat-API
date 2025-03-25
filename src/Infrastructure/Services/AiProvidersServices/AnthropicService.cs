@@ -249,7 +249,7 @@ public class AnthropicService : BaseAiService
             // Parse the tag attributes
             string tag = content.Substring(startIndex, endTag - startIndex + 1);
             
-            // Extract base64 data if present (for PDFs that Claude can process)
+            // Extract base64 data if present (for PDFs and other files that Claude can process)
             int base64Start = tag.IndexOf("base64=");
             if (base64Start > 0)
             {
@@ -279,8 +279,11 @@ public class AnthropicService : BaseAiService
                     }
                 }
 
-                // Only support PDFs for now as that's what Claude supports
-                if (mediaType == "application/pdf")
+                // Support PDFs and other file types Claude can handle
+                if (mediaType == "application/pdf" || 
+                    mediaType.StartsWith("text/") ||
+                    mediaType == "application/json" || 
+                    mediaType == "text/csv")
                 {
                     return (new
                     {
@@ -295,8 +298,25 @@ public class AnthropicService : BaseAiService
                 }
             }
 
-            // For other file types or no base64, just add a text reference
-            return (new { type = "text", text = "[File attachment]" }, endTag + 1);
+            // For other file types or no base64, add a text reference
+            int nameStart = tag.IndexOf("name=");
+            string fileName = "File attachment";
+            
+            if (nameStart > 0)
+            {
+                int nameValueStart = nameStart + 5;
+                char nameQuoteChar = tag[nameValueStart];
+                if (nameQuoteChar == '"' || nameQuoteChar == '\'')
+                {
+                    int nameValueEnd = tag.IndexOf(nameQuoteChar, nameValueStart + 1);
+                    if (nameValueEnd > 0)
+                    {
+                        fileName = tag.Substring(nameValueStart + 1, nameValueEnd - (nameValueStart + 1));
+                    }
+                }
+            }
+            
+            return (new { type = "text", text = $"[File: {fileName}]" }, endTag + 1);
         }
         catch
         {

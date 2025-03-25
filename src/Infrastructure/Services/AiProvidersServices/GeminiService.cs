@@ -33,16 +33,58 @@ public class GeminiService : BaseAiService
         {
             messages.Add(("system", systemMessage));
         }
-
+        
+        // Add thinking mode instruction if enabled
         if (ShouldEnableThinking())
         {
             messages.Add(("system",
                 "When solving complex problems, please show your detailed step-by-step thinking process marked as '### Thinking:' before providing the final answer marked as '### Answer:'. Analyze all relevant aspects thoroughly."));
         }
 
-        foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
+        string lastRole = null;
+        string lastContent = null;
+
+        foreach (var message in history)
         {
-            messages.Add((msg.IsFromAi ? "assistant" : "user", msg.Content.Trim()));
+            // Process content to handle image and file tags
+            string processedContent = message.Content;
+            
+            // Replace image tags with text descriptions
+            var imgRegex = new System.Text.RegularExpressions.Regex(@"<image\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
+            processedContent = imgRegex.Replace(processedContent, match => {
+                string fileName = match.Groups[2].Value;
+                return $"[Image: {fileName}]";
+            });
+            
+            // Replace file tags with text descriptions
+            var fileRegex = new System.Text.RegularExpressions.Regex(@"<file\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
+            processedContent = fileRegex.Replace(processedContent, match => {
+                string mimeType = match.Groups[1].Value;
+                string fileName = match.Groups[2].Value;
+                return $"[File: {fileName} ({mimeType})]";
+            });
+            
+            string currentRole = message.IsFromAi ? "model" : "user";
+
+            if (currentRole == lastRole && lastContent != null)
+            {
+                lastContent = $"{lastContent}\n\n{processedContent}";
+            }
+            else
+            {
+                if (lastRole != null && lastContent != null)
+                {
+                    messages.Add((lastRole, lastContent));
+                }
+
+                lastRole = currentRole;
+                lastContent = processedContent;
+            }
+        }
+
+        if (lastRole != null && lastContent != null)
+        {
+            messages.Add((lastRole, lastContent));
         }
 
         return messages;

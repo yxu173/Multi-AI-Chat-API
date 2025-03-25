@@ -17,12 +17,15 @@ public class MessageService
     }
 
     public async Task<Message> CreateAndSaveUserMessageAsync(Guid userId, Guid chatSessionId, string content,
-        CancellationToken cancellationToken = default)
+        IEnumerable<FileAttachment>? fileAttachments = null, CancellationToken cancellationToken = default)
     {
-        var message = Message.CreateUserMessage(userId, chatSessionId, content);
+        var message = Message.CreateUserMessage(userId, chatSessionId, content, fileAttachments);
         await _messageRepository.AddAsync(message, cancellationToken);
+        
+        // Create message DTO with file attachments
+        var messageDto = new MessageDto(message.Content, false, message.Id, message.FileAttachments);
         await _mediator.Publish(
-            new MessageSentNotification(chatSessionId, new MessageDto(message.Content, false, message.Id)),
+            new MessageSentNotification(chatSessionId, messageDto),
             cancellationToken);
         return message;
     }

@@ -51,28 +51,45 @@ public class ChatService
     }
 
     public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content,
-        CancellationToken cancellationToken = default)
+        bool isFileUpload = false, IEnumerable<FileAttachment>? fileAttachments = null, CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
         var userMessage =
-            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, cancellationToken);
-        await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
-        var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, content, cancellationToken);
-
-        var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
-        var aiService =
-            _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
-
-        // Fetch AI agent if associated with the chat session
-        AiAgent aiAgent = null;
-        if (chatSession.AiAgentId.HasValue)
+            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments, cancellationToken);
+            
+        // Only update chat session title and process through AI if not a temporary file upload message
+        if (!isFileUpload)
         {
-            aiAgent = await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken);
+            await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
+            var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, content, cancellationToken);
+
+            // Embed file attachments into the message content
+            if (fileAttachments != null)
+            {
+                foreach (var attachment in fileAttachments)
+                {
+                    if (!string.IsNullOrEmpty(attachment.Base64Content))
+                    {
+                        modifiedContent += GetFormattedFileTag(attachment);
+                    }
+                }
+            }
+
+            var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
+            var aiService =
+                _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
+
+            // Fetch AI agent if associated with the chat session
+            AiAgent aiAgent = null;
+            if (chatSession.AiAgentId.HasValue)
+            {
+                aiAgent = await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken);
+            }
+
+            var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, userMessage, modifiedContent, aiAgent);
+
+            await _messageStreamer.StreamResponseAsync(chatSession, aiMessage, aiService, messages, cancellationToken);
         }
-
-        var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, userMessage, modifiedContent, aiAgent);
-
-        await _messageStreamer.StreamResponseAsync(chatSession, aiMessage, aiService, messages, cancellationToken);
     }
 
 
@@ -93,6 +110,9 @@ public class ChatService
         // Execute plugins on the new content
         var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, newContent, cancellationToken);
 
+        // Preserve file attachments from the original message
+        var fileAttachments = messageToEdit.FileAttachments?.ToList();
+
         // Update the message with the new content
         await _messageService.UpdateMessageContentAsync(messageToEdit, newContent, cancellationToken);
 
@@ -102,7 +122,7 @@ public class ChatService
             .OrderBy(m => m.CreatedAt)
             .ToList();
 
-        foreach (var subsequentAiMessage in subsequentAiMessages) // Renamed to avoid conflict
+        foreach (var subsequentAiMessage in subsequentAiMessages)
         {
             chatSession.RemoveMessage(subsequentAiMessage);
             await _messageService.DeleteMessageAsync(subsequentAiMessage.Id, cancellationToken);
@@ -135,11 +155,11 @@ public class ChatService
 
 
     public async Task SendUserMessageWithParallelProcessingAsync(Guid chatSessionId, Guid userId, string content,
-        IEnumerable<Guid> modelIds, CancellationToken cancellationToken = default)
+        IEnumerable<Guid> modelIds, IEnumerable<FileAttachment>? fileAttachments = null, CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
         var userMessage =
-            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, cancellationToken);
+            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments, cancellationToken);
         var aiMessages =
             await CreatePlaceholderAiMessagesAsync(userId, chatSessionId, chatSession, modelIds, cancellationToken);
 
@@ -189,10 +209,7 @@ public class ChatService
                     {
                         if (attachment.Base64Content != null)
                         {
-                            string fileTag = attachment.FileType == FileType.Image 
-                                ? $"\n<image type=\"{attachment.ContentType}\" base64=\"{attachment.Base64Content}\">\n"
-                                : $"\n<file type=\"{attachment.ContentType}\" base64=\"{attachment.Base64Content}\">\n";
-                            
+                            string fileTag = GetFormattedFileTag(attachment);
                             messageContent += fileTag;
                         }
                     }
@@ -214,10 +231,7 @@ public class ChatService
             {
                 if (attachment.Base64Content != null)
                 {
-                    string fileTag = attachment.FileType == FileType.Image 
-                        ? $"\n<image type=\"{attachment.ContentType}\" base64=\"{attachment.Base64Content}\">\n"
-                        : $"\n<file type=\"{attachment.ContentType}\" base64=\"{attachment.Base64Content}\">\n";
-                    
+                    string fileTag = GetFormattedFileTag(attachment);
                     latestMessageContent += fileTag;
                 }
             }
@@ -226,6 +240,27 @@ public class ChatService
         messages.Add(new MessageDto(latestMessageContent, false, userMessage.Id));
 
         return messages;
+    }
+
+    // Helper method to get a correctly formatted file tag based on file type
+    private string GetFormattedFileTag(FileAttachment attachment)
+    {
+        if (attachment.Base64Content == null)
+            return string.Empty;
+        
+        if (attachment.FileType == FileType.Image)
+        {
+            return $"\n<image type=\"{attachment.ContentType}\" name=\"{attachment.FileName}\" base64=\"{attachment.Base64Content}\">\n";
+        }
+        else if (attachment.FileType == FileType.PDF)
+        {
+            return $"\n<file type=\"{attachment.ContentType}\" name=\"{attachment.FileName}\" base64=\"{attachment.Base64Content}\">\n";
+        }
+        else
+        {
+            // For other file types, include a reference without base64 content to avoid excessive message size
+            return $"\n[File: {attachment.FileName} ({attachment.FileType})]";
+        }
     }
 
 

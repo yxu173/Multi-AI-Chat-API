@@ -174,48 +174,40 @@ public class OpenAiService : BaseAiService
 
         foreach (var msg in PrepareMessageList(history))
         {
-            ChatMessage chatMessage;
+            // Process the message content to handle image and file tags
+            string processedContent = msg.Content;
+            bool hasImages = false;
             
-            // Handle different message types including images and files
-            if (msg.Content.StartsWith("data:image/") || msg.Content.StartsWith("data:application/"))
+            // Replace image tags with text descriptions
+            var imgRegex = new System.Text.RegularExpressions.Regex(@"<image\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
+            processedContent = imgRegex.Replace(processedContent, match => {
+                hasImages = true;
+                string fileName = match.Groups[2].Value;
+                return $"[Image: {fileName}]";
+            });
+            
+            // Replace file tags with text descriptions
+            var fileRegex = new System.Text.RegularExpressions.Regex(@"<file\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
+            processedContent = fileRegex.Replace(processedContent, match => {
+                string mimeType = match.Groups[1].Value;
+                string fileName = match.Groups[2].Value;
+                return $"[File: {fileName} ({mimeType})]";
+            });
+            
+            // If we have images, warn about limitations
+            if (hasImages)
             {
-                // Handle base64 encoded images or files
-                var contentParts = msg.Content.Split(',');
-                if (contentParts.Length == 2)
-                {
-                    var contentType = contentParts[0].Split(';')[0].Split(':')[1];
-                    var base64Data = contentParts[1];
-
-                    if (contentType.StartsWith("image/"))
-                    {
-                        var imageFormat = contentType.Split('/')[1];
-                        var imageDescription = $"[Image in {imageFormat} format]";
-                        chatMessage = new UserChatMessage(imageDescription);
-                    }
-                    else
-                    {
-                        
-                        var fileDescription = $"[File of type {contentType}]";
-                        chatMessage = new UserChatMessage(fileDescription);
-                    }
-                }
-                else
-                {
-                    
-                    chatMessage = new UserChatMessage(msg.Content);
-                }
+                Console.WriteLine("Warning: OpenAI service currently doesn't properly support image content from file uploads. Images are represented as text descriptions.");
             }
-            else
+            
+            // Create chat message based on role
+            ChatMessage chatMessage = msg.Role switch
             {
-               
-                chatMessage = msg.Role switch
-                {
-                    "system" => new SystemChatMessage(msg.Content),
-                    "user" => new UserChatMessage(msg.Content),
-                    "assistant" => new AssistantChatMessage(msg.Content),
-                    _ => new UserChatMessage(msg.Content)
-                };
-            }
+                "system" => new SystemChatMessage(processedContent),
+                "user" => new UserChatMessage(processedContent),
+                "assistant" => new AssistantChatMessage(processedContent),
+                _ => new UserChatMessage(processedContent)
+            };
             
             messages.Add(chatMessage);
         }

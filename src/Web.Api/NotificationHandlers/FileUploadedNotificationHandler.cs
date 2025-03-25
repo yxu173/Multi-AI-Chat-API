@@ -27,6 +27,7 @@ public class FileUploadedNotificationHandler : INotificationHandler<FileUploaded
             ContentType = fileAttachment.ContentType,
             FileType = fileAttachment.FileType.ToString(),
             Size = fileAttachment.FileSize,
+            HasBase64 = fileAttachment.Base64Content != null,
             Url = $"/api/Files/{fileAttachment.Id}"
         };
         
