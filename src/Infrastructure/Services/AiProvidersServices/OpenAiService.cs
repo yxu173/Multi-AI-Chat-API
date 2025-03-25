@@ -9,7 +9,6 @@ using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
 using OpenAI;
 using OpenAI.Chat;
-using OpenAI.Responses;
 using Tiktoken;
 
 public class OpenAiService : BaseAiService
@@ -123,19 +122,18 @@ public class OpenAiService : BaseAiService
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // Use the official SDK
         var messages = ConvertMessagesToSdkFormat(history);
         var options = GetChatCompletionOptions();
 
-        // Calculate input tokens
+
         _inputTokens = CalculateInputTokens(messages);
 
-        // Track full response, tokens, and thinking state
+
         var fullResponse = new StringBuilder();
         _outputTokens = 0;
         var inThinkingSection = false;
 
-        // Use CompleteChatStreamingAsync for async streaming
+
         var streamingResult = _chatClient.CompleteChatStreamingAsync(messages, options);
 
         await foreach (var update in streamingResult.WithCancellation(cancellationToken))
@@ -143,29 +141,27 @@ public class OpenAiService : BaseAiService
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            // Handle each type of update
+
             if (update.ContentUpdate.Count > 0)
             {
                 foreach (var contentPart in update.ContentUpdate)
                 {
-                    // Extract the text from the content part
+                    
                     string text = contentPart?.Text ?? string.Empty;
                     if (string.IsNullOrEmpty(text)) continue;
-                    
-                    // Update the full response
+
+                   
                     fullResponse.Append(text);
+
                     
-                    // Calculate tokens for this chunk
                     var chunkTokens = CountTokens(text);
                     _outputTokens += chunkTokens;
 
-                    // Return the streaming response with accurate token counts
-                    // StreamResponse(string Content, int TokenCount, int Length, bool IsThinking = false)
                     yield return new StreamResponse(
-                        text,            // Content
-                        _inputTokens,    // InputTokens  
-                        _outputTokens,   // OutputTokens
-                        inThinkingSection // IsThinking
+                        text,
+                        _inputTokens,
+                        _outputTokens,
+                        inThinkingSection
                     );
                 }
             }
@@ -178,13 +174,49 @@ public class OpenAiService : BaseAiService
 
         foreach (var msg in PrepareMessageList(history))
         {
-            ChatMessage chatMessage = msg.Role switch
+            ChatMessage chatMessage;
+            
+            // Handle different message types including images and files
+            if (msg.Content.StartsWith("data:image/") || msg.Content.StartsWith("data:application/"))
             {
-                "system" => new SystemChatMessage(msg.Content),
-                "user" => new UserChatMessage(msg.Content),
-                "assistant" => new AssistantChatMessage(msg.Content),
-                _ => new UserChatMessage(msg.Content)
-            };
+                // Handle base64 encoded images or files
+                var contentParts = msg.Content.Split(',');
+                if (contentParts.Length == 2)
+                {
+                    var contentType = contentParts[0].Split(';')[0].Split(':')[1];
+                    var base64Data = contentParts[1];
+
+                    if (contentType.StartsWith("image/"))
+                    {
+                        var imageFormat = contentType.Split('/')[1];
+                        var imageDescription = $"[Image in {imageFormat} format]";
+                        chatMessage = new UserChatMessage(imageDescription);
+                    }
+                    else
+                    {
+                        
+                        var fileDescription = $"[File of type {contentType}]";
+                        chatMessage = new UserChatMessage(fileDescription);
+                    }
+                }
+                else
+                {
+                    
+                    chatMessage = new UserChatMessage(msg.Content);
+                }
+            }
+            else
+            {
+               
+                chatMessage = msg.Role switch
+                {
+                    "system" => new SystemChatMessage(msg.Content),
+                    "user" => new UserChatMessage(msg.Content),
+                    "assistant" => new AssistantChatMessage(msg.Content),
+                    _ => new UserChatMessage(msg.Content)
+                };
+            }
+            
             messages.Add(chatMessage);
         }
 
@@ -196,7 +228,8 @@ public class OpenAiService : BaseAiService
         var options = new ChatCompletionOptions();
         var parameters = GetModelParameters();
 
-       
+        
+        // Map standard parameters
         MapParameterIfExists<double, float>("temperature", parameters, value => options.Temperature = value);
         MapParameterIfExists<double, float>("top_p", parameters, value => options.TopP = value);
         MapParameterIfExists<double, float>("frequency_penalty", parameters, value => options.FrequencyPenalty = value);
@@ -218,13 +251,15 @@ public class OpenAiService : BaseAiService
             }
         }
 
-        // Add reasoning options if thinking is enabled
+      
         if (ShouldEnableThinking())
         {
+            options.Temperature = null; 
+            options.TopP = null; 
             if (ModelCode.Contains("o3"))
             {
                 var reasoningEffort = GetReasoningEffort();
-                
+
                 try
                 {
                     var reasoningOptionsType =
@@ -234,10 +269,10 @@ public class OpenAiService : BaseAiService
 
                     if (reasoningOptionsType != null && reasoningEffortLevelType != null)
                     {
-                        // Create reasoning options with reflection
+                       
                         var reasoningOptions = Activator.CreateInstance(reasoningOptionsType);
 
-                        // Set the effort level
+                        
                         var effortLevelProperty = reasoningOptionsType.GetProperty("ReasoningEffortLevel");
                         var effortLevelValue = Enum.Parse(reasoningEffortLevelType, reasoningEffort switch
                         {
@@ -248,7 +283,7 @@ public class OpenAiService : BaseAiService
 
                         effortLevelProperty?.SetValue(reasoningOptions, effortLevelValue);
 
-                        
+                        // Set the reasoning options on the chat options
                         var reasoningProperty = typeof(ChatCompletionOptions).GetProperty("ReasoningOptions");
                         reasoningProperty?.SetValue(options, reasoningOptions);
                     }
@@ -279,11 +314,10 @@ public class OpenAiService : BaseAiService
         {
             var encoder = ModelToEncoder.For(ModelCode);
             int totalTokens = 0;
-            
-           
+
+
             foreach (var message in messages)
             {
-               
                 string content = "";
                 if (message is SystemChatMessage systemMsg)
                 {
@@ -297,23 +331,23 @@ public class OpenAiService : BaseAiService
                 {
                     content = assistantMsg.Content.ToString();
                 }
-                
-                // Count tokens in the content
+
+             
                 totalTokens += encoder.CountTokens(content);
-                
-            
+
+
                 totalTokens += message is SystemChatMessage ? 5 : 4;
             }
-            
-            // Add tokens for conversation formatting (depends on the model)
-            totalTokens += 3; // Conversation overhead
-            
+
+           
+            totalTokens += 3; 
+
             return totalTokens;
         }
         catch
         {
-            // Fallback to a simpler estimation if Tiktoken fails
-            return messages.Sum(m => 
+            
+            return messages.Sum(m =>
             {
                 string content = "";
                 if (m is SystemChatMessage systemMsg)
@@ -328,7 +362,7 @@ public class OpenAiService : BaseAiService
                 {
                     content = assistantMsg.Content.ToString();
                 }
-                
+
                 return (content.Length / 4) + 4;
             });
         }
@@ -338,7 +372,7 @@ public class OpenAiService : BaseAiService
     {
         if (string.IsNullOrEmpty(text))
             return 0;
-            
+
         try
         {
             var encoder = ModelToEncoder.For(ModelCode);
