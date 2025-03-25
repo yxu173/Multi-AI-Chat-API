@@ -9,9 +9,6 @@ using Infrastructure.Authentication;
 using Infrastructure.Authentication.Options;
 using Infrastructure.Database;
 using Infrastructure.Repositories;
-using Infrastructure.Services;
-using Infrastructure.Services.AiProvidersServices;
-using Infrastructure.Services.AiProvidersServices.Base;
 using Infrastructure.Services.Caching;
 using Infrastructure.Services.Plugins;
 using Infrastructure.Services.Resilience;
@@ -22,8 +19,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using OpenAI;
 using StackExchange.Redis;
 
 namespace Infrastructure;
@@ -56,6 +53,11 @@ public static class DependencyInjection
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
+        
+        // Register OpenAI client services for HTTP
+        services.AddHttpClient();
+        
+
 
         var webSearchConfig = configuration.GetSection("AI:Plugins:WebSearch");
         services.AddScoped<WebSearchPlugin>(sp =>

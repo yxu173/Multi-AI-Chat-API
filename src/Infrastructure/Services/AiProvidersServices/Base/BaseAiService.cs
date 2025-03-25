@@ -341,7 +341,7 @@ public abstract class BaseAiService : IAiModelService
     protected string GetSystemMessage() => ModelSettings?.SystemMessage ?? "Always respond using markdown formatting";
 
     protected bool ShouldEnableThinking() =>
-        AiModel?.SupportsThinking == true && (CustomModelParameters?.EnableThinking ?? true);
+        AiModel?.SupportsThinking == true;
 
     // Helper methods for detecting model families
     protected bool IsOpenAIModel()
