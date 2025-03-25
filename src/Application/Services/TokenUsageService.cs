@@ -29,7 +29,24 @@ public class TokenUsageService
         CancellationToken cancellationToken = default)
     {
         var tokenUsage = await GetOrCreateTokenUsageAsync(chatSessionId, cancellationToken);
-        tokenUsage.UpdateTokenCountsAndCost(inputTokens, outputTokens, cost);
+        
+        // Add the new tokens to the existing counts (accumulative)
+        int updatedInputTokens = tokenUsage.InputTokens + inputTokens;
+        int updatedOutputTokens = tokenUsage.OutputTokens + outputTokens;
+        decimal updatedCost = tokenUsage.TotalCost + cost;
+        
+        tokenUsage.UpdateTokenCountsAndCost(updatedInputTokens, updatedOutputTokens, updatedCost);
+        await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
+        await _mediator.Publish(
+            new TokenUsageUpdatedNotification(chatSessionId, tokenUsage.InputTokens, tokenUsage.OutputTokens,
+                tokenUsage.TotalCost), cancellationToken);
+    }
+    
+    public async Task SetTokenUsageFromModelAsync(Guid chatSessionId, int totalInputTokens, int totalOutputTokens, 
+        decimal modelCost, CancellationToken cancellationToken = default)
+    {
+        var tokenUsage = await GetOrCreateTokenUsageAsync(chatSessionId, cancellationToken);
+        tokenUsage.UpdateTokenCountsAndCost(totalInputTokens, totalOutputTokens, modelCost);
         await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
         await _mediator.Publish(
             new TokenUsageUpdatedNotification(chatSessionId, tokenUsage.InputTokens, tokenUsage.OutputTokens,

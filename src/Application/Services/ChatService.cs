@@ -175,10 +175,55 @@ public class ChatService
         messages.AddRange(chatSession.Messages
             .Where(m => m.Id != aiMessage.Id)
             .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id)));
+            .Select(m => {
+                // Check if this message has file attachments
+                var fileAttachments = m.FileAttachments?.ToList() ?? new List<FileAttachment>();
+                string messageContent = m.Content;
+                
+                // If the message has files but no embedded file references, add them
+                if (fileAttachments.Any() && 
+                    !messageContent.Contains("<image") && 
+                    !messageContent.Contains("<file"))
+                {
+                    foreach (var attachment in fileAttachments)
+                    {
+                        if (attachment.Base64Content != null)
+                        {
+                            string fileTag = attachment.FileType == FileType.Image 
+                                ? $"\n<image type=\"{attachment.ContentType}\" base64=\"{attachment.Base64Content}\">\n"
+                                : $"\n<file type=\"{attachment.ContentType}\" base64=\"{attachment.Base64Content}\">\n";
+                            
+                            messageContent += fileTag;
+                        }
+                    }
+                }
+                
+                return new MessageDto(messageContent, m.IsFromAi, m.Id);
+            }));
 
-        // Add the latest user message
-        messages.Add(new MessageDto(content, false, userMessage.Id));
+        // Add the latest user message with file attachments if present
+        string latestMessageContent = content;
+        var userFileAttachments = userMessage.FileAttachments?.ToList() ?? new List<FileAttachment>();
+        
+        // If the message has files but no embedded file references, add them
+        if (userFileAttachments.Any() && 
+            !latestMessageContent.Contains("<image") && 
+            !latestMessageContent.Contains("<file"))
+        {
+            foreach (var attachment in userFileAttachments)
+            {
+                if (attachment.Base64Content != null)
+                {
+                    string fileTag = attachment.FileType == FileType.Image 
+                        ? $"\n<image type=\"{attachment.ContentType}\" base64=\"{attachment.Base64Content}\">\n"
+                        : $"\n<file type=\"{attachment.ContentType}\" base64=\"{attachment.Base64Content}\">\n";
+                    
+                    latestMessageContent += fileTag;
+                }
+            }
+        }
+        
+        messages.Add(new MessageDto(latestMessageContent, false, userMessage.Id));
 
         return messages;
     }

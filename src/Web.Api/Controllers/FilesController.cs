@@ -59,19 +59,36 @@ public class FilesController : BaseController
             var uniqueFileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
             var filePath = Path.Combine(uploadDirectory, uniqueFileName);
 
-           
-            using (var stream = new FileStream(filePath, FileMode.Create))
+            // Convert file to Base64 for embedding in messages
+            string base64Content = null;
+            using (var memoryStream = new MemoryStream())
             {
-                await file.CopyToAsync(stream, cancellationToken);
+                await file.CopyToAsync(memoryStream, cancellationToken);
+                memoryStream.Position = 0;
+                
+                // Limit base64 storage to image and PDF files to avoid excessive database size
+                if (file.ContentType.StartsWith("image/") || file.ContentType == "application/pdf")
+                {
+                    byte[] fileBytes = memoryStream.ToArray();
+                    base64Content = Convert.ToBase64String(fileBytes);
+                }
+                
+                // Save the file to disk
+                using (var fileStream = new FileStream(filePath, FileMode.Create))
+                {
+                    memoryStream.Position = 0;
+                    await memoryStream.CopyToAsync(fileStream, cancellationToken);
+                }
             }
 
            
-            var fileAttachment = FileAttachment.Create(
+            var fileAttachment = FileAttachment.CreateWithBase64(
                 messageId,
                 file.FileName,
                 uniqueFileName,
                 file.ContentType,
-                file.Length);
+                file.Length,
+                base64Content);
 
          
             await _fileAttachmentRepository.AddAsync(fileAttachment, cancellationToken);
