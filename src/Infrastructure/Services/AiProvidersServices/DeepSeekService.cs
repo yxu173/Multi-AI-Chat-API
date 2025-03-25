@@ -13,8 +13,11 @@ public class DeepSeekService : BaseAiService
     private const string BaseUrl = "https://api.deepseek.com/v1/";
 
     public DeepSeekService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
-        UserAiModelSettings? modelSettings = null, AiModel? aiModel = null, ModelParameters? customModelParameters = null)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters) { }
+        UserAiModelSettings? modelSettings = null, AiModel? aiModel = null,
+        ModelParameters? customModelParameters = null)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
+    {
+    }
 
     protected override void ConfigureHttpClient()
     {
@@ -31,10 +34,13 @@ public class DeepSeekService : BaseAiService
         {
             messages.Add(("system", systemMessage));
         }
+
         if (ShouldEnableThinking())
         {
-            messages.Add(("system", "When solving complex problems, please show your detailed step-by-step thinking process marked as '### Thinking:' before providing the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly."));
+            messages.Add(("system",
+                "When solving complex problems, please show your detailed step-by-step thinking process marked as '### Thinking:' before providing the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly."));
         }
+
         string lastRole = messages.Count > 0 ? "system" : null;
         MessageDto? pendingMsg = null;
         foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
@@ -56,14 +62,17 @@ public class DeepSeekService : BaseAiService
                 {
                     messages.Add((lastRole, pendingMsg.Content.Trim()));
                 }
+
                 pendingMsg = msg;
                 lastRole = currentRole;
             }
         }
+
         if (pendingMsg != null)
         {
             messages.Add((lastRole, pendingMsg.Content.Trim()));
         }
+
         return messages;
     }
 
@@ -72,25 +81,25 @@ public class DeepSeekService : BaseAiService
         var messages = PrepareMessageList(history)
             .Select(m => new { role = m.Role, content = m.Content }).ToList();
         var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
-        
+
         // Define known supported parameters for DeepSeek models
-        var standardSupportedParams = new HashSet<string>() 
-        { 
-            "model", "messages", "stream", "temperature", "top_p", 
-            "max_tokens", "enable_cot", "enable_reasoning", "reasoning_mode" 
+        var standardSupportedParams = new HashSet<string>()
+        {
+            "model", "messages", "stream", "temperature", "top_p",
+            "max_tokens", "enable_cot", "enable_reasoning", "reasoning_mode"
         };
-        
+
         // Remove unsupported parameters
         var keysToRemove = requestObj.Keys
             .Where(k => !standardSupportedParams.Contains(k))
             .ToList();
-            
+
         foreach (var key in keysToRemove)
         {
             Console.WriteLine($"Preemptively removing unsupported parameter for DeepSeek: {key}");
             requestObj.Remove(key);
         }
-        
+
         requestObj["messages"] = messages;
         return requestObj;
     }
@@ -105,27 +114,84 @@ public class DeepSeekService : BaseAiService
         }
     }
 
-    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var request = CreateRequest(CreateRequestBody(history));
-        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode) { await HandleApiErrorAsync(response, "DeepSeek"); yield break; }
+        using var response =
+            await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await HandleApiErrorAsync(response, "DeepSeek");
+            yield break;
+        }
 
         var fullResponse = new StringBuilder();
+        var contentBuffer = new List<string>();
+        DeepSeekUsage? finalUsage = null;
+
         await foreach (var json in ReadStreamAsync(response, cancellationToken))
         {
-           
-                var chunk = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
-                if (chunk.TryGetValue("choices", out var choicesObj) && choicesObj is JsonElement choices && choices[0].TryGetProperty("delta", out var delta))
+            var chunk = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+
+            if (chunk.TryGetValue("choices", out var choicesElement) &&
+                choicesElement.ValueKind == JsonValueKind.Array)
+            {
+                var choice = choicesElement[0];
+
+                if (choice.TryGetProperty("finish_reason", out var finishReason) &&
+                    finishReason.ValueKind != JsonValueKind.Null &&
+                    chunk.TryGetValue("usage", out var usageElement))
                 {
-                    if (delta.TryGetProperty("content", out var content))
+                    finalUsage = JsonSerializer.Deserialize<DeepSeekUsage>(usageElement.GetRawText());
+
+                    foreach (var bufferedContent in contentBuffer)
                     {
-                        var text = content.GetString();
-                        if (!string.IsNullOrEmpty(text)) fullResponse.Append(text);
-                        yield return new StreamResponse(text, 0, fullResponse.Length / 4);
+                        yield return new StreamResponse(
+                            bufferedContent,
+                            finalUsage.prompt_tokens,
+                            finalUsage.completion_tokens);
+                    }
+
+                    contentBuffer.Clear();
+                }
+
+                if (choice.TryGetProperty("delta", out var delta) &&
+                    delta.TryGetProperty("content", out var content) &&
+                    content.ValueKind != JsonValueKind.Null)
+                {
+                    var text = content.GetString();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        fullResponse.Append(text);
+
+                        if (finalUsage != null)
+                        {
+                            yield return new StreamResponse(
+                                text,
+                                finalUsage.prompt_tokens,
+                                finalUsage.completion_tokens);
+                        }
+                        else
+                        {
+                            contentBuffer.Add(text);
+                        }
                     }
                 }
-            
+            }
+        }
+
+        if (finalUsage != null && contentBuffer.Count > 0)
+        {
+            foreach (var bufferedContent in contentBuffer)
+            {
+                yield return new StreamResponse(
+                    bufferedContent,
+                    finalUsage.prompt_tokens,
+                    finalUsage.completion_tokens);
+            }
         }
     }
+
+    private record DeepSeekUsage(int prompt_tokens, int completion_tokens, int total_tokens);
 }

@@ -15,8 +15,11 @@ public class AnthropicService : BaseAiService
     private const int DefaultThinkingBudget = 16000;
 
     public AnthropicService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
-        UserAiModelSettings? modelSettings = null, AiModel? aiModel = null, ModelParameters? customModelParameters = null)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters) { }
+        UserAiModelSettings? modelSettings = null, AiModel? aiModel = null,
+        ModelParameters? customModelParameters = null)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
+    {
+    }
 
     protected override void ConfigureHttpClient()
     {
@@ -33,22 +36,22 @@ public class AnthropicService : BaseAiService
         var otherMessages = messages.Where(m => m.Role != "system")
             .Select(m => new { role = m.Role, content = m.Content }).ToList();
         var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
-        
+
         // Remove parameters not supported by Anthropic
         requestObj.Remove("frequency_penalty");
         requestObj.Remove("presence_penalty");
-        
+
         if (ShouldEnableThinking())
         {
             requestObj.Remove("top_k");
             requestObj.Remove("top_p");
         }
-        
+
         if (!requestObj.ContainsKey("max_tokens"))
         {
             requestObj["max_tokens"] = 20000;
         }
-        
+
         if (!string.IsNullOrEmpty(systemMessage)) requestObj["system"] = systemMessage;
         requestObj["messages"] = otherMessages;
         return requestObj;
@@ -68,7 +71,7 @@ public class AnthropicService : BaseAiService
     {
         var requestBody = CreateRequestBody(history);
         var request = CreateRequest(requestBody);
-        
+
         HttpResponseMessage response;
         try
         {
@@ -79,50 +82,54 @@ public class AnthropicService : BaseAiService
             Console.WriteLine($"Error sending request to Anthropic: {ex.Message}");
             throw;
         }
-        
-        // Auto-correction loop - try up to 3 times to fix parameter issues
+
+
         int maxRetries = 3;
         int retryCount = 0;
         Dictionary<string, object>? currentRequestBody = requestBody as Dictionary<string, object>;
-        
+
         while (!response.IsSuccessStatusCode && retryCount < maxRetries && currentRequestBody != null)
         {
             retryCount++;
-            
+
             try
             {
                 // Extract error details for possible auto-correction
                 var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
                 string errorType = "unknown";
                 string errorParam = "none";
-                
+
                 try
                 {
                     var errorJson = JsonSerializer.Deserialize<JsonElement>(errorContent);
                     if (errorJson.TryGetProperty("error", out var errorObj))
                     {
-                        errorType = errorObj.TryGetProperty("type", out var type) ? type.GetString() ?? "unknown" : "unknown";
-                        errorParam = errorObj.TryGetProperty("param", out var param) ? param.GetString() ?? "none" : "none";
+                        errorType = errorObj.TryGetProperty("type", out var type)
+                            ? type.GetString() ?? "unknown"
+                            : "unknown";
+                        errorParam = errorObj.TryGetProperty("param", out var param)
+                            ? param.GetString() ?? "none"
+                            : "none";
                     }
                 }
                 catch
                 {
                     // If we can't parse error details, continue with default values
                 }
-                
+
                 // Attempt auto-correction if applicable
-                var (correctionSuccess, retryResponse, correctedBody) = 
+                var (correctionSuccess, retryResponse, correctedBody) =
                     await AttemptAutoCorrection(response, currentRequestBody, errorType, errorParam, "Anthropic");
-                
+
                 if (correctionSuccess && retryResponse != null && correctedBody != null)
                 {
-                    Console.WriteLine($"Auto-correction attempt {retryCount} successful, continuing with corrected request");
+                    Console.WriteLine(
+                        $"Auto-correction attempt {retryCount} successful, continuing with corrected request");
                     response = retryResponse;
                     currentRequestBody = correctedBody;
                 }
                 else
                 {
-                    // If auto-correction failed, give up and handle the original error
                     Console.WriteLine($"Auto-correction attempt {retryCount} failed, giving up");
                     break;
                 }
@@ -133,8 +140,7 @@ public class AnthropicService : BaseAiService
                 break; // Exit the retry loop on exception
             }
         }
-        
-        // If we still have an error after retries, handle it
+
         if (!response.IsSuccessStatusCode)
         {
             await HandleApiErrorAsync(response, "Anthropic");
@@ -142,43 +148,62 @@ public class AnthropicService : BaseAiService
         }
 
         var fullResponse = new StringBuilder();
-        int tokenCount = 0;
-        
+        int inputTokens = 0;
+        int outputTokens = 0;
+        int estimatedOutputTokens = 0;
+        HashSet<string> sentChunks = new HashSet<string>();
+
         await foreach (var json in ReadStreamAsync(response, cancellationToken))
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
-                
-            string? text = null;
-            try
+
+
+            using var doc = JsonDocument.Parse(json);
+            var type = doc.RootElement.GetProperty("type").GetString();
+
+            switch (type)
             {
-                using var doc = JsonDocument.Parse(json);
-                var type = doc.RootElement.GetProperty("type").GetString();
-                if (type == "content_block_delta" && doc.RootElement.TryGetProperty("delta", out var delta))
-                {
-                    if (delta.TryGetProperty("text", out var textElement))
+                case "message_start":
+                    if (doc.RootElement.TryGetProperty("message", out var messageElement) &&
+                        messageElement.TryGetProperty("usage", out var usageElement) &&
+                        usageElement.TryGetProperty("input_tokens", out var inputTokensElement))
                     {
-                        text = textElement.GetString();
+                        inputTokens = inputTokensElement.GetInt32();
                     }
-                }
-            }
-            catch (JsonException ex)
-            {
-                Console.WriteLine($"Error processing Anthropic response chunk: {ex.Message}");
-            }
-            
-            if (!string.IsNullOrEmpty(text))
-            {
-                fullResponse.Append(text);
-                tokenCount = EstimateAnthropicTokens(fullResponse.ToString());
-                yield return new StreamResponse(text, tokenCount, fullResponse.Length);
+
+                    break;
+
+                case "content_block_delta":
+                    if (doc.RootElement.TryGetProperty("delta", out var delta) &&
+                        delta.TryGetProperty("text", out var textElement))
+                    {
+                        var text = textElement.GetString();
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            fullResponse.Append(text);
+                            estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
+
+                            if (!sentChunks.Contains(text))
+                            {
+                                sentChunks.Add(text);
+                                yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
+                            }
+                        }
+                    }
+
+                    break;
+
+                case "message_delta":
+                    if (doc.RootElement.TryGetProperty("usage", out var deltaUsage) &&
+                        deltaUsage.TryGetProperty("output_tokens", out var outputTokensElement))
+                    {
+                        outputTokens = outputTokensElement.GetInt32();
+                        estimatedOutputTokens = outputTokens;
+                    }
+
+                    break;
             }
         }
-    }
-    
-    private int EstimateAnthropicTokens(string text)
-    {
-        // Claude uses approximately 4.5 characters per token for English text
-        return (int)(text.Length / 4.5);
     }
 }
