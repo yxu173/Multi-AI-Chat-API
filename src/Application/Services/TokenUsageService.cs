@@ -30,12 +30,8 @@ public class TokenUsageService
     {
         var tokenUsage = await GetOrCreateTokenUsageAsync(chatSessionId, cancellationToken);
         
-        // Add the new tokens to the existing counts (accumulative)
-        int updatedInputTokens = tokenUsage.InputTokens + inputTokens;
-        int updatedOutputTokens = tokenUsage.OutputTokens + outputTokens;
-        decimal updatedCost = tokenUsage.TotalCost + cost;
-        
-        tokenUsage.UpdateTokenCountsAndCost(updatedInputTokens, updatedOutputTokens, updatedCost);
+        // Pass the incremental values directly - the entity will add them to existing totals
+        tokenUsage.UpdateTokenCountsAndCost(inputTokens, outputTokens, cost);
         await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
         await _mediator.Publish(
             new TokenUsageUpdatedNotification(chatSessionId, tokenUsage.InputTokens, tokenUsage.OutputTokens,
@@ -46,7 +42,9 @@ public class TokenUsageService
         decimal modelCost, CancellationToken cancellationToken = default)
     {
         var tokenUsage = await GetOrCreateTokenUsageAsync(chatSessionId, cancellationToken);
-        tokenUsage.UpdateTokenCountsAndCost(totalInputTokens, totalOutputTokens, modelCost);
+        
+        // Create a new update method for direct setting values
+        tokenUsage.SetTokenCountsAndCost(totalInputTokens, totalOutputTokens, modelCost);
         await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
         await _mediator.Publish(
             new TokenUsageUpdatedNotification(chatSessionId, tokenUsage.InputTokens, tokenUsage.OutputTokens,

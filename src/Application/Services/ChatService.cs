@@ -51,19 +51,19 @@ public class ChatService
     }
 
     public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content,
-        bool isFileUpload = false, IEnumerable<FileAttachment>? fileAttachments = null, CancellationToken cancellationToken = default)
+        bool isFileUpload = false, IEnumerable<FileAttachment>? fileAttachments = null,
+        CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
         var userMessage =
-            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments, cancellationToken);
-            
-        // Only update chat session title and process through AI if not a temporary file upload message
+            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments,
+                cancellationToken);
+
         if (!isFileUpload)
         {
             await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
             var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, content, cancellationToken);
 
-            // Embed file attachments into the message content
             if (fileAttachments != null)
             {
                 foreach (var attachment in fileAttachments)
@@ -77,9 +77,9 @@ public class ChatService
 
             var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
             var aiService =
-                _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
+                _aiModelServiceFactory.GetService(userId, chatSession.AiModelId,
+                    chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
 
-            // Fetch AI agent if associated with the chat session
             AiAgent aiAgent = null;
             if (chatSession.AiAgentId.HasValue)
             {
@@ -92,14 +92,10 @@ public class ChatService
         }
     }
 
-
     public async Task EditUserMessageAsync(Guid chatSessionId, Guid userId, Guid messageId, string newContent,
         CancellationToken cancellationToken = default)
     {
-        // Retrieve the chat session
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
-
-        // Find the user message to edit
         var messageToEdit =
             chatSession.Messages.FirstOrDefault(m => m.Id == messageId && m.UserId == userId && !m.IsFromAi);
         if (messageToEdit == null)
@@ -107,16 +103,10 @@ public class ChatService
             throw new Exception("Message not found or you do not have permission to edit it.");
         }
 
-        // Execute plugins on the new content
         var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, newContent, cancellationToken);
-
-        // Preserve file attachments from the original message
         var fileAttachments = messageToEdit.FileAttachments?.ToList();
-
-        // Update the message with the new content
         await _messageService.UpdateMessageContentAsync(messageToEdit, newContent, cancellationToken);
 
-        // Find and remove subsequent AI messages
         var subsequentAiMessages = chatSession.Messages
             .Where(m => m.IsFromAi && m.CreatedAt > messageToEdit.CreatedAt)
             .OrderBy(m => m.CreatedAt)
@@ -128,42 +118,33 @@ public class ChatService
             await _messageService.DeleteMessageAsync(subsequentAiMessage.Id, cancellationToken);
         }
 
-        // Fetch AI agent if associated with the chat session
         AiAgent aiAgent = null;
         if (chatSession.AiAgentId.HasValue)
         {
             aiAgent = await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken);
         }
 
-        // Create and add a new AI message
         var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
         chatSession.AddMessage(aiMessage);
 
-        // Use the PrepareMessageHistoryForAi method instead of rebuilding the logic here
-        var messages = PrepareMessageHistoryForAi(
-            chatSession,
-            aiMessage,
-            messageToEdit,
-            modifiedContent,
-            aiAgent);
-
-        // Stream the AI response
+        var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, messageToEdit, modifiedContent, aiAgent);
         var aiService =
-            _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
+            _aiModelServiceFactory.GetService(userId, chatSession.AiModelId, chatSession.CustomApiKey ?? string.Empty,
+                chatSession.AiAgentId);
         await _messageStreamer.StreamResponseAsync(chatSession, aiMessage, aiService, messages, cancellationToken);
     }
 
-
     public async Task SendUserMessageWithParallelProcessingAsync(Guid chatSessionId, Guid userId, string content,
-        IEnumerable<Guid> modelIds, IEnumerable<FileAttachment>? fileAttachments = null, CancellationToken cancellationToken = default)
+        IEnumerable<Guid> modelIds, IEnumerable<FileAttachment>? fileAttachments = null,
+        CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
         var userMessage =
-            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments, cancellationToken);
+            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments,
+                cancellationToken);
         var aiMessages =
             await CreatePlaceholderAiMessagesAsync(userId, chatSessionId, chatSession, modelIds, cancellationToken);
 
-        // Fetch AI agent if associated with the chat session
         AiAgent aiAgent = null;
         if (chatSession.AiAgentId.HasValue)
         {
@@ -176,55 +157,50 @@ public class ChatService
         await ProcessModelResponsesAsync(chatSessionId, aiMessages, responses, cancellationToken);
     }
 
-
     private List<MessageDto> PrepareMessageHistoryForAi(ChatSession chatSession, Message aiMessage, Message userMessage,
         string content, AiAgent aiAgent = null)
     {
         var messages = new List<MessageDto>();
 
-        // Add system message with AI agent instructions if available
-        if (aiAgent != null)
+        // Add system message if an AI agent is provided
+        if (aiAgent != null && !string.IsNullOrEmpty(aiAgent.SystemInstructions))
         {
-            if (!string.IsNullOrEmpty(aiAgent.SystemInstructions))
-            {
-                messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid()));
-            }
+            messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid(), null));
         }
 
-        // Add chat history
+        // Add historical messages, excluding the current AI and user messages
         messages.AddRange(chatSession.Messages
-            .Where(m => m.Id != aiMessage.Id)
+            .Where(m => m.Id != aiMessage.Id && m.Id != userMessage.Id)
             .OrderBy(m => m.CreatedAt)
-            .Select(m => {
-                // Check if this message has file attachments
-                var fileAttachments = m.FileAttachments?.ToList() ?? new List<FileAttachment>();
+            .Select(m =>
+            {
+                var fileAttachments = m.FileAttachments?.ToList() as IReadOnlyList<FileAttachment>;
                 string messageContent = m.Content;
-                
-                // If the message has files but no embedded file references, add them
-                if (fileAttachments.Any() && 
-                    !messageContent.Contains("<image") && 
+
+                // Append file attachment tags if not already present
+                if (fileAttachments?.Any() == true &&
+                    !messageContent.Contains("<image") &&
                     !messageContent.Contains("<file"))
                 {
                     foreach (var attachment in fileAttachments)
                     {
                         if (attachment.Base64Content != null)
                         {
-                            string fileTag = GetFormattedFileTag(attachment);
+                            string fileTag = GetFormattedFileTag(attachment); // Assume this method formats the tag
                             messageContent += fileTag;
                         }
                     }
                 }
-                
-                return new MessageDto(messageContent, m.IsFromAi, m.Id);
+
+                return new MessageDto(messageContent, m.IsFromAi, m.Id, fileAttachments);
             }));
 
-        // Add the latest user message with file attachments if present
+        // Add the latest user message with its file attachments
         string latestMessageContent = content;
-        var userFileAttachments = userMessage.FileAttachments?.ToList() ?? new List<FileAttachment>();
-        
-        // If the message has files but no embedded file references, add them
-        if (userFileAttachments.Any() && 
-            !latestMessageContent.Contains("<image") && 
+        var userFileAttachments = userMessage.FileAttachments?.ToList() as IReadOnlyList<FileAttachment>;
+
+        if (userFileAttachments?.Any() == true &&
+            !latestMessageContent.Contains("<image") &&
             !latestMessageContent.Contains("<file"))
         {
             foreach (var attachment in userFileAttachments)
@@ -236,33 +212,32 @@ public class ChatService
                 }
             }
         }
-        
-        messages.Add(new MessageDto(latestMessageContent, false, userMessage.Id));
+
+        messages.Add(new MessageDto(latestMessageContent, false, userMessage.Id, userFileAttachments));
 
         return messages;
     }
 
-    // Helper method to get a correctly formatted file tag based on file type
     private string GetFormattedFileTag(FileAttachment attachment)
     {
         if (attachment.Base64Content == null)
             return string.Empty;
-        
+
         if (attachment.FileType == FileType.Image)
         {
-            return $"\n<image type=\"{attachment.ContentType}\" name=\"{attachment.FileName}\" base64=\"{attachment.Base64Content}\">\n";
+            return
+                $"\n<image type=\"{attachment.ContentType}\" name=\"{attachment.FileName}\" base64=\"{attachment.Base64Content}\">\n";
         }
         else if (attachment.FileType == FileType.PDF)
         {
-            return $"\n<file type=\"{attachment.ContentType}\" name=\"{attachment.FileName}\" base64=\"{attachment.Base64Content}\">\n";
+            return
+                $"\n<file type=\"{attachment.ContentType}\" name=\"{attachment.FileName}\" base64=\"{attachment.Base64Content}\">\n";
         }
         else
         {
-            // For other file types, include a reference without base64 content to avoid excessive message size
             return $"\n[File: {attachment.FileName} ({attachment.FileType})]";
         }
     }
-
 
     private async Task<Dictionary<Guid, Message>> CreatePlaceholderAiMessagesAsync(Guid userId, Guid chatSessionId,
         ChatSession chatSession, IEnumerable<Guid> modelIds, CancellationToken cancellationToken = default)
@@ -278,38 +253,52 @@ public class ChatService
         return aiMessages;
     }
 
-
     private List<MessageDto> GetChatHistoryForProcessing(ChatSession chatSession, Message userMessage,
         Dictionary<Guid, Message> aiMessages, AiAgent aiAgent = null)
     {
         var messages = new List<MessageDto>();
 
-        // Add system message with AI agent instructions if available
-        if (aiAgent != null)
+        if (aiAgent != null && !string.IsNullOrEmpty(aiAgent.SystemInstructions))
         {
-            if (!string.IsNullOrEmpty(aiAgent.SystemInstructions))
-            {
-                messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid()));
-            }
+            messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid(), null));
         }
 
         var aiMessageIds = aiMessages.Values.Select(am => am.Id).ToHashSet();
 
-        // Add chat history
         messages.AddRange(chatSession.Messages
             .Where(m => m.Id != userMessage.Id && !aiMessageIds.Contains(m.Id))
             .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id)));
+            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id,
+                m.FileAttachments?.ToList() as IReadOnlyList<FileAttachment>)));
 
-        // Add the latest user message
-        messages.Add(new MessageDto(userMessage.Content, userMessage.IsFromAi, userMessage.Id));
+        messages.Add(new MessageDto(userMessage.Content, userMessage.IsFromAi, userMessage.Id,
+            userMessage.FileAttachments?.ToList() as IReadOnlyList<FileAttachment>));
 
         return messages;
     }
 
+    private const int MIN_TOKEN_UPDATE_THRESHOLD = 5;
+    private Dictionary<Guid, int> _accumulatedInputTokens = new Dictionary<Guid, int>();
+    private Dictionary<Guid, int> _accumulatedOutputTokens = new Dictionary<Guid, int>();
+    private Dictionary<Guid, int> _previousInputTokens = new Dictionary<Guid, int>();
+    private Dictionary<Guid, int> _previousOutputTokens = new Dictionary<Guid, int>();
+
     private async Task ProcessModelResponsesAsync(Guid chatSessionId, Dictionary<Guid, Message> aiMessages,
         IEnumerable<ParallelAiResponse> responses, CancellationToken cancellationToken = default)
     {
+        foreach (var modelId in aiMessages.Keys)
+        {
+            if (!_accumulatedInputTokens.ContainsKey(modelId))
+            {
+                _accumulatedInputTokens[modelId] = 0;
+                _accumulatedOutputTokens[modelId] = 0;
+                _previousInputTokens[modelId] = 0;
+                _previousOutputTokens[modelId] = 0;
+            }
+        }
+
+        var tokenUsage = await _tokenUsageService.GetOrCreateTokenUsageAsync(chatSessionId, cancellationToken);
+
         foreach (var response in responses)
         {
             if (aiMessages.TryGetValue(response.ModelId, out var aiMessage))
@@ -317,12 +306,77 @@ public class ChatService
                 aiMessage.AppendContent(response.Content);
                 aiMessage.CompleteMessage();
                 await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
+
                 await _mediator.Publish(
                     new MessageChunkReceivedNotification(chatSessionId, aiMessage.Id, response.Content),
                     cancellationToken);
-                await _tokenUsageService.UpdateTokenUsageAsync(chatSessionId, response.InputTokens,
-                    response.OutputTokens, 0m, cancellationToken); // Cost calculation could be added if needed
+
+                var currentInputTokens = response.InputTokens;
+                var currentOutputTokens = response.OutputTokens;
+
+                int inputTokenDelta = Math.Max(0, currentInputTokens - _previousInputTokens[response.ModelId]);
+                int outputTokenDelta = Math.Max(0, currentOutputTokens - _previousOutputTokens[response.ModelId]);
+
+                _accumulatedInputTokens[response.ModelId] += inputTokenDelta;
+                _accumulatedOutputTokens[response.ModelId] += outputTokenDelta;
+
+                bool shouldUpdateTokens =
+                    _accumulatedInputTokens[response.ModelId] >= MIN_TOKEN_UPDATE_THRESHOLD ||
+                    _accumulatedOutputTokens[response.ModelId] >= MIN_TOKEN_UPDATE_THRESHOLD;
+
+                if (shouldUpdateTokens)
+                {
+                    decimal cost = await CalculateCostAsync(
+                        chatSessionId,
+                        _accumulatedInputTokens[response.ModelId],
+                        _accumulatedOutputTokens[response.ModelId],
+                        cancellationToken);
+
+                    await _tokenUsageService.UpdateTokenUsageAsync(
+                        chatSessionId,
+                        _accumulatedInputTokens[response.ModelId],
+                        _accumulatedOutputTokens[response.ModelId],
+                        cost,
+                        cancellationToken);
+
+                    _accumulatedInputTokens[response.ModelId] = 0;
+                    _accumulatedOutputTokens[response.ModelId] = 0;
+                }
+
+                _previousInputTokens[response.ModelId] = currentInputTokens;
+                _previousOutputTokens[response.ModelId] = currentOutputTokens;
             }
         }
+
+        foreach (var modelId in aiMessages.Keys)
+        {
+            if (_accumulatedInputTokens[modelId] > 0 || _accumulatedOutputTokens[modelId] > 0)
+            {
+                decimal cost = await CalculateCostAsync(
+                    chatSessionId,
+                    _accumulatedInputTokens[modelId],
+                    _accumulatedOutputTokens[modelId],
+                    cancellationToken);
+
+                await _tokenUsageService.UpdateTokenUsageAsync(
+                    chatSessionId,
+                    _accumulatedInputTokens[modelId],
+                    _accumulatedOutputTokens[modelId],
+                    cost,
+                    cancellationToken);
+
+                _accumulatedInputTokens[modelId] = 0;
+                _accumulatedOutputTokens[modelId] = 0;
+            }
+        }
+    }
+
+    private async Task<decimal> CalculateCostAsync(Guid chatSessionId, int inputTokens, int outputTokens,
+        CancellationToken cancellationToken)
+    {
+        var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
+        var inputCost = (decimal)(inputTokens * chatSession.AiModel.InputTokenPricePer1M / 1_000_000);
+        var outputCost = (decimal)(outputTokens * chatSession.AiModel.OutputTokenPricePer1M / 1_000_000);
+        return inputCost + outputCost;
     }
 }

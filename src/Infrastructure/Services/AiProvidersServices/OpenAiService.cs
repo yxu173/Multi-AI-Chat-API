@@ -307,7 +307,6 @@ public class OpenAiService : BaseAiService
             var encoder = ModelToEncoder.For(ModelCode);
             int totalTokens = 0;
 
-
             foreach (var message in messages)
             {
                 string content = "";
@@ -324,21 +323,21 @@ public class OpenAiService : BaseAiService
                     content = assistantMsg.Content.ToString();
                 }
 
-             
+                // Count tokens for the content
                 totalTokens += encoder.CountTokens(content);
 
-
+                // Add role tokens (4 for user/assistant, 5 for system)
                 totalTokens += message is SystemChatMessage ? 5 : 4;
             }
 
-           
-            totalTokens += 3; 
+            // Add conversation format tokens (3 for the entire conversation)
+            totalTokens += 3;
 
             return totalTokens;
         }
         catch
         {
-            
+            // Fallback to a more conservative approximation
             return messages.Sum(m =>
             {
                 string content = "";
@@ -355,8 +354,10 @@ public class OpenAiService : BaseAiService
                     content = assistantMsg.Content.ToString();
                 }
 
-                return (content.Length / 4) + 4;
-            });
+                // More conservative approximation: 1 token per word + role tokens
+                var wordCount = content.Split(new[] { ' ', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
+                return wordCount + (m is SystemChatMessage ? 5 : 4);
+            }) + 3; // Add conversation format tokens
         }
     }
 
@@ -372,8 +373,8 @@ public class OpenAiService : BaseAiService
         }
         catch
         {
-            // Fallback to approximation if Tiktoken fails
-            return text.Length / 4;
+            // More conservative fallback: 1 token per word
+            return text.Split(new[] { ' ', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
         }
     }
 }

@@ -1,11 +1,10 @@
 using System.Text;
 using Application.Abstractions.Interfaces;
 using Application.Notifications;
+using Application.Services;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using MediatR;
-
-namespace Application.Services;
 
 public class MessageStreamer
 {
@@ -13,6 +12,12 @@ public class MessageStreamer
     private readonly TokenUsageService _tokenUsageService;
     private readonly IMediator _mediator;
     private readonly StreamingOperationManager _streamingOperationManager;
+
+    // Variables to accumulate token usage
+    private int _totalInputTokens = 0;
+    private int _totalOutputTokens = 0;
+    private bool _inputTokensAdded = false;
+    private int _lastOutputTokens = 0;
 
     public MessageStreamer(IMessageRepository messageRepository, TokenUsageService tokenUsageService,
         IMediator mediator, StreamingOperationManager streamingOperationManager)
@@ -31,18 +36,24 @@ public class MessageStreamer
         _streamingOperationManager.RegisterOperation(aiMessage.Id, cts);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
 
+        // Deduplicate messages using MessageId
+        var distinctMessages = messages
+            .DistinctBy(m => m.MessageId)
+            .ToList();
+
         var tokenUsage = await _tokenUsageService.GetOrCreateTokenUsageAsync(chatSession.Id, cancellationToken);
-        var previousInputTokens = tokenUsage.InputTokens;
-        var previousOutputTokens = tokenUsage.OutputTokens;
-        var previousCost = tokenUsage.TotalCost;
         var responseContent = new StringBuilder();
-        
-        // Check if thinking should be enabled for this chat
         bool shouldEnableThinking = chatSession.EnableThinking && chatSession.AiModel.SupportsThinking;
+
+        // Reset token accumulators for this message
+        _totalInputTokens = 0;
+        _totalOutputTokens = 0;
+        _inputTokensAdded = false;
+        _lastOutputTokens = 0;
 
         try
         {
-            await foreach (var response in aiService.StreamResponseAsync(messages, linkedCts.Token))
+            await foreach (var response in aiService.StreamResponseAsync(distinctMessages, linkedCts.Token))
             {
                 if (linkedCts.Token.IsCancellationRequested)
                 {
@@ -50,23 +61,20 @@ public class MessageStreamer
                     break;
                 }
 
-                // Handle thinking responses differently if thinking is enabled
                 if (shouldEnableThinking && response.IsThinking)
                 {
-                    await ProcessThinkingChunkAsync(chatSession, aiMessage, response, tokenUsage,
-                        previousInputTokens, previousOutputTokens, previousCost, linkedCts.Token);
+                    await ProcessThinkingChunkAsync(chatSession, aiMessage, response, tokenUsage, linkedCts.Token);
                 }
                 else
                 {
                     await ProcessChunkAsync(chatSession, aiMessage, response, responseContent, tokenUsage,
-                        previousInputTokens, previousOutputTokens, previousCost, linkedCts.Token);
+                        linkedCts.Token);
                 }
             }
 
             if (!linkedCts.Token.IsCancellationRequested)
             {
-                await FinalizeMessageAsync(aiMessage, tokenUsage, chatSession, previousInputTokens,
-                    previousOutputTokens, previousCost, cancellationToken);
+                await FinalizeMessageAsync(aiMessage, tokenUsage, chatSession, cancellationToken);
                 await _mediator.Publish(new ResponseCompletedNotification(chatSession.Id, aiMessage.Id),
                     cancellationToken);
             }
@@ -84,71 +92,70 @@ public class MessageStreamer
 
     private async Task HandleCancellation(ChatSession chatSession, Message aiMessage)
     {
-        
-            aiMessage.AppendContent("\n[Response interrupted]");
-            aiMessage.InterruptMessage();
-            await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
-            await _mediator.Publish(
-                new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
-                CancellationToken.None);
-            await _mediator.Publish(
-                new ResponseStoppedNotification(chatSession.Id, aiMessage.Id),
-                CancellationToken.None);
+        aiMessage.AppendContent("\n[Response interrupted]");
+        aiMessage.InterruptMessage();
+        await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
+        await _mediator.Publish(
+            new MessageChunkReceivedNotification(chatSession.Id, aiMessage.Id, "[Response interrupted]"),
+            CancellationToken.None);
+        await _mediator.Publish(
+            new ResponseStoppedNotification(chatSession.Id, aiMessage.Id),
+            CancellationToken.None);
     }
 
     private async Task ProcessThinkingChunkAsync(ChatSession chatSession, Message aiMessage, StreamResponse response,
-        ChatTokenUsage tokenUsage, int previousInputTokens, int previousOutputTokens,
-        decimal previousCost, CancellationToken cancellationToken)
+        ChatTokenUsage tokenUsage, CancellationToken cancellationToken)
     {
-        // Early exit if cancellation is requested
         if (cancellationToken.IsCancellationRequested)
-        {
             return;
-        }
 
         var chunk = response.Content;
         var currentInputTokens = response.InputTokens;
         var currentOutputTokens = response.OutputTokens;
 
-        tokenUsage.UpdateTokenCounts(currentInputTokens, currentOutputTokens);
-        var cost = chatSession.AiModel.CalculateCost(currentInputTokens, currentOutputTokens);
-        await _tokenUsageService.UpdateTokenUsageAsync(chatSession.Id, currentInputTokens, currentOutputTokens, cost,
-            cancellationToken);
-        
-        if (cancellationToken.IsCancellationRequested)
+        // Accumulate input tokens only once
+        if (!_inputTokensAdded && currentInputTokens > 0)
         {
-            return;
+            _totalInputTokens += currentInputTokens;
+            _inputTokensAdded = true;
         }
 
-        // We don't append thinking output to the actual message content
-        // Instead we send it as a special notification type for the frontend to display differently
+        // Accumulate output tokens
+        int outputTokenDelta = currentOutputTokens - _lastOutputTokens;
+        if (outputTokenDelta > 0)
+        {
+            _totalOutputTokens += outputTokenDelta;
+            _lastOutputTokens = currentOutputTokens;
+        }
+
         await _mediator.Publish(
             new ThinkingChunkReceivedNotification(chatSession.Id, aiMessage.Id, chunk),
             cancellationToken);
     }
 
     private async Task ProcessChunkAsync(ChatSession chatSession, Message aiMessage, StreamResponse response,
-        StringBuilder responseContent, ChatTokenUsage tokenUsage, int previousInputTokens, int previousOutputTokens,
-        decimal previousCost, CancellationToken cancellationToken)
+        StringBuilder responseContent, ChatTokenUsage tokenUsage, CancellationToken cancellationToken)
     {
-        // Early exit if cancellation is requested
         if (cancellationToken.IsCancellationRequested)
-        {
             return;
-        }
 
         var chunk = response.Content;
         var currentInputTokens = response.InputTokens;
         var currentOutputTokens = response.OutputTokens;
 
-        tokenUsage.UpdateTokenCounts(currentInputTokens, currentOutputTokens);
-        var cost = chatSession.AiModel.CalculateCost(currentInputTokens, currentOutputTokens);
-        await _tokenUsageService.UpdateTokenUsageAsync(chatSession.Id, currentInputTokens, currentOutputTokens, cost,
-            cancellationToken);
-        
-        if (cancellationToken.IsCancellationRequested)
+        // Accumulate input tokens only once
+        if (!_inputTokensAdded && currentInputTokens > 0)
         {
-            return;
+            _totalInputTokens += currentInputTokens;
+            _inputTokensAdded = true;
+        }
+
+        // Accumulate output tokens
+        int outputTokenDelta = currentOutputTokens - _lastOutputTokens;
+        if (outputTokenDelta > 0)
+        {
+            _totalOutputTokens += outputTokenDelta;
+            _lastOutputTokens = currentOutputTokens;
         }
 
         responseContent.Append(chunk);
@@ -159,14 +166,28 @@ public class MessageStreamer
     }
 
     private async Task FinalizeMessageAsync(Message aiMessage, ChatTokenUsage tokenUsage, ChatSession chatSession,
-        int previousInputTokens, int previousOutputTokens, decimal previousCost, CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         aiMessage.CompleteMessage();
         await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
 
-        var finalCost = chatSession.AiModel.CalculateCost(tokenUsage.InputTokens - previousInputTokens,
-            tokenUsage.OutputTokens - previousOutputTokens);
-        await _tokenUsageService.UpdateTokenUsageAsync(chatSession.Id, tokenUsage.InputTokens - previousInputTokens,
-            tokenUsage.OutputTokens - previousOutputTokens, finalCost, cancellationToken);
+        // Calculate total cost based on accumulated tokens
+        decimal inputCost = chatSession.AiModel.CalculateCost(_totalInputTokens, 0);
+        decimal outputCost = chatSession.AiModel.CalculateCost(0, _totalOutputTokens);
+        decimal totalCost = inputCost + outputCost;
+
+        // Update token usage in the database once
+        await _tokenUsageService.UpdateTokenUsageAsync(
+            chatSession.Id,
+            _totalInputTokens,
+            _totalOutputTokens,
+            totalCost,
+            cancellationToken);
+
+        // Reset accumulators
+        _totalInputTokens = 0;
+        _totalOutputTokens = 0;
+        _inputTokensAdded = false;
+        _lastOutputTokens = 0;
     }
 }

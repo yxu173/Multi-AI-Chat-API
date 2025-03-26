@@ -47,10 +47,10 @@ public class ChatTokenUsageRepository : IChatTokenUsageRepository
                         throw new InvalidOperationException($"ChatTokenUsage with ID {tokenUsage.Id} not found.");
                     }
 
-                    freshEntity.UpdateTokenCountsAndCost(
-                        tokenUsage.InputTokens - freshEntity.InputTokens,
-                        tokenUsage.OutputTokens - freshEntity.OutputTokens,
-                        tokenUsage.TotalCost - freshEntity.TotalCost);
+                    freshEntity.SetTokenCountsAndCost(
+                        tokenUsage.InputTokens,
+                        tokenUsage.OutputTokens,
+                        tokenUsage.TotalCost);
 
                     _dbContext.Entry(freshEntity).State = EntityState.Modified;
                 }

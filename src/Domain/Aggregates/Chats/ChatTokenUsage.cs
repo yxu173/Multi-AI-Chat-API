@@ -47,4 +47,12 @@ public sealed class ChatTokenUsage : BaseEntity
         TotalCost += totalCost;
         LastUpdatedAt = DateTime.UtcNow;
     }
+    
+    public void SetTokenCountsAndCost(int inputTokens, int outputTokens, decimal totalCost)
+    {
+        InputTokens = inputTokens;
+        OutputTokens = outputTokens;
+        TotalCost = totalCost;
+        LastUpdatedAt = DateTime.UtcNow;
+    }
 }
