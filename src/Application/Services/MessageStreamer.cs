@@ -1,10 +1,11 @@
 using System.Text;
 using Application.Abstractions.Interfaces;
 using Application.Notifications;
-using Application.Services;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using MediatR;
+
+namespace Application.Services;
 
 public class MessageStreamer
 {
