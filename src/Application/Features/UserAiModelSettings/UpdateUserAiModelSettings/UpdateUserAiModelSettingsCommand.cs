@@ -5,9 +5,13 @@ namespace Application.Features.UserAiModelSettings.UpdateUserAiModelSettings;
 public sealed record UpdateUserAiModelSettingsCommand(
     Guid UserId,
     string SystemMessage,
+    int? ContextLimit,
     double? Temperature,
     double? TopP,
     int? TopK,
     double? FrequencyPenalty,
-    double? PresencePenalty
+    double? PresencePenalty,
+    int? MaxTokens,
+    string SafetySettings,
+    bool? PromptCaching
 ) : ICommand<bool>;

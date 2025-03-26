@@ -2,7 +2,7 @@ using Application.Abstractions.Messaging;
 using Domain.Repositories;
 using SharedKernel;
 
-namespace Application.Features.AiModels.EnableAiModel;
+namespace Application.Features.AiModels.Commands.EnableAiModel;
 
 public sealed class EnableAiModelCommandHandler : ICommandHandler<EnableAiModelCommand, bool>
 {

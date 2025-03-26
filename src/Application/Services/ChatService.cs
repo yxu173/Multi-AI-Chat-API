@@ -51,7 +51,7 @@ public class ChatService
     }
 
     public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content,
-        bool isFileUpload = false, IEnumerable<FileAttachment>? fileAttachments = null,
+        IEnumerable<FileAttachment>? fileAttachments = null,
         CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
@@ -59,37 +59,34 @@ public class ChatService
             await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments,
                 cancellationToken);
 
-        if (!isFileUpload)
-        {
-            await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
-            var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, content, cancellationToken);
+        await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
+        var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, content, cancellationToken);
 
-            if (fileAttachments != null)
+        if (fileAttachments != null)
+        {
+            foreach (var attachment in fileAttachments)
             {
-                foreach (var attachment in fileAttachments)
+                if (!string.IsNullOrEmpty(attachment.Base64Content))
                 {
-                    if (!string.IsNullOrEmpty(attachment.Base64Content))
-                    {
-                        modifiedContent += GetFormattedFileTag(attachment);
-                    }
+                    modifiedContent += GetFormattedFileTag(attachment);
                 }
             }
-
-            var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
-            var aiService =
-                _aiModelServiceFactory.GetService(userId, chatSession.AiModelId,
-                    chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
-
-            AiAgent aiAgent = null;
-            if (chatSession.AiAgentId.HasValue)
-            {
-                aiAgent = await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken);
-            }
-
-            var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, userMessage, modifiedContent, aiAgent);
-
-            await _messageStreamer.StreamResponseAsync(chatSession, aiMessage, aiService, messages, cancellationToken);
         }
+
+        var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
+        var aiService =
+            _aiModelServiceFactory.GetService(userId, chatSession.AiModelId,
+                chatSession.CustomApiKey ?? string.Empty, chatSession.AiAgentId);
+
+        AiAgent aiAgent = null;
+        if (chatSession.AiAgentId.HasValue)
+        {
+            aiAgent = await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken);
+        }
+
+        var messages = PrepareMessageHistoryForAi(chatSession, aiMessage, userMessage, modifiedContent, aiAgent);
+
+        await _messageStreamer.StreamResponseAsync(chatSession, aiMessage, aiService, messages, cancellationToken);
     }
 
     public async Task EditUserMessageAsync(Guid chatSessionId, Guid userId, Guid messageId, string newContent,
@@ -157,64 +154,22 @@ public class ChatService
         await ProcessModelResponsesAsync(chatSessionId, aiMessages, responses, cancellationToken);
     }
 
-    private List<MessageDto> PrepareMessageHistoryForAi(ChatSession chatSession, Message aiMessage, Message userMessage,
-        string content, AiAgent aiAgent = null)
+    private List<MessageDto> PrepareMessageHistoryForAi(ChatSession chatSession, Message aiMessage, Message userMessage, string content, AiAgent aiAgent = null)
     {
         var messages = new List<MessageDto>();
 
-        // Add system message if an AI agent is provided
         if (aiAgent != null && !string.IsNullOrEmpty(aiAgent.SystemInstructions))
         {
-            messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid(), null));
+            messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid()));
         }
 
-        // Add historical messages, excluding the current AI and user messages
         messages.AddRange(chatSession.Messages
             .Where(m => m.Id != aiMessage.Id && m.Id != userMessage.Id)
             .OrderBy(m => m.CreatedAt)
-            .Select(m =>
-            {
-                var fileAttachments = m.FileAttachments?.ToList() as IReadOnlyList<FileAttachment>;
-                string messageContent = m.Content;
+            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id, m.FileAttachments)));
 
-                // Append file attachment tags if not already present
-                if (fileAttachments?.Any() == true &&
-                    !messageContent.Contains("<image") &&
-                    !messageContent.Contains("<file"))
-                {
-                    foreach (var attachment in fileAttachments)
-                    {
-                        if (attachment.Base64Content != null)
-                        {
-                            string fileTag = GetFormattedFileTag(attachment); // Assume this method formats the tag
-                            messageContent += fileTag;
-                        }
-                    }
-                }
-
-                return new MessageDto(messageContent, m.IsFromAi, m.Id, fileAttachments);
-            }));
-
-        // Add the latest user message with its file attachments
         string latestMessageContent = content;
-        var userFileAttachments = userMessage.FileAttachments?.ToList() as IReadOnlyList<FileAttachment>;
-
-        if (userFileAttachments?.Any() == true &&
-            !latestMessageContent.Contains("<image") &&
-            !latestMessageContent.Contains("<file"))
-        {
-            foreach (var attachment in userFileAttachments)
-            {
-                if (attachment.Base64Content != null)
-                {
-                    string fileTag = GetFormattedFileTag(attachment);
-                    latestMessageContent += fileTag;
-                }
-            }
-        }
-
-        messages.Add(new MessageDto(latestMessageContent, false, userMessage.Id, userFileAttachments));
-
+        messages.Add(new MessageDto(latestMessageContent, false, userMessage.Id, userMessage.FileAttachments));
         return messages;
     }
 

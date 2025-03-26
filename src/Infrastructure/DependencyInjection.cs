@@ -12,6 +12,7 @@ using Infrastructure.Repositories;
 using Infrastructure.Services.Caching;
 using Infrastructure.Services.Plugins;
 using Infrastructure.Services.Resilience;
+using Infrastructure.Services.UploadFile;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
@@ -53,10 +54,10 @@ public static class DependencyInjection
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
-        
+        services.AddScoped<IFileService, FileService>();
+
         // Register OpenAI client services for HTTP
         services.AddHttpClient();
-        
 
 
         var webSearchConfig = configuration.GetSection("AI:Plugins:WebSearch");

@@ -48,14 +48,6 @@ internal sealed class RegisterUserCommandHandler(
 
     private async Task CreateDefaultUserSettings(Guid userId, CancellationToken cancellationToken)
     {
-        var enabledModels = await aiModelRepository.GetEnabledAsync();
-
-        if (enabledModels.Count == 0)
-        {
-            return;
-        }
-
-
         var settings = Domain.Aggregates.Users.UserAiModelSettings.Create(
             userId
         );

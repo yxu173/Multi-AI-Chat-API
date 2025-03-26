@@ -4,9 +4,13 @@ public sealed record UserAiModelSettingsResponse(
     Guid Id,
     Guid UserId,
     string SystemMessage,
+    int? ContextLimit,
     double? Temperature,
     double? TopP,
     int? TopK,
     double? FrequencyPenalty,
-    double? PresencePenalty
+    double? PresencePenalty,
+    int? MaxTokens,
+    string SafetySettings,
+    bool PromptCaching
 );

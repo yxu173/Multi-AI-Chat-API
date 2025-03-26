@@ -38,21 +38,14 @@ public class AnthropicService : BaseAiService
             .ToList();
         var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
 
-        // Remove parameters not supported by Anthropic
         requestObj.Remove("frequency_penalty");
         requestObj.Remove("presence_penalty");
-
         if (ShouldEnableThinking())
         {
             requestObj.Remove("top_k");
             requestObj.Remove("top_p");
         }
-
-        if (!requestObj.ContainsKey("max_tokens"))
-        {
-            requestObj["max_tokens"] = 20000;
-        }
-
+        if (!requestObj.ContainsKey("max_tokens")) requestObj["max_tokens"] = 20000;
         if (!string.IsNullOrEmpty(systemMessage)) requestObj["system"] = systemMessage;
         requestObj["messages"] = otherMessages;
         return requestObj;

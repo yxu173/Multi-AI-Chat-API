@@ -1,108 +1,58 @@
 using System.Security.Claims;
-using Application.Notifications;
-using Domain.Aggregates.Chats;
+using Application.Abstractions.Interfaces;
 using Domain.Repositories;
-using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Web.Api.Infrastructure;
 
 namespace Web.Api.Controllers;
 
 [Authorize]
 public class FilesController : BaseController
 {
+    private readonly IFileService _fileService;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
-    private readonly IMessageRepository _messageRepository;
-    private readonly IMediator _mediator;
     private readonly IWebHostEnvironment _environment;
 
     public FilesController(
+        IFileService fileService,
         IFileAttachmentRepository fileAttachmentRepository,
-        IMessageRepository messageRepository,
-        IMediator mediator,
         IWebHostEnvironment environment)
     {
+        _fileService = fileService;
         _fileAttachmentRepository = fileAttachmentRepository;
-        _messageRepository = messageRepository;
-        _mediator = mediator;
         _environment = environment;
     }
 
-    [HttpPost("Upload/{messageId}")]
+    [HttpPost("Upload/{chatSessionId}")]
     public async Task<IActionResult> UploadFile(
-        [FromRoute] Guid messageId, 
+        [FromRoute] Guid chatSessionId,
         [FromForm] IFormFile file,
-        CancellationToken cancellationToken)
+        [FromForm] string messageId = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var message = await _messageRepository.GetByIdAsync(messageId, cancellationToken);
-            if (message == null)
-                return NotFound(new { Error = "Message not found" });
+            var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+            Guid? messageGuid = null;
             
-            if (message.UserId.ToString() != User.FindFirstValue(ClaimTypes.NameIdentifier))
-                return Forbid();
-            
-            if (file.Length > 10 * 1024 * 1024)
-                return BadRequest(new { Error = "File size exceeds limit (10MB)" });
-            
-            var chatSessionFolder = message.ChatSessionId.ToString();
-            var uploadDirectory = Path.Combine(_environment.ContentRootPath, "uploads", chatSessionFolder);
-            if (!Directory.Exists(uploadDirectory))
-                Directory.CreateDirectory(uploadDirectory);
-            
-            var uniqueFileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
-            var filePath = Path.Combine(uploadDirectory, uniqueFileName);
-            var relativePath = uniqueFileName; // Store only the filename as the relative path
-
-            // Convert file to Base64 for embedding in messages
-            string base64Content = null;
-            using (var memoryStream = new MemoryStream())
+            // Try to parse messageId if it's provided
+            if (!string.IsNullOrEmpty(messageId) && Guid.TryParse(messageId, out Guid parsedMessageId))
             {
-                await file.CopyToAsync(memoryStream, cancellationToken);
-                memoryStream.Position = 0;
-                
-                // Limit base64 storage to image and PDF files to avoid excessive database size
-                if (file.ContentType.StartsWith("image/") || file.ContentType == "application/pdf")
-                {
-                    // For large files, compress or reduce the base64 content
-                    byte[] fileBytes = memoryStream.ToArray();
-                    
-                    // For very large images, we may want to resize them in a production system
-                    if (fileBytes.Length > 2 * 1024 * 1024) // If larger than 2MB
-                    {
-                        // In production, you might add image compression here
-                        // For now, we'll just truncate very large files
-                        if (fileBytes.Length > 5 * 1024 * 1024) // If larger than 5MB
-                        {
-                            fileBytes = fileBytes.Take(5 * 1024 * 1024).ToArray();
-                        }
-                    }
-                    
-                    base64Content = Convert.ToBase64String(fileBytes);
-                }
-                
-                // Save the file to disk
-                using (var fileStream = new FileStream(filePath, FileMode.Create))
-                {
-                    memoryStream.Position = 0;
-                    await memoryStream.CopyToAsync(fileStream, cancellationToken);
-                }
+                messageGuid = parsedMessageId;
             }
-           
-            var fileAttachment = FileAttachment.CreateWithBase64(
-                messageId,
-                file.FileName,
-                relativePath, // Use the relative path here
-                file.ContentType,
-                file.Length,
-                base64Content);
+            
+            // Log the details for debugging
+            Console.WriteLine($"Uploading file: {file.FileName} for session {chatSessionId}, user {userId}, message {messageGuid}");
+            
+            var fileAttachment = await _fileService.UploadFileAsync(chatSessionId, file, userId, cancellationToken);
 
-            await _fileAttachmentRepository.AddAsync(fileAttachment, cancellationToken);
-          
-            await _mediator.Publish(new FileUploadedNotification(message.ChatSessionId, fileAttachment), cancellationToken);
-       
+            // If we have a valid message ID, link this attachment to the message
+            if (messageGuid.HasValue)
+            {
+                fileAttachment.LinkToMessage(messageGuid.Value);
+                await _fileAttachmentRepository.UpdateAsync(fileAttachment, cancellationToken);
+            }
+
             return Ok(new
             {
                 Id = fileAttachment.Id,
@@ -110,69 +60,21 @@ public class FilesController : BaseController
                 ContentType = fileAttachment.ContentType,
                 FileType = fileAttachment.FileType.ToString(),
                 Size = fileAttachment.FileSize,
-                HasBase64 = base64Content != null
+                HasBase64 = fileAttachment.Base64Content != null
             });
         }
         catch (Exception ex)
         {
+            // Log the full exception details
+            Console.WriteLine($"File upload failed: {ex.Message}");
+            Console.WriteLine($"Exception details: {ex}");
+            
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+            }
+            
             return StatusCode(500, new { Error = $"File upload failed: {ex.Message}" });
         }
-    }
-
-    [HttpGet("{fileId}")]
-    public async Task<IActionResult> GetFile([FromRoute] Guid fileId, CancellationToken cancellationToken)
-    {
-        var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId, cancellationToken);
-        if (fileAttachment == null)
-            return NotFound(new { Error = "File not found" });
-
-        var message = await _messageRepository.GetByIdAsync(fileAttachment.MessageId, cancellationToken);
-        if (message == null)
-            return NotFound(new { Error = "Message not found" });
-
-        if (message.UserId.ToString() != User.FindFirstValue(ClaimTypes.NameIdentifier))
-            return Forbid();
-
-        var chatSessionFolder = message.ChatSessionId.ToString();
-        var filePath = Path.Combine(_environment.ContentRootPath, "uploads", chatSessionFolder, fileAttachment.FilePath);
-        
-        if (!System.IO.File.Exists(filePath))
-            return NotFound(new { Error = "File not found on server" });
-
-        return PhysicalFile(filePath, fileAttachment.ContentType, fileAttachment.FileName);
-    }
-    
-    [HttpDelete("{fileId}")]
-    public async Task<IActionResult> DeleteFile([FromRoute] Guid fileId, CancellationToken cancellationToken)
-    {
-        var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId, cancellationToken);
-        if (fileAttachment == null)
-            return NotFound(new { Error = "File not found" });
-
-        var message = await _messageRepository.GetByIdAsync(fileAttachment.MessageId, cancellationToken);
-        if (message == null)
-            return NotFound(new { Error = "Message not found" });
-
-        if (message.UserId.ToString() != User.FindFirstValue(ClaimTypes.NameIdentifier))
-            return Forbid();
-
-        var chatSessionFolder = message.ChatSessionId.ToString();
-        var filePath = Path.Combine(_environment.ContentRootPath, "uploads", chatSessionFolder, fileAttachment.FilePath);
-        
-        if (System.IO.File.Exists(filePath))
-        {
-            try
-            {
-                System.IO.File.Delete(filePath);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error deleting file: {ex.Message}");
-            }
-        }
-       
-        await _fileAttachmentRepository.DeleteAsync(fileId, cancellationToken);
-
-        return Ok(new { Message = "File deleted successfully" });
     }
 }

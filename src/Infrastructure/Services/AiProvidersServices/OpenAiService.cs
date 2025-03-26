@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
@@ -171,36 +172,23 @@ public class OpenAiService : BaseAiService
     private List<ChatMessage> ConvertMessagesToSdkFormat(IEnumerable<MessageDto> history)
     {
         var messages = new List<ChatMessage>();
-
         foreach (var msg in PrepareMessageList(history))
         {
-            // Process the message content to handle image and file tags
             string processedContent = msg.Content;
-            bool hasImages = false;
-            
-            // Replace image tags with text descriptions
-            var imgRegex = new System.Text.RegularExpressions.Regex(@"<image\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
-            processedContent = imgRegex.Replace(processedContent, match => {
-                hasImages = true;
-                string fileName = match.Groups[2].Value;
-                return $"[Image: {fileName}]";
-            });
-            
-            // Replace file tags with text descriptions
-            var fileRegex = new System.Text.RegularExpressions.Regex(@"<file\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
-            processedContent = fileRegex.Replace(processedContent, match => {
-                string mimeType = match.Groups[1].Value;
-                string fileName = match.Groups[2].Value;
-                return $"[File: {fileName} ({mimeType})]";
-            });
-            
-            // If we have images, warn about limitations
-            if (hasImages)
+            bool hasUnsupportedFiles = false;
+
+            if (msg.Item2.Contains("<image") || msg.Item2.Contains("<file"))
             {
-                Console.WriteLine("Warning: OpenAI service currently doesn't properly support image content from file uploads. Images are represented as text descriptions.");
+                hasUnsupportedFiles = true;
+                processedContent = Regex.Replace(processedContent, @"<image[^>]+>", "[Image content not supported]");
+                processedContent = Regex.Replace(processedContent, @"<file[^>]+>", "[File content not supported]");
             }
-            
-            // Create chat message based on role
+
+            if (hasUnsupportedFiles)
+            {
+                Console.WriteLine("Warning: OpenAI does not support direct file/image uploads in this configuration.");
+            }
+
             ChatMessage chatMessage = msg.Role switch
             {
                 "system" => new SystemChatMessage(processedContent),
@@ -208,13 +196,10 @@ public class OpenAiService : BaseAiService
                 "assistant" => new AssistantChatMessage(processedContent),
                 _ => new UserChatMessage(processedContent)
             };
-            
             messages.Add(chatMessage);
         }
-
         return messages;
     }
-
     private ChatCompletionOptions GetChatCompletionOptions()
     {
         var options = new ChatCompletionOptions();

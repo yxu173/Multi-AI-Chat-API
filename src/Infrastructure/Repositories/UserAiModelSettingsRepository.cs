@@ -36,7 +36,7 @@ public class UserAiModelSettingsRepository : IUserAiModelSettingsRepository
     public async Task<UserAiModelSettings?> GetDefaultByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await _context.UserAiModelSettings
-            .FirstOrDefaultAsync(s => s.UserId == userId && s.IsDefault, cancellationToken);
+            .FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
     }
 
     public async Task<UserAiModelSettings> AddAsync(UserAiModelSettings settings, CancellationToken cancellationToken = default)

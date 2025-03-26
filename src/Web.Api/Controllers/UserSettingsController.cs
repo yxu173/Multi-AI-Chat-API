@@ -16,11 +16,15 @@ public class UserSettingsController : BaseController
         (
             UserId,
             request.SystemMessage,
+            request.ContextLimit,
             request.Temperature,
             request.TopP,
             request.TopK,
             request.FrequencyPenalty,
-            request.PresencePenalty
+            request.PresencePenalty,
+            request.MaxTokens,
+            request.SafetySettings,
+            request.PromptCaching
         );
 
         var result = await _mediator.Send(command);

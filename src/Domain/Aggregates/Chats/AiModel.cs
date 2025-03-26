@@ -18,8 +18,13 @@ public sealed class AiModel
     public int? MaxOutputTokens { get; private set; }
     public bool IsEnabled { get; private set; } = true;
     public bool SupportsThinking { get; private set; }
-
     public bool SupportsVision { get; private set; }
+    public int? ContextLength { get; private set; }
+    public string ApiType { get; private set; }
+    public bool PluginsSupported { get; private set; }
+    public bool StreamingOutputSupported { get; private set; }
+    public bool SystemRoleSupported { get; private set; }
+    public bool PromptCachingSupported { get; private set; }
 
     public IReadOnlyCollection<UserAiModel> UserAiModels => _userAiModels;
 
@@ -30,7 +35,9 @@ public sealed class AiModel
 
     public static AiModel Create(string name, string modelType, Guid aiProviderId, double inputTokenPricePer1M,
         double outputTokenPricePer1M, string modelCode, int? maxInputTokens = null, int? maxOutputTokens = null,
-        bool isEnabled = true, bool supportsThinking = false,bool supportsVision = false)
+        bool isEnabled = true, bool supportsThinking = false, bool supportsVision = false, 
+        int? contextLength = null, string apiType = null, bool pluginsSupported = false, 
+        bool streamingOutputSupported = false, bool systemRoleSupported = false, bool promptCachingSupported = false)
     {
         var modelTypeEnum = Enum.Parse<ModelType>(modelType);
         return new AiModel
@@ -46,7 +53,13 @@ public sealed class AiModel
             MaxOutputTokens = maxOutputTokens,
             IsEnabled = isEnabled,
             SupportsThinking = supportsThinking,
-            SupportsVision = supportsVision
+            SupportsVision = supportsVision,
+            ContextLength = contextLength,
+            ApiType = apiType,
+            PluginsSupported = pluginsSupported,
+            StreamingOutputSupported = streamingOutputSupported,
+            SystemRoleSupported = systemRoleSupported,
+            PromptCachingSupported = promptCachingSupported
         };
     }
 

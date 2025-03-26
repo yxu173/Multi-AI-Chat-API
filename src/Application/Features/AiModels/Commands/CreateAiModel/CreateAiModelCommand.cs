@@ -1,9 +1,11 @@
-namespace Web.Api.Contracts.AiModels;
+using Application.Abstractions.Messaging;
 
-public sealed record AiModelRequest(
+namespace Application.Features.AiModels.Commands.CreateAiModel;
+
+public sealed record CreateAiModelCommand(
     string Name,
     string ModelType,
-    Guid AiProviderId,
+    Guid AiProvider,
     double InputTokenPricePer1M,
     double OutputTokenPricePer1M,
     string ModelCode,
@@ -17,5 +19,4 @@ public sealed record AiModelRequest(
     bool PluginsSupported,
     bool StreamingOutputSupported,
     bool SystemRoleSupported,
-    bool PromptCachingSupported
-);
+    bool PromptCachingSupported) : ICommand<Guid>;

@@ -3,7 +3,7 @@ using Domain.Aggregates.Users;
 using Domain.Repositories;
 using SharedKernel;
 
-namespace Application.Features.AiModels.UserEnableAiModel;
+namespace Application.Features.AiModels.Commands.UserEnableAiModel;
 
 public sealed class UserEnableAiModelCommandHandler : ICommandHandler<UserEnableAiModelCommand, bool>
 {

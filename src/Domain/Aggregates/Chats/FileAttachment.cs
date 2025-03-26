@@ -4,7 +4,7 @@ namespace Domain.Aggregates.Chats;
 
 public sealed class FileAttachment : BaseEntity
 {
-    public Guid MessageId { get; private set; }
+    public Guid? MessageId { get; private set; }
     public string FileName { get; private set; }
     public string FilePath { get; private set; }
     public string ContentType { get; private set; }
@@ -12,16 +12,13 @@ public sealed class FileAttachment : BaseEntity
     public long FileSize { get; private set; }
     public string? Base64Content { get; private set; }
 
-    private FileAttachment() { }
-
-    public static FileAttachment Create(Guid messageId, string fileName, string filePath, string contentType, long fileSize)
+    private FileAttachment()
     {
-        if (messageId == Guid.Empty) throw new ArgumentException("MessageId cannot be empty.", nameof(messageId));
-        if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("FileName cannot be empty.", nameof(fileName));
-        if (string.IsNullOrWhiteSpace(filePath)) throw new ArgumentException("FilePath cannot be empty.", nameof(filePath));
-        if (string.IsNullOrWhiteSpace(contentType)) throw new ArgumentException("ContentType cannot be empty.", nameof(contentType));
-        if (fileSize <= 0) throw new ArgumentException("FileSize must be greater than zero.", nameof(fileSize));
+    }
 
+    public static FileAttachment Create(string fileName, string filePath, string contentType,
+        long fileSize, Guid? messageId = null)
+    {
         return new FileAttachment
         {
             Id = Guid.NewGuid(),
@@ -33,19 +30,25 @@ public sealed class FileAttachment : BaseEntity
             FileSize = fileSize
         };
     }
-    
-    public static FileAttachment CreateWithBase64(Guid messageId, string fileName, string filePath, string contentType, long fileSize, string base64Content)
+
+    public static FileAttachment CreateWithBase64(string fileName, string filePath, string contentType,
+        long fileSize, string base64Content, Guid? messageId = null)
     {
-        var attachment = Create(messageId, fileName, filePath, contentType, fileSize);
+        var attachment = Create(fileName, filePath, contentType, fileSize, messageId);
         attachment.Base64Content = base64Content;
         return attachment;
     }
-    
+
+    public void LinkToMessage(Guid messageId)
+    {
+        MessageId = messageId;
+    }
+
     public void SetBase64Content(string base64Content)
     {
         if (string.IsNullOrWhiteSpace(base64Content))
             throw new ArgumentException("Base64 content cannot be empty", nameof(base64Content));
-            
+
         Base64Content = base64Content;
     }
 

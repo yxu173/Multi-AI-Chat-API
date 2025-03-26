@@ -1,10 +1,11 @@
-using Application.Features.AiModels.CreateAiModel;
-using Application.Features.AiModels.EnableAiModel;
-using Application.Features.AiModels.GetAllAiModels;
-using Application.Features.AiModels.GetEnabledAiModels;
-using Application.Features.AiModels.GetUserAiModels;
-using Application.Features.AiModels.GetUserAiModelsEnabled;
-using Application.Features.AiModels.UserEnableAiModel;
+using Application.Features.AiModels.Commands.CreateAiModel;
+using Application.Features.AiModels.Commands.EnableAiModel;
+using Application.Features.AiModels.Commands.UserEnableAiModel;
+using Application.Features.AiModels.Queries.GetAiModelById;
+using Application.Features.AiModels.Queries.GetAllAiModels;
+using Application.Features.AiModels.Queries.GetEnabledAiModels;
+using Application.Features.AiModels.Queries.GetUserAiModels;
+using Application.Features.AiModels.Queries.GetUserAiModelsEnabled;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.AiModels;
@@ -23,13 +24,20 @@ public class AiModelController : BaseController
             request.Name,
             request.ModelType,
             request.AiProviderId,
-            request.InputTokenPricePer1K,
-            request.OutputTokenPricePer1K,
+            request.InputTokenPricePer1M,
+            request.OutputTokenPricePer1M,
             request.ModelCode,
             request.MaxInputTokens,
             request.MaxOutputTokens,
             request.IsEnabled,
-            request.SupportsThinking
+            request.SupportsThinking,
+            request.SupportsVision,
+            request.ContextLength,
+            request.ApiType,
+            request.PluginsSupported,
+            request.StreamingOutputSupported,
+            request.SystemRoleSupported,
+            request.PromptCachingSupported
         );
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
@@ -39,6 +47,14 @@ public class AiModelController : BaseController
     public async Task<IResult> GetAll()
     {
         var query = new GetAllAiModelsQuery();
+        var result = await _mediator.Send(query);
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [HttpGet("{id:guid}")]
+    public async Task<IResult> GetById([FromRoute] Guid id)
+    {
+        var query = new GetAiModelByIdQuery(id);
         var result = await _mediator.Send(query);
         return result.Match(Results.Ok, CustomResults.Problem);
     }

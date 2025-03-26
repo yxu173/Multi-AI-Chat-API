@@ -57,4 +57,10 @@ public class FileAttachmentRepository : IFileAttachmentRepository
             await _context.SaveChangesAsync(cancellationToken);
         }
     }
+
+    public async Task UpdateAsync(FileAttachment fileAttachment, CancellationToken cancellationToken = default)
+    {
+        _context.FileAttachments.Update(fileAttachment);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 }

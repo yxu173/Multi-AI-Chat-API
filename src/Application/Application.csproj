@@ -27,4 +27,9 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Features\AiModels\Commands\" />
+    <Folder Include="Features\AiModels\Queries\" />
+  </ItemGroup>
+
 </Project>

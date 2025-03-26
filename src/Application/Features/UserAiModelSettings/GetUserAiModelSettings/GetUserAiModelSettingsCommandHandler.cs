@@ -29,11 +29,15 @@ public sealed class
             settings.Id,
             settings.UserId,
             settings.SystemMessage,
+            settings.ContextLimit,
             settings.Temperature,
             settings.TopP,
             settings.TopK,
             settings.FrequencyPenalty,
-            settings.PresencePenalty
+            settings.PresencePenalty,
+            settings.MaxTokens,
+            settings.SafetySettings,
+            settings.PromptCaching
         );
     }
 }

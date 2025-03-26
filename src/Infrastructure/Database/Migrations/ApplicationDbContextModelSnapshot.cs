@@ -189,6 +189,13 @@ namespace Infrastructure.Database.Migrations
                     b.Property<Guid>("AiProviderId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ApiType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("ContextLength")
+                        .HasColumnType("integer");
+
                     b.Property<double>("InputTokenPricePer1M")
                         .HasColumnType("double precision");
 
@@ -220,7 +227,22 @@ namespace Infrastructure.Database.Migrations
                     b.Property<double>("OutputTokenPricePer1M")
                         .HasColumnType("double precision");
 
+                    b.Property<bool>("PluginsSupported")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("PromptCachingSupported")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("StreamingOutputSupported")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("SupportsThinking")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("SupportsVision")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("SystemRoleSupported")
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
@@ -585,14 +607,26 @@ namespace Infrastructure.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("ContextLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("DefaultModel")
+                        .HasColumnType("uuid");
+
                     b.Property<double?>("FrequencyPenalty")
                         .HasColumnType("double precision");
 
-                    b.Property<bool>("IsDefault")
-                        .HasColumnType("boolean");
+                    b.Property<int?>("MaxTokens")
+                        .HasColumnType("integer");
 
                     b.Property<double?>("PresencePenalty")
                         .HasColumnType("double precision");
+
+                    b.Property<bool>("PromptCaching")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("SafetySettings")
+                        .HasColumnType("text");
 
                     b.PrimitiveCollection<List<string>>("StopSequences")
                         .IsRequired()
@@ -862,6 +896,12 @@ namespace Infrastructure.Database.Migrations
                                 .HasPrecision(3, 2)
                                 .HasColumnType("double precision")
                                 .HasColumnName("TopP");
+
+                            b1.Property<bool>("_hasModelParameters")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("boolean")
+                                .HasDefaultValue(true)
+                                .HasColumnName("HasModelParameters");
 
                             b1.HasKey("AiAgentId");
 

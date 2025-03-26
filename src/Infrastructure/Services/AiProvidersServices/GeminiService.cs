@@ -27,66 +27,17 @@ public class GeminiService : BaseAiService
 
     protected override List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
     {
-        var messages = new List<(string Role, string Content)>();
-        var systemMessage = GetSystemMessage();
-        if (!string.IsNullOrEmpty(systemMessage))
+        var messages = base.PrepareMessageList(history);
+        foreach (var msg in history.Where(m => m.FileAttachments?.Any() == true))
         {
-            messages.Add(("system", systemMessage));
-        }
-        
-        // Add thinking mode instruction if enabled
-        if (ShouldEnableThinking())
-        {
-            messages.Add(("system",
-                "When solving complex problems, please show your detailed step-by-step thinking process marked as '### Thinking:' before providing the final answer marked as '### Answer:'. Analyze all relevant aspects thoroughly."));
-        }
-
-        string lastRole = null;
-        string lastContent = null;
-
-        foreach (var message in history)
-        {
-            // Process content to handle image and file tags
-            string processedContent = message.Content;
-            
-            // Replace image tags with text descriptions
-            var imgRegex = new System.Text.RegularExpressions.Regex(@"<image\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
-            processedContent = imgRegex.Replace(processedContent, match => {
-                string fileName = match.Groups[2].Value;
-                return $"[Image: {fileName}]";
-            });
-            
-            // Replace file tags with text descriptions
-            var fileRegex = new System.Text.RegularExpressions.Regex(@"<file\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
-            processedContent = fileRegex.Replace(processedContent, match => {
-                string mimeType = match.Groups[1].Value;
-                string fileName = match.Groups[2].Value;
-                return $"[File: {fileName} ({mimeType})]";
-            });
-            
-            string currentRole = message.IsFromAi ? "model" : "user";
-
-            if (currentRole == lastRole && lastContent != null)
+            foreach (var attachment in msg.FileAttachments)
             {
-                lastContent = $"{lastContent}\n\n{processedContent}";
-            }
-            else
-            {
-                if (lastRole != null && lastContent != null)
+                if (attachment.Base64Content != null)
                 {
-                    messages.Add((lastRole, lastContent));
+                    Console.WriteLine("Warning: Gemini does not support direct file uploads; using text reference.");
                 }
-
-                lastRole = currentRole;
-                lastContent = processedContent;
             }
         }
-
-        if (lastRole != null && lastContent != null)
-        {
-            messages.Add((lastRole, lastContent));
-        }
-
         return messages;
     }
 

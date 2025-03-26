@@ -3,7 +3,7 @@ using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using SharedKernel;
 
-namespace Application.Features.AiModels.CreateAiModel;
+namespace Application.Features.AiModels.Commands.CreateAiModel;
 
 public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelCommand, Guid>
 {
@@ -20,13 +20,20 @@ public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelC
             request.Name,
             request.ModelType,
             request.AiProvider,
-            request.InputTokenPricePer1K,
-            request.OutputTokenPricePer1K,
+            request.InputTokenPricePer1M,
+            request.OutputTokenPricePer1M,
             request.ModelCode,
             request.MaxInputTokens,
             request.MaxOutputTokens,
             request.IsEnabled,
-            request.SupportsThinking
+            request.SupportsThinking,
+            request.SupportsVision,
+            request.ContextLength,
+            request.ApiType,
+            request.PluginsSupported,
+            request.StreamingOutputSupported,
+            request.SystemRoleSupported,
+            request.PromptCachingSupported
         );
         await _aiModelRepository.AddAsync(aiModel);
         return Result.Success(aiModel.Id);
