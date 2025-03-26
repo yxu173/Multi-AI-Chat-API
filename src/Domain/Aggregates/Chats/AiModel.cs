@@ -19,6 +19,8 @@ public sealed class AiModel
     public bool IsEnabled { get; private set; } = true;
     public bool SupportsThinking { get; private set; }
 
+    public bool SupportsVision { get; private set; }
+
     public IReadOnlyCollection<UserAiModel> UserAiModels => _userAiModels;
 
 
@@ -28,7 +30,7 @@ public sealed class AiModel
 
     public static AiModel Create(string name, string modelType, Guid aiProviderId, double inputTokenPricePer1M,
         double outputTokenPricePer1M, string modelCode, int? maxInputTokens = null, int? maxOutputTokens = null,
-        bool isEnabled = true, bool supportsThinking = false)
+        bool isEnabled = true, bool supportsThinking = false,bool supportsVision = false)
     {
         var modelTypeEnum = Enum.Parse<ModelType>(modelType);
         return new AiModel
@@ -43,7 +45,8 @@ public sealed class AiModel
             MaxInputTokens = maxInputTokens,
             MaxOutputTokens = maxOutputTokens,
             IsEnabled = isEnabled,
-            SupportsThinking = supportsThinking
+            SupportsThinking = supportsThinking,
+            SupportsVision = supportsVision
         };
     }
 
