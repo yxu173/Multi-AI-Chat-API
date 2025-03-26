@@ -1,13 +1,19 @@
-namespace Web.Api.Contracts.AiAgents;
+using Application.Abstractions.Messaging;
+using Application.Features.AiAgents.CreateAiAgent;
+using Domain.ValueObjects;
 
-public record CreateAiAgentRequest(
+namespace Application.Features.AiAgents.UpdateAiAgent;
+
+public sealed record UpdateAiAgentCommand(
+    Guid UserId,
+    Guid AiAgentId,
     string Name,
     string Description,
     string? SystemInstructions,
     Guid AiModelId,
-    string? IconUrl = null,
-    List<string>? Categories = null,
-    bool AssignCustomModelParameters = false,
+    string? IconUrl,
+    List<string>? Categories,
+    bool? AssignCustomModelParameters,
     double? Temperature = null,
     double? PresencePenalty = null,
     double? FrequencyPenalty = null,
@@ -21,11 +27,4 @@ public record CreateAiAgentRequest(
     string? ContextLimit = null,
     string? SafetySettings = null,
     string? ProfilePictureUrl = null,
-    List<PluginRequest>? Plugins = null
-);
-
-public record PluginRequest(
-    Guid PluginId,
-    int Order,
-    bool IsActive = true
-);
+    List<PluginInfo>? Plugins = null) : ICommand<bool>;

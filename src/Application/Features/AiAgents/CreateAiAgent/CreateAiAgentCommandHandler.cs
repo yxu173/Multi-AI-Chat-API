@@ -31,7 +31,6 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
 
         try
         {
-            // Create ModelParameters value object from direct properties
             ModelParameters? modelParameters = null;
             if (request.AssignCustomModelParameters)
             {
