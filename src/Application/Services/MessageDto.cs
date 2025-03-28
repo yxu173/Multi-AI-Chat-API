@@ -1,9 +1,12 @@
 using Domain.Aggregates.Chats;
+using System.Collections.Generic;
 
 namespace Application.Services;
 
 public record MessageDto(
     string Content, 
     bool IsFromAi, 
-    Guid MessageId,
-    IReadOnlyList<FileAttachment>? FileAttachments = null); 
+    Guid MessageId)
+{
+    public List<FileAttachment>? FileAttachments { get; init; }
+} 

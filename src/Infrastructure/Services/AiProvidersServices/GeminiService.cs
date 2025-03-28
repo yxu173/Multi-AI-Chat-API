@@ -28,16 +28,6 @@ public class GeminiService : BaseAiService
     protected override List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
     {
         var messages = base.PrepareMessageList(history);
-        foreach (var msg in history.Where(m => m.FileAttachments?.Any() == true))
-        {
-            foreach (var attachment in msg.FileAttachments)
-            {
-                if (attachment.Base64Content != null)
-                {
-                    Console.WriteLine("Warning: Gemini does not support direct file uploads; using text reference.");
-                }
-            }
-        }
         return messages;
     }
 

@@ -107,16 +107,31 @@ public class OpenAiService : BaseAiService
 
     protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
-        var messages = PrepareMessageList(history)
-            .Select(m => new { role = m.Role, content = m.Content })
-            .Take(2)
-            .ToList();
+        var messages = PrepareMessageList(history);
+        // Only get a couple messages for testing, we'll handle the full implementation below
         var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
 
-        // Remove parameters that aren't supported by OpenAI models
-        //  CleanupUnsupportedParameters(requestObj);
+        var formattedMessages = new List<object>();
 
-        requestObj["messages"] = messages;
+        foreach (var msg in messages)
+        {
+            // Check if this is a user message that might contain images
+            if (msg.Role == "user" && (msg.Content.Contains("<image:") || msg.Content.Contains("<file:")))
+            {
+                formattedMessages.Add(CreateMultiModalMessage(msg.Role, msg.Content));
+            }
+            else
+            {
+                // Regular text-only message
+                formattedMessages.Add(new
+                {
+                    role = msg.Role,
+                    content = msg.Content
+                });
+            }
+        }
+
+        requestObj["messages"] = formattedMessages;
         return requestObj;
     }
 
@@ -174,32 +189,188 @@ public class OpenAiService : BaseAiService
         var messages = new List<ChatMessage>();
         foreach (var msg in PrepareMessageList(history))
         {
-            string processedContent = msg.Content;
-            bool hasUnsupportedFiles = false;
+            string role = msg.Role;
+            string content = msg.Content;
 
-            if (msg.Item2.Contains("<image") || msg.Item2.Contains("<file"))
+            // Regular text-only message - the SDK will handle multimodal in StreamResponseAsync
+            ChatMessage chatMessage = role switch
             {
-                hasUnsupportedFiles = true;
-                processedContent = Regex.Replace(processedContent, @"<image[^>]+>", "[Image content not supported]");
-                processedContent = Regex.Replace(processedContent, @"<file[^>]+>", "[File content not supported]");
-            }
-
-            if (hasUnsupportedFiles)
-            {
-                Console.WriteLine("Warning: OpenAI does not support direct file/image uploads in this configuration.");
-            }
-
-            ChatMessage chatMessage = msg.Role switch
-            {
-                "system" => new SystemChatMessage(processedContent),
-                "user" => new UserChatMessage(processedContent),
-                "assistant" => new AssistantChatMessage(processedContent),
-                _ => new UserChatMessage(processedContent)
+                "system" => new SystemChatMessage(content),
+                "user" => new UserChatMessage(content),
+                "assistant" => new AssistantChatMessage(content),
+                _ => new UserChatMessage(content)
             };
             messages.Add(chatMessage);
         }
         return messages;
     }
+
+  private object CreateMultiModalMessage(string role, string content)
+{
+    var contentItems = new List<object>();
+    int currentPosition = 0;
+
+    while (currentPosition < content.Length)
+    {
+        int imageStart = content.IndexOf("<image:", currentPosition);
+        int fileStart = content.IndexOf("<file:", currentPosition);
+        int imageBase64Start = content.IndexOf("<image-base64:", currentPosition);
+        
+        int nextTagStart = -1;
+        string tagType = "";
+        
+        if (imageStart >= 0 && (fileStart < 0 || imageStart < fileStart) && (imageBase64Start < 0 || imageStart < imageBase64Start))
+        {
+            nextTagStart = imageStart;
+            tagType = "image";
+        }
+        else if (fileStart >= 0 && (imageBase64Start < 0 || fileStart < imageBase64Start))
+        {
+            nextTagStart = fileStart;
+            tagType = "file";
+        }
+        else if (imageBase64Start >= 0)
+        {
+            nextTagStart = imageBase64Start;
+            tagType = "image-base64";
+        }
+        
+        if (nextTagStart < 0)
+        {
+            if (currentPosition < content.Length)
+            {
+                string textContent = content.Substring(currentPosition).Trim();
+                if (!string.IsNullOrEmpty(textContent))
+                {
+                    contentItems.Add(new { type = "text", text = textContent });
+                }
+            }
+            break;
+        }
+        
+        if (nextTagStart > currentPosition)
+        {
+            string textBefore = content.Substring(currentPosition, nextTagStart - currentPosition).Trim();
+            if (!string.IsNullOrEmpty(textBefore))
+            {
+                contentItems.Add(new { type = "text", text = textBefore });
+            }
+        }
+        
+        int closeTagIndex = content.IndexOf(">", nextTagStart);
+        if (closeTagIndex < 0)
+        {
+            string remainingContent = content.Substring(currentPosition).Trim();
+            if (!string.IsNullOrEmpty(remainingContent))
+            {
+                contentItems.Add(new { type = "text", text = remainingContent });
+            }
+            break;
+        }
+        
+        string tagContent = content.Substring(nextTagStart, closeTagIndex - nextTagStart + 1);
+        
+        if (tagType == "image")
+        {
+            string url = tagContent.Substring(7, tagContent.Length - 8);
+            if (ValidateAndFixUrl(ref url))
+            {
+                contentItems.Add(new 
+                {
+                    type = "image_url",
+                    image_url = new
+                    {
+                        url = url
+                    }
+                });
+            }
+            else 
+            {
+                contentItems.Add(new { type = "text", text = "[Image: URL not supported]" });
+            }
+        }
+        else if (tagType == "image-base64")
+        {
+            string base64Content = tagContent.Substring(13, tagContent.Length - 14);
+            int separatorIndex = base64Content.IndexOf(';');
+            if (separatorIndex > 0)
+            {
+                string mediaType = base64Content.Substring(0, separatorIndex);
+                string base64Data = base64Content.Substring(separatorIndex + 1);
+                
+                // Remove 'base64,' prefix if present
+                if (base64Data.StartsWith("base64,"))
+                {
+                    base64Data = base64Data.Substring(7);
+                }
+                
+                contentItems.Add(new 
+                {
+                    type = "image_url",
+                    image_url = new
+                    {
+                        url = $"data:{mediaType};base64,{base64Data}"
+                    }
+                });
+            }
+            else
+            {
+                contentItems.Add(new { type = "text", text = "[Image data format error]" });
+            }
+        }
+        else if (tagType == "file")
+        {
+            string url = tagContent.Substring(6, tagContent.Length - 7);
+            contentItems.Add(new 
+            {
+                type = "text",
+                text = $"[File attachment: {url}]"
+            });
+        }
+        
+        currentPosition = closeTagIndex + 1;
+    }
+
+    if (contentItems.Count == 0)
+    {
+        contentItems.Add(new { type = "text", text = "" });
+    }
+
+    return new
+    {
+        role = role,
+        content = contentItems
+    };
+}
+
+    private bool ValidateAndFixUrl(ref string url)
+    {
+        // Trim the URL
+        url = url.Trim();
+        
+        // Check if URL is valid
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+        
+        // Try to create a Uri object to validate
+        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri result))
+        {
+            return false;
+        }
+        
+        // Check if the URL uses HTTPS
+        if (result.Scheme != "https")
+        {
+            return false; // OpenAI only accepts HTTPS URLs for security
+        }
+        
+        // Update the URL to the validated one
+        url = result.ToString();
+        return true;
+    }
+
     private ChatCompletionOptions GetChatCompletionOptions()
     {
         var options = new ChatCompletionOptions();

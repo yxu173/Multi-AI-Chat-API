@@ -38,16 +38,6 @@ public sealed class Message : BaseAuditableEntity
             Status = MessageStatus.Completed,
             CreatedAt = DateTime.UtcNow
         };
-
-        // Add file attachments if provided
-        if (fileAttachments != null)
-        {
-            foreach (var attachment in fileAttachments)
-            {
-                message.AddFileAttachment(attachment);
-            }
-        }
-
         return message;
     }
 
@@ -104,5 +94,10 @@ public sealed class Message : BaseAuditableEntity
     {
         if (fileAttachment == null) throw new ArgumentNullException(nameof(fileAttachment));
         _fileAttachments.Add(fileAttachment);
+    }
+
+    public void ClearFileAttachments()
+    {
+        _fileAttachments.Clear();
     }
 }

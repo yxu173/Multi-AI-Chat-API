@@ -14,7 +14,7 @@ builder.Host.UseSerilog((context, loggerConfig) => loggerConfig.ReadFrom.Configu
 
 builder.Services
     .AddPresentation()
-    .AddApplication()
+    .AddApplication(builder.Configuration)
     .AddInfrastructure(builder.Configuration);
 
 builder.Services.AddSignalR(options =>
@@ -44,6 +44,33 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+// Ensure file uploads directory exists with proper permissions
+var uploadsPath = builder.Configuration["FilesStorage:BasePath"] ?? 
+    Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+
+if (!Directory.Exists(uploadsPath))
+{
+    Directory.CreateDirectory(uploadsPath);
+    Console.WriteLine($"Created file uploads directory at: {uploadsPath}");
+}
+else
+{
+    Console.WriteLine($"Using existing file uploads directory at: {uploadsPath}");
+}
+
+// Test write permissions on the uploads directory
+try
+{
+    var testFilePath = Path.Combine(uploadsPath, ".write_test");
+    File.WriteAllText(testFilePath, "Write test");
+    File.Delete(testFilePath);
+    Console.WriteLine("File uploads directory has proper write permissions");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Warning: File uploads directory does not have proper write permissions: {ex.Message}");
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -65,6 +92,7 @@ app.UseSerilogRequestLogging();
 
 app.UseCors("CorsPolicy");
 
+// Serve static files from wwwroot
 app.UseStaticFiles();
 
 app.UseExceptionHandler();

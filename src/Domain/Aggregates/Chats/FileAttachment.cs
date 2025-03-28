@@ -10,7 +10,6 @@ public sealed class FileAttachment : BaseEntity
     public string ContentType { get; private set; }
     public FileType FileType { get; private set; }
     public long FileSize { get; private set; }
-    public string? Base64Content { get; private set; }
 
     private FileAttachment()
     {
@@ -30,27 +29,8 @@ public sealed class FileAttachment : BaseEntity
             FileSize = fileSize
         };
     }
-
-    public static FileAttachment CreateWithBase64(string fileName, string filePath, string contentType,
-        long fileSize, string base64Content, Guid? messageId = null)
-    {
-        var attachment = Create(fileName, filePath, contentType, fileSize, messageId);
-        attachment.Base64Content = base64Content;
-        return attachment;
-    }
-
-    public void LinkToMessage(Guid messageId)
-    {
-        MessageId = messageId;
-    }
-
-    public void SetBase64Content(string base64Content)
-    {
-        if (string.IsNullOrWhiteSpace(base64Content))
-            throw new ArgumentException("Base64 content cannot be empty", nameof(base64Content));
-
-        Base64Content = base64Content;
-    }
+    
+ 
 
     private static FileType DetermineFileType(string contentType)
     {

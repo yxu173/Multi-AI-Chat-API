@@ -12,7 +12,6 @@ using Infrastructure.Repositories;
 using Infrastructure.Services.Caching;
 using Infrastructure.Services.Plugins;
 using Infrastructure.Services.Resilience;
-using Infrastructure.Services.UploadFile;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
@@ -21,7 +20,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using OpenAI;
 using StackExchange.Redis;
 
 namespace Infrastructure;
@@ -54,7 +52,6 @@ public static class DependencyInjection
 
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
-        services.AddScoped<IFileService, FileService>();
 
         // Register OpenAI client services for HTTP
         services.AddHttpClient();

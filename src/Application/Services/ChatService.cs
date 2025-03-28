@@ -17,10 +17,10 @@ public class ChatService
     private readonly MessageStreamer _messageStreamer;
     private readonly ParallelAiProcessingService _parallelAiProcessingService;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
-    private readonly IResilienceService _resilienceService;
     private readonly IMessageRepository _messageRepository;
     private readonly IMediator _mediator;
     private readonly IAiAgentRepository _aiAgentRepository;
+    private readonly IFileAttachmentRepository _fileAttachmentRepository;
 
     public ChatService(
         ChatSessionService chatSessionService,
@@ -30,10 +30,10 @@ public class ChatService
         MessageStreamer messageStreamer,
         ParallelAiProcessingService parallelAiProcessingService,
         IAiModelServiceFactory aiModelServiceFactory,
-        IResilienceService resilienceService,
         IMessageRepository messageRepository,
         IMediator mediator,
-        IAiAgentRepository aiAgentRepository)
+        IAiAgentRepository aiAgentRepository,
+        IFileAttachmentRepository fileAttachmentRepository)
     {
         _chatSessionService = chatSessionService ?? throw new ArgumentNullException(nameof(chatSessionService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
@@ -44,34 +44,23 @@ public class ChatService
                                        throw new ArgumentNullException(nameof(parallelAiProcessingService));
         _aiModelServiceFactory =
             aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
-        _resilienceService = resilienceService ?? throw new ArgumentNullException(nameof(resilienceService));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _aiAgentRepository = aiAgentRepository ?? throw new ArgumentNullException(nameof(aiAgentRepository));
+        _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
     }
 
     public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content,
-        IEnumerable<FileAttachment>? fileAttachments = null,
         CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
         var userMessage =
-            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments,
-                cancellationToken);
+            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, 
+                fileAttachments: null, cancellationToken);
 
         await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
         var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, content, cancellationToken);
-
-        if (fileAttachments != null)
-        {
-            foreach (var attachment in fileAttachments)
-            {
-                if (!string.IsNullOrEmpty(attachment.Base64Content))
-                {
-                    modifiedContent += GetFormattedFileTag(attachment);
-                }
-            }
-        }
+        
 
         var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
         var aiService =
@@ -101,9 +90,31 @@ public class ChatService
         }
 
         var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, newContent, cancellationToken);
+        
+        // Keep the existing file attachments when editing
         var fileAttachments = messageToEdit.FileAttachments?.ToList();
-        await _messageService.UpdateMessageContentAsync(messageToEdit, newContent, cancellationToken);
-
+        
+        // Check for embedded file references in the new content
+        List<Guid> newFileAttachmentIds = ExtractFileAttachmentIds(newContent);
+        if (newFileAttachmentIds.Any())
+        {
+            // Get file attachment objects for the new IDs
+            var newFileAttachments = new List<FileAttachment>();
+            foreach (var fileId in newFileAttachmentIds)
+            {
+                var attachment = await _fileAttachmentRepository.GetByIdAsync(fileId, cancellationToken);
+                if (attachment != null)
+                {
+                    newFileAttachments.Add(attachment);
+                }
+            }
+            
+            fileAttachments = newFileAttachments;
+        }
+        
+        await _messageService.UpdateMessageContentAsync(messageToEdit, newContent, fileAttachments, cancellationToken);
+        await _mediator.Publish(new MessageEditedNotification(chatSessionId, messageId, newContent), cancellationToken);
+        
         var subsequentAiMessages = chatSession.Messages
             .Where(m => m.IsFromAi && m.CreatedAt > messageToEdit.CreatedAt)
             .OrderBy(m => m.CreatedAt)
@@ -131,14 +142,30 @@ public class ChatService
         await _messageStreamer.StreamResponseAsync(chatSession, aiMessage, aiService, messages, cancellationToken);
     }
 
+    private List<Guid> ExtractFileAttachmentIds(string content)
+    {
+        var fileIds = new List<Guid>();
+        
+        var imageMatches = System.Text.RegularExpressions.Regex.Matches(content, @"<(image|file):[^>]*?/api/file/([0-9a-fA-F-]{36})");
+        foreach (System.Text.RegularExpressions.Match match in imageMatches)
+        {
+            if (Guid.TryParse(match.Groups[2].Value, out Guid fileId))
+            {
+                fileIds.Add(fileId);
+            }
+        }
+        
+        return fileIds;
+    }
+
     public async Task SendUserMessageWithParallelProcessingAsync(Guid chatSessionId, Guid userId, string content,
         IEnumerable<Guid> modelIds, IEnumerable<FileAttachment>? fileAttachments = null,
         CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
         var userMessage =
-            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, fileAttachments,
-                cancellationToken);
+            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content,
+                fileAttachments, cancellationToken);
         var aiMessages =
             await CreatePlaceholderAiMessagesAsync(userId, chatSessionId, chatSession, modelIds, cancellationToken);
 
@@ -154,45 +181,50 @@ public class ChatService
         await ProcessModelResponsesAsync(chatSessionId, aiMessages, responses, cancellationToken);
     }
 
-    private List<MessageDto> PrepareMessageHistoryForAi(ChatSession chatSession, Message aiMessage, Message userMessage, string content, AiAgent aiAgent = null)
+    private List<MessageDto> PrepareMessageHistoryForAi(ChatSession chatSession, Message aiMessage, 
+        Message userMessage, string content, AiAgent aiAgent = null)
     {
+        const int maxTokens = 100000;
+        int currentTokens = 0;
         var messages = new List<MessageDto>();
 
         if (aiAgent != null && !string.IsNullOrEmpty(aiAgent.SystemInstructions))
         {
-            messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid()));
+            var systemMsg = new MessageDto(aiAgent.SystemInstructions, true, Guid.NewGuid());
+            messages.Add(systemMsg);
+            currentTokens += EstimateTokens(systemMsg.Content);
         }
 
-        messages.AddRange(chatSession.Messages
+        var historyMessages = chatSession.Messages
             .Where(m => m.Id != aiMessage.Id && m.Id != userMessage.Id)
-            .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id, m.FileAttachments)));
+            .OrderByDescending(m => m.CreatedAt)
+            .ToList();
 
-        string latestMessageContent = content;
-        messages.Add(new MessageDto(latestMessageContent, false, userMessage.Id, userMessage.FileAttachments));
+        foreach (var msg in historyMessages)
+        {
+            var msgTokens = EstimateTokens(msg.Content) + (msg.FileAttachments?.Sum(f => EstimateFileTokens(f)) ?? 0);
+            
+            if (currentTokens + msgTokens > maxTokens) break;
+            
+            if (messages.Count > 0)
+            {
+                messages.Insert(1, new MessageDto(msg.Content, msg.IsFromAi, msg.Id));
+            }
+            else
+            {
+                messages.Add(new MessageDto(msg.Content, msg.IsFromAi, msg.Id));
+            }
+            
+            currentTokens += msgTokens;
+        }
+
+        // Add current message
+        messages.Add(new MessageDto(content, false, userMessage.Id));
         return messages;
     }
 
-    private string GetFormattedFileTag(FileAttachment attachment)
-    {
-        if (attachment.Base64Content == null)
-            return string.Empty;
-
-        if (attachment.FileType == FileType.Image)
-        {
-            return
-                $"\n<image type=\"{attachment.ContentType}\" name=\"{attachment.FileName}\" base64=\"{attachment.Base64Content}\">\n";
-        }
-        else if (attachment.FileType == FileType.PDF)
-        {
-            return
-                $"\n<file type=\"{attachment.ContentType}\" name=\"{attachment.FileName}\" base64=\"{attachment.Base64Content}\">\n";
-        }
-        else
-        {
-            return $"\n[File: {attachment.FileName} ({attachment.FileType})]";
-        }
-    }
+    private int EstimateTokens(string text) => (int)(text.Length * 0.75);
+    private int EstimateFileTokens(FileAttachment file) => (int)(file.FileSize * 0.75);
 
     private async Task<Dictionary<Guid, Message>> CreatePlaceholderAiMessagesAsync(Guid userId, Guid chatSessionId,
         ChatSession chatSession, IEnumerable<Guid> modelIds, CancellationToken cancellationToken = default)
@@ -215,7 +247,7 @@ public class ChatService
 
         if (aiAgent != null && !string.IsNullOrEmpty(aiAgent.SystemInstructions))
         {
-            messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid(), null));
+            messages.Add(new MessageDto($"system: {aiAgent.SystemInstructions}", true, Guid.NewGuid()));
         }
 
         var aiMessageIds = aiMessages.Values.Select(am => am.Id).ToHashSet();
@@ -223,11 +255,9 @@ public class ChatService
         messages.AddRange(chatSession.Messages
             .Where(m => m.Id != userMessage.Id && !aiMessageIds.Contains(m.Id))
             .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id,
-                m.FileAttachments?.ToList() as IReadOnlyList<FileAttachment>)));
+            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id)));
 
-        messages.Add(new MessageDto(userMessage.Content, userMessage.IsFromAi, userMessage.Id,
-            userMessage.FileAttachments?.ToList() as IReadOnlyList<FileAttachment>));
+        messages.Add(new MessageDto(userMessage.Content, userMessage.IsFromAi, userMessage.Id));
 
         return messages;
     }

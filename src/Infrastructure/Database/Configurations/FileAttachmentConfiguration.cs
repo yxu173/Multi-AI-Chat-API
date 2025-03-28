@@ -21,7 +21,7 @@ public class FileAttachmentConfiguration : IEntityTypeConfiguration<FileAttachme
             .HasMaxLength(500);
 
         builder.Property(fa => fa.MessageId)
-            .IsRequired();
+            .IsRequired(false);
             
         builder.Property(fa => fa.ContentType)
             .IsRequired()
@@ -33,8 +33,5 @@ public class FileAttachmentConfiguration : IEntityTypeConfiguration<FileAttachme
             
         builder.Property(fa => fa.FileSize)
             .IsRequired();
-            
-        builder.Property(fa => fa.Base64Content)
-            .HasColumnType("text"); // Use text type for large string content
     }
 }
