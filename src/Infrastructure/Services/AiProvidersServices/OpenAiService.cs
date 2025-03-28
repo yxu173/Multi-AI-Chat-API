@@ -8,32 +8,21 @@ using Domain.Aggregates.Chats;
 using Domain.Aggregates.Users;
 using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
-using OpenAI;
-using OpenAI.Chat;
 using Tiktoken;
 
 public class OpenAiService : BaseAiService
 {
     private const string BaseUrl = "https://api.openai.com/v1/";
-    private readonly ChatClient _chatClient;
-    private int _inputTokens;
-    private int _outputTokens;
-
-    // Properties to expose token counts
-    public int InputTokens => _inputTokens;
-    public int OutputTokens => _outputTokens;
-    public int TotalTokens => _inputTokens + _outputTokens;
+    private readonly IResilienceService _resilienceService;
+    private static readonly Regex ImageBase64Regex = new Regex(@"<image-base64:(.*?);base64,(.*?)>", RegexOptions.Compiled);
 
     public OpenAiService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
+        IResilienceService resilienceService,
         UserAiModelSettings? modelSettings = null, AiModel? aiModel = null,
         ModelParameters? customModelParameters = null)
         : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
     {
-        _inputTokens = 0;
-        _outputTokens = 0;
-
-        // Initialize the official OpenAI client
-        _chatClient = new ChatClient(modelCode, apiKey);
+        _resilienceService = resilienceService;
     }
 
     protected override void ConfigureHttpClient()
@@ -51,36 +40,52 @@ public class OpenAiService : BaseAiService
         {
             messages.Add(("system", systemMessage));
         }
-
+        
         if (ShouldEnableThinking())
         {
             var reasoningEffort = GetReasoningEffort();
             var thinkingPrompt = GetThinkingPromptForEffort(reasoningEffort);
             messages.Add(("system", thinkingPrompt));
         }
-
+        
         foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
         {
-            messages.Add((msg.IsFromAi ? "assistant" : "user", msg.Content.Trim()));
+            if (msg.Content.Contains("<image-base64:"))
+            {
+                messages.Add(ProcessMultimodalMessage(msg));
+            }
+            else
+            {
+                messages.Add((msg.IsFromAi ? "assistant" : "user", msg.Content.Trim()));
+            }
+        }
+        
+        return messages;
+    }
+
+    private (string Role, string Content) ProcessMultimodalMessage(MessageDto message)
+    {
+        if (!message.Content.Contains("<image-base64:"))
+        {
+            return (message.IsFromAi ? "assistant" : "user", message.Content.Trim());
         }
 
-        return messages;
+         return (message.IsFromAi ? "assistant" : "user", message.Content.Trim());
     }
 
     private string GetThinkingPromptForEffort(string reasoningEffort)
     {
         return reasoningEffort switch
         {
-            "low" =>
-                "For simpler questions, provide a brief explanation under '### Thinking:' then give your answer under '### Answer:'. Keep your thinking concise.",
-
+            "low" => "For simpler questions, provide a brief explanation under '### Thinking:' then give your answer under '### Answer:'. Keep your thinking concise.",
+            
             "high" => "When solving problems, use thorough step-by-step reasoning:\n" +
                       "1. First, under '### Thinking:', carefully explore the problem from multiple perspectives\n" +
                       "2. Analyze all relevant factors and potential approaches\n" +
                       "3. Consider edge cases and alternative solutions\n" +
                       "4. Then provide your comprehensive final answer under '### Answer:'\n" +
                       "Make your thinking process explicit, detailed, and logically structured.",
-
+                      
             _ => "When solving problems, use step-by-step reasoning:\n" +
                  "1. First, walk through your thought process under '### Thinking:'\n" +
                  "2. Then provide your final answer under '### Answer:'\n" +
@@ -90,7 +95,6 @@ public class OpenAiService : BaseAiService
 
     private string GetReasoningEffort()
     {
-        // Get reasoning effort from model parameters
         if (CustomModelParameters?.ReasoningEffort.HasValue == true)
         {
             return CustomModelParameters.ReasoningEffort.Value switch
@@ -100,437 +104,207 @@ public class OpenAiService : BaseAiService
                 _ => "medium"
             };
         }
-
-        // Default to medium
+        
+        
         return "medium";
     }
 
     protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
-        var messages = PrepareMessageList(history);
-        // Only get a couple messages for testing, we'll handle the full implementation below
+        var messagesList = PrepareMessageList(history);
         var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
-
-        var formattedMessages = new List<object>();
-
-        foreach (var msg in messages)
+        
+        var parametersToRemove = new List<string>();
+        
+        if (ShouldEnableThinking())
         {
-            // Check if this is a user message that might contain images
-            if (msg.Role == "user" && (msg.Content.Contains("<image:") || msg.Content.Contains("<file:")))
+            parametersToRemove.AddRange(new[] {
+                "temperature", "top_p", "top_k", "frequency_penalty", 
+                "presence_penalty", "reasoning_effort", "seed", "response_format"
+            });
+            
+        }
+        
+        parametersToRemove.Add("top_k");
+        
+        foreach (var param in parametersToRemove)
+        {
+            if (requestObj.ContainsKey(param))
             {
-                formattedMessages.Add(CreateMultiModalMessage(msg.Role, msg.Content));
+                requestObj.Remove(param);
+                Console.WriteLine($"Preemptively removed {param} parameter for model {ModelCode}");
+            }
+        }
+        
+        if (requestObj.ContainsKey("max_tokens"))
+        {
+            var maxTokensValue = requestObj["max_tokens"];
+            requestObj.Remove("max_tokens");
+            requestObj["max_completion_tokens"] = maxTokensValue;
+        }
+        
+        var processedMessages = new List<object>();
+        foreach (var (role, content) in messagesList)
+        {
+            if (content.Contains("<image-base64:"))
+            {
+                var contentItems = CreateMultimodalContent(content);
+                processedMessages.Add(new { role, content = contentItems });
             }
             else
             {
-                // Regular text-only message
-                formattedMessages.Add(new
-                {
-                    role = msg.Role,
-                    content = msg.Content
-                });
+                // Standard text message
+                processedMessages.Add(new { role, content });
             }
         }
-
-        requestObj["messages"] = formattedMessages;
+        
+        requestObj["messages"] = processedMessages;
         return requestObj;
+    }
+    
+    private object CreateMultimodalContent(string messageContent)
+    {
+        var contentItems = new List<object>();
+        var remainingText = messageContent;
+        
+        var matches = ImageBase64Regex.Matches(messageContent);
+        
+        int currentPosition = 0;
+        foreach (Match match in matches)
+        {
+            string textBefore = messageContent.Substring(currentPosition, match.Index - currentPosition);
+            if (!string.IsNullOrWhiteSpace(textBefore))
+            {
+                contentItems.Add(new { type = "text", text = textBefore.Trim() });
+            }
+            
+            string mimeType = match.Groups[1].Value;
+            string base64Data = match.Groups[2].Value;
+            
+            contentItems.Add(new
+            {
+                type = "image_url",
+                image_url = new
+                {
+                    url = $"data:{mimeType};base64,{base64Data}"
+                }
+            });
+            
+            currentPosition = match.Index + match.Length;
+        }
+        
+        if (currentPosition < messageContent.Length)
+        {
+            string textAfter = messageContent.Substring(currentPosition);
+            if (!string.IsNullOrWhiteSpace(textAfter))
+            {
+                contentItems.Add(new { type = "text", text = textAfter.Trim() });
+            }
+        }
+        
+        return contentItems;
+    }
+
+    protected override void AddProviderSpecificParameters(Dictionary<string, object> requestObj)
+    {
+        if (ShouldEnableThinking())
+        {
+            string reasoningEffort = GetReasoningEffort();
+            
+            if (ModelCode.Contains("gpt-4o")) 
+            {
+                requestObj["reasoning_effort"] = reasoningEffort;
+                
+                requestObj["response_format"] = new { type = "text" };
+                
+                if (!requestObj.ContainsKey("seed"))
+                {
+                    requestObj["seed"] = 42;
+                }
+            }
+        }
+        
+        // Check if model supports vision capabilities
+        if (ModelCode.Contains("gpt-4") && ModelCode.Contains("vision") || ModelCode.Contains("gpt-4o"))
+        {
+            // Vision models generally need JSON response for proper multimodal handling
+            if (!requestObj.ContainsKey("response_format"))
+            {
+                requestObj["response_format"] = new { type = "text" };
+            }
+        }
     }
 
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var messages = ConvertMessagesToSdkFormat(history);
-        var options = GetChatCompletionOptions();
+        var requestBody = CreateRequestBody(history);
 
+        var tokenizer = Tiktoken.ModelToEncoder.For(ModelCode);
 
-        _inputTokens = CalculateInputTokens(messages);
+        int inputTokens = 0;
+        foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
+        {
+            inputTokens += tokenizer.Encode(msg.Content).Count;
+        }
 
+        var request = CreateRequest(requestBody);
+
+        HttpResponseMessage response;
+
+        try
+        {
+            response = await _resilienceService.CreatePluginResiliencePipeline<HttpResponseMessage>()
+                .ExecuteAsync(async ct => await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct),
+                    cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error sending request to OpenAI: {ex.Message}");
+            throw;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            await HandleApiErrorAsync(response, "OpenAI");
+            yield break;
+        }
 
         var fullResponse = new StringBuilder();
-        _outputTokens = 0;
-        var inThinkingSection = false;
+        var outputTokens = 0;
 
-
-        var streamingResult = _chatClient.CompleteChatStreamingAsync(messages, options);
-
-        await foreach (var update in streamingResult.WithCancellation(cancellationToken))
+        await foreach (var json in ReadStreamAsync(response, cancellationToken))
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
 
+            string? text = null;
 
-            if (update.ContentUpdate.Count > 0)
-            {
-                foreach (var contentPart in update.ContentUpdate)
-                {
-                    
-                    string text = contentPart?.Text ?? string.Empty;
-                    if (string.IsNullOrEmpty(text)) continue;
-
-                   
-                    fullResponse.Append(text);
-
-                    
-                    var chunkTokens = CountTokens(text);
-                    _outputTokens += chunkTokens;
-
-                    yield return new StreamResponse(
-                        text,
-                        _inputTokens,
-                        _outputTokens,
-                        inThinkingSection
-                    );
-                }
-            }
-        }
-    }
-
-    private List<ChatMessage> ConvertMessagesToSdkFormat(IEnumerable<MessageDto> history)
-    {
-        var messages = new List<ChatMessage>();
-        foreach (var msg in PrepareMessageList(history))
-        {
-            string role = msg.Role;
-            string content = msg.Content;
-
-            // Regular text-only message - the SDK will handle multimodal in StreamResponseAsync
-            ChatMessage chatMessage = role switch
-            {
-                "system" => new SystemChatMessage(content),
-                "user" => new UserChatMessage(content),
-                "assistant" => new AssistantChatMessage(content),
-                _ => new UserChatMessage(content)
-            };
-            messages.Add(chatMessage);
-        }
-        return messages;
-    }
-
-  private object CreateMultiModalMessage(string role, string content)
-{
-    var contentItems = new List<object>();
-    int currentPosition = 0;
-
-    while (currentPosition < content.Length)
-    {
-        int imageStart = content.IndexOf("<image:", currentPosition);
-        int fileStart = content.IndexOf("<file:", currentPosition);
-        int imageBase64Start = content.IndexOf("<image-base64:", currentPosition);
-        
-        int nextTagStart = -1;
-        string tagType = "";
-        
-        if (imageStart >= 0 && (fileStart < 0 || imageStart < fileStart) && (imageBase64Start < 0 || imageStart < imageBase64Start))
-        {
-            nextTagStart = imageStart;
-            tagType = "image";
-        }
-        else if (fileStart >= 0 && (imageBase64Start < 0 || fileStart < imageBase64Start))
-        {
-            nextTagStart = fileStart;
-            tagType = "file";
-        }
-        else if (imageBase64Start >= 0)
-        {
-            nextTagStart = imageBase64Start;
-            tagType = "image-base64";
-        }
-        
-        if (nextTagStart < 0)
-        {
-            if (currentPosition < content.Length)
-            {
-                string textContent = content.Substring(currentPosition).Trim();
-                if (!string.IsNullOrEmpty(textContent))
-                {
-                    contentItems.Add(new { type = "text", text = textContent });
-                }
-            }
-            break;
-        }
-        
-        if (nextTagStart > currentPosition)
-        {
-            string textBefore = content.Substring(currentPosition, nextTagStart - currentPosition).Trim();
-            if (!string.IsNullOrEmpty(textBefore))
-            {
-                contentItems.Add(new { type = "text", text = textBefore });
-            }
-        }
-        
-        int closeTagIndex = content.IndexOf(">", nextTagStart);
-        if (closeTagIndex < 0)
-        {
-            string remainingContent = content.Substring(currentPosition).Trim();
-            if (!string.IsNullOrEmpty(remainingContent))
-            {
-                contentItems.Add(new { type = "text", text = remainingContent });
-            }
-            break;
-        }
-        
-        string tagContent = content.Substring(nextTagStart, closeTagIndex - nextTagStart + 1);
-        
-        if (tagType == "image")
-        {
-            string url = tagContent.Substring(7, tagContent.Length - 8);
-            if (ValidateAndFixUrl(ref url))
-            {
-                contentItems.Add(new 
-                {
-                    type = "image_url",
-                    image_url = new
-                    {
-                        url = url
-                    }
-                });
-            }
-            else 
-            {
-                contentItems.Add(new { type = "text", text = "[Image: URL not supported]" });
-            }
-        }
-        else if (tagType == "image-base64")
-        {
-            string base64Content = tagContent.Substring(13, tagContent.Length - 14);
-            int separatorIndex = base64Content.IndexOf(';');
-            if (separatorIndex > 0)
-            {
-                string mediaType = base64Content.Substring(0, separatorIndex);
-                string base64Data = base64Content.Substring(separatorIndex + 1);
-                
-                // Remove 'base64,' prefix if present
-                if (base64Data.StartsWith("base64,"))
-                {
-                    base64Data = base64Data.Substring(7);
-                }
-                
-                contentItems.Add(new 
-                {
-                    type = "image_url",
-                    image_url = new
-                    {
-                        url = $"data:{mediaType};base64,{base64Data}"
-                    }
-                });
-            }
-            else
-            {
-                contentItems.Add(new { type = "text", text = "[Image data format error]" });
-            }
-        }
-        else if (tagType == "file")
-        {
-            string url = tagContent.Substring(6, tagContent.Length - 7);
-            contentItems.Add(new 
-            {
-                type = "text",
-                text = $"[File attachment: {url}]"
-            });
-        }
-        
-        currentPosition = closeTagIndex + 1;
-    }
-
-    if (contentItems.Count == 0)
-    {
-        contentItems.Add(new { type = "text", text = "" });
-    }
-
-    return new
-    {
-        role = role,
-        content = contentItems
-    };
-}
-
-    private bool ValidateAndFixUrl(ref string url)
-    {
-        // Trim the URL
-        url = url.Trim();
-        
-        // Check if URL is valid
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return false;
-        }
-        
-        // Try to create a Uri object to validate
-        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri result))
-        {
-            return false;
-        }
-        
-        // Check if the URL uses HTTPS
-        if (result.Scheme != "https")
-        {
-            return false; // OpenAI only accepts HTTPS URLs for security
-        }
-        
-        // Update the URL to the validated one
-        url = result.ToString();
-        return true;
-    }
-
-    private ChatCompletionOptions GetChatCompletionOptions()
-    {
-        var options = new ChatCompletionOptions();
-        var parameters = GetModelParameters();
-
-        
-        // Map standard parameters
-        MapParameterIfExists<double, float>("temperature", parameters, value => options.Temperature = value);
-        MapParameterIfExists<double, float>("top_p", parameters, value => options.TopP = value);
-        MapParameterIfExists<double, float>("frequency_penalty", parameters, value => options.FrequencyPenalty = value);
-        MapParameterIfExists<double, float>("presence_penalty", parameters, value => options.PresencePenalty = value);
-
-        // Handle max tokens
-        if (parameters.TryGetValue("max_tokens", out var mt) && mt is int maxTokens)
-        {
             try
             {
-                var property = typeof(ChatCompletionOptions).GetProperty("MaxTokens") ??
-                               typeof(ChatCompletionOptions).GetProperty("MaxCompletionTokens");
+                var chunk = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+                if (chunk == null) continue;
 
-                property?.SetValue(options, maxTokens);
-            }
-            catch
-            {
-                Console.WriteLine("Warning: Could not set max tokens parameter");
-            }
-        }
-
-      
-        if (ShouldEnableThinking())
-        {
-            options.Temperature = null; 
-            options.TopP = null; 
-            if (ModelCode.Contains("o3"))
-            {
-                var reasoningEffort = GetReasoningEffort();
-
-                try
+                if (chunk.TryGetValue("choices", out var choicesObj) && choicesObj is JsonElement choices &&
+                    choices[0].TryGetProperty("delta", out var delta))
                 {
-                    var reasoningOptionsType =
-                        typeof(ChatCompletionOptions).Assembly.GetType("OpenAI.Chat.ResponseReasoningOptions");
-                    var reasoningEffortLevelType =
-                        typeof(ChatCompletionOptions).Assembly.GetType("OpenAI.Chat.ResponseReasoningEffortLevel");
-
-                    if (reasoningOptionsType != null && reasoningEffortLevelType != null)
+                    if (delta.TryGetProperty("content", out var content))
                     {
-                       
-                        var reasoningOptions = Activator.CreateInstance(reasoningOptionsType);
-
-                        
-                        var effortLevelProperty = reasoningOptionsType.GetProperty("ReasoningEffortLevel");
-                        var effortLevelValue = Enum.Parse(reasoningEffortLevelType, reasoningEffort switch
-                        {
-                            "low" => "Low",
-                            "high" => "High",
-                            _ => "Medium"
-                        });
-
-                        effortLevelProperty?.SetValue(reasoningOptions, effortLevelValue);
-
-                        // Set the reasoning options on the chat options
-                        var reasoningProperty = typeof(ChatCompletionOptions).GetProperty("ReasoningOptions");
-                        reasoningProperty?.SetValue(options, reasoningOptions);
+                        text = content.GetString();
                     }
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Warning: Could not set reasoning options: {ex.Message}");
-                }
             }
-        }
-
-        return options;
-    }
-
-    private void MapParameterIfExists<TSource, TDest>(string paramName, Dictionary<string, object> parameters,
-        Action<TDest> setter)
-        where TSource : IConvertible
-    {
-        if (parameters.TryGetValue(paramName, out var value) && value is TSource sourceValue)
-        {
-            setter((TDest)Convert.ChangeType(sourceValue, typeof(TDest)));
-        }
-    }
-
-    private int CalculateInputTokens(List<ChatMessage> messages)
-    {
-        try
-        {
-            var encoder = ModelToEncoder.For(ModelCode);
-            int totalTokens = 0;
-
-            foreach (var message in messages)
+            catch (JsonException ex)
             {
-                string content = "";
-                if (message is SystemChatMessage systemMsg)
-                {
-                    content = systemMsg.Content.ToString();
-                }
-                else if (message is UserChatMessage userMsg)
-                {
-                    content = userMsg.Content.ToString();
-                }
-                else if (message is AssistantChatMessage assistantMsg)
-                {
-                    content = assistantMsg.Content.ToString();
-                }
-
-                // Count tokens for the content
-                totalTokens += encoder.CountTokens(content);
-
-                // Add role tokens (4 for user/assistant, 5 for system)
-                totalTokens += message is SystemChatMessage ? 5 : 4;
+                Console.WriteLine($"Error processing OpenAI response chunk: {ex.Message}");
             }
 
-            // Add conversation format tokens (3 for the entire conversation)
-            totalTokens += 3;
-
-            return totalTokens;
-        }
-        catch
-        {
-            // Fallback to a more conservative approximation
-            return messages.Sum(m =>
+            if (!string.IsNullOrEmpty(text))
             {
-                string content = "";
-                if (m is SystemChatMessage systemMsg)
-                {
-                    content = systemMsg.Content.ToString();
-                }
-                else if (m is UserChatMessage userMsg)
-                {
-                    content = userMsg.Content.ToString();
-                }
-                else if (m is AssistantChatMessage assistantMsg)
-                {
-                    content = assistantMsg.Content.ToString();
-                }
-
-                // More conservative approximation: 1 token per word + role tokens
-                var wordCount = content.Split(new[] { ' ', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
-                return wordCount + (m is SystemChatMessage ? 5 : 4);
-            }) + 3; // Add conversation format tokens
-        }
-    }
-
-    private int CountTokens(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return 0;
-
-        try
-        {
-            var encoder = ModelToEncoder.For(ModelCode);
-            return encoder.CountTokens(text);
-        }
-        catch
-        {
-            // More conservative fallback: 1 token per word
-            return text.Split(new[] { ' ', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
+                fullResponse.Append(text);
+                outputTokens += tokenizer.Encode(text).Count;
+                yield return new StreamResponse(text, inputTokens, outputTokens);
+            }
         }
     }
 }

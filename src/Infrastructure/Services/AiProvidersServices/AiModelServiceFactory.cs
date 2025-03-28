@@ -45,7 +45,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => new OpenAiService(httpClientFactory, apiKey, aiModel.ModelCode,
+            ModelType.OpenAi => new OpenAiService(httpClientFactory, apiKey, aiModel.ModelCode, _resilienceService,
                 userSettings, aiModel, customModelParameters),
             ModelType.Anthropic => new AnthropicService(httpClientFactory, apiKey, aiModel.ModelCode, userSettings,
                 aiModel, customModelParameters),

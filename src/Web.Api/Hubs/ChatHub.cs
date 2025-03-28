@@ -94,7 +94,7 @@ public class ChatHub : Hub
                     var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId);
                     if (fileAttachment == null) continue;
 
-                    if (fileAttachment.FileSize > 3 * 1024 * 1024)
+                    if (fileAttachment.FileSize > 10 * 1024 * 1024)
                     {
                         processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit]";
                         continue;
@@ -171,7 +171,7 @@ public class ChatHub : Hub
                     var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId);
                     if (fileAttachment == null) continue;
 
-                    if (fileAttachment.FileSize > 3 * 1024 * 1024) 
+                    if (fileAttachment.FileSize > 10 * 1024 * 1024) // 10 MB to match configured limit
                     {
                         processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit]";
                         continue;

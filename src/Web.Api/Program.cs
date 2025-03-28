@@ -21,6 +21,7 @@ builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
     options.HandshakeTimeout = TimeSpan.FromSeconds(15);
+    options.MaximumReceiveMessageSize = 10 * 1024 * 1024; // 10 MB
 });
 
 builder.Services.AddCors(options =>
