@@ -15,6 +15,7 @@ public class OpenAiService : BaseAiService
     private const string BaseUrl = "https://api.openai.com/v1/";
     private readonly IResilienceService _resilienceService;
     private static readonly Regex ImageBase64Regex = new Regex(@"<image-base64:(.*?);base64,(.*?)>", RegexOptions.Compiled);
+    private static readonly Regex FileBase64Regex = new Regex(@"<file-base64:(.*?):(.*?);base64,(.*?)>", RegexOptions.Compiled);
 
     public OpenAiService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
         IResilienceService resilienceService,
@@ -50,7 +51,7 @@ public class OpenAiService : BaseAiService
         
         foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
         {
-            if (msg.Content.Contains("<image-base64:"))
+            if (msg.Content.Contains("<image-base64:") || msg.Content.Contains("<file-base64:"))
             {
                 messages.Add(ProcessMultimodalMessage(msg));
             }
@@ -65,7 +66,7 @@ public class OpenAiService : BaseAiService
 
     private (string Role, string Content) ProcessMultimodalMessage(MessageDto message)
     {
-        if (!message.Content.Contains("<image-base64:"))
+        if (!message.Content.Contains("<image-base64:") && !message.Content.Contains("<file-base64:"))
         {
             return (message.IsFromAi ? "assistant" : "user", message.Content.Trim());
         }
@@ -146,7 +147,7 @@ public class OpenAiService : BaseAiService
         var processedMessages = new List<object>();
         foreach (var (role, content) in messagesList)
         {
-            if (content.Contains("<image-base64:"))
+            if (content.Contains("<image-base64:") || content.Contains("<file-base64:"))
             {
                 var contentItems = CreateMultimodalContent(content);
                 processedMessages.Add(new { role, content = contentItems });
@@ -167,10 +168,11 @@ public class OpenAiService : BaseAiService
         var contentItems = new List<object>();
         var remainingText = messageContent;
         
-        var matches = ImageBase64Regex.Matches(messageContent);
-        
         int currentPosition = 0;
-        foreach (Match match in matches)
+        
+        // Process image tags
+        var imageMatches = ImageBase64Regex.Matches(messageContent);
+        foreach (Match match in imageMatches)
         {
             string textBefore = messageContent.Substring(currentPosition, match.Index - currentPosition);
             if (!string.IsNullOrWhiteSpace(textBefore))
@@ -191,6 +193,38 @@ public class OpenAiService : BaseAiService
             });
             
             currentPosition = match.Index + match.Length;
+        }
+        
+        // Process file tags
+        var fileMatches = FileBase64Regex.Matches(messageContent);
+        foreach (Match match in fileMatches)
+        {
+            // Only process file tags that weren't already included in the currentPosition
+            if (match.Index >= currentPosition)
+            {
+                string textBefore = messageContent.Substring(currentPosition, match.Index - currentPosition);
+                if (!string.IsNullOrWhiteSpace(textBefore))
+                {
+                    contentItems.Add(new { type = "text", text = textBefore.Trim() });
+                }
+                
+                string filename = match.Groups[1].Value;
+                string fileType = match.Groups[2].Value;
+                string base64Data = match.Groups[3].Value;
+                
+                contentItems.Add(new
+                {
+                    type = "file",
+                    file = new
+                    {
+                        filename = filename,
+                        // OpenAI requires the full data URL format including the 'data:' prefix
+                        file_data = $"data:{fileType};base64,{base64Data}"
+                    }
+                });
+                
+                currentPosition = match.Index + match.Length;
+            }
         }
         
         if (currentPosition < messageContent.Length)
@@ -248,15 +282,19 @@ public class OpenAiService : BaseAiService
             inputTokens += tokenizer.Encode(msg.Content).Count;
         }
 
-        var request = CreateRequest(requestBody);
-
         HttpResponseMessage response;
 
         try
         {
+            // Instead of creating the request once and reusing it, create a request factory
+            // that generates a new request for each attempt
             response = await _resilienceService.CreatePluginResiliencePipeline<HttpResponseMessage>()
-                .ExecuteAsync(async ct => await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct),
-                    cancellationToken);
+                .ExecuteAsync(async ct => 
+                {
+                    // Create a new request for each attempt
+                    var newRequest = CreateRequest(requestBody);
+                    return await HttpClient.SendAsync(newRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                }, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -306,5 +344,18 @@ public class OpenAiService : BaseAiService
                 yield return new StreamResponse(text, inputTokens, outputTokens);
             }
         }
+    }
+    
+    // Helper method to create a request
+    private HttpRequestMessage CreateRequest(object requestBody)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath())
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json")
+        };
+        return request;
     }
 }

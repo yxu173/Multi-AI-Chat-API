@@ -94,37 +94,77 @@ public class ChatHub : Hub
                     var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId);
                     if (fileAttachment == null) continue;
 
+                    // Check file exists
+                    if (!File.Exists(fileAttachment.FilePath))
+                    {
+                        processedContent += $"\n[Attachment {fileAttachment.FileName} not found]";
+                        continue;
+                    }
+
                     if (fileAttachment.FileSize > 10 * 1024 * 1024)
                     {
                         processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit]";
                         continue;
                     }
 
-                    if (fileAttachment.FileType == FileType.Image)
+                    try
                     {
                         var fileBytes = await File.ReadAllBytesAsync(fileAttachment.FilePath);
-                        string normalizedContentType = NormalizeImageContentType(fileAttachment.ContentType);
-
-                        if (string.IsNullOrEmpty(normalizedContentType))
+                        
+                        // Set a reasonable size limit for files sent to AI (e.g., 5MB)
+                        const int maxAiFileSize = 5 * 1024 * 1024;
+                        if (fileBytes.Length > maxAiFileSize)
                         {
-                            normalizedContentType = DetectImageFormat(fileBytes);
-                        }
-
-                        if (string.IsNullOrEmpty(normalizedContentType))
-                        {
-                            processedContent += $"\n[Image attachment: {fileAttachment.FileName} (unsupported format)]";
+                            processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: too large for AI processing]";
                             continue;
                         }
+                        
+                        if (fileAttachment.FileType == FileType.Image)
+                        {
+                            string normalizedContentType = NormalizeImageContentType(fileAttachment.ContentType);
 
-                        byte[] optimizedImageBytes = OptimizeImageForAI(fileBytes, normalizedContentType);
-                        var base64Content = Convert.ToBase64String(optimizedImageBytes, Base64FormattingOptions.None);
+                            if (string.IsNullOrEmpty(normalizedContentType))
+                            {
+                                normalizedContentType = DetectImageFormat(fileBytes);
+                            }
 
-                        string imageTag = $"<image-base64:{normalizedContentType};base64,{base64Content}>";
-                        processedContent += $"\n\n{imageTag}\n\n";
+                            if (string.IsNullOrEmpty(normalizedContentType))
+                            {
+                                processedContent += $"\n[Image attachment: {fileAttachment.FileName} (unsupported format)]";
+                                continue;
+                            }
+
+                            byte[] optimizedImageBytes = OptimizeImageForAI(fileBytes, normalizedContentType);
+                            var base64Content = Convert.ToBase64String(optimizedImageBytes, Base64FormattingOptions.None);
+
+                            string imageTag = $"<image-base64:{normalizedContentType};base64,{base64Content}>";
+                            processedContent += $"\n\n{imageTag}\n\n";
+                        }
+                        else
+                        {
+                            // Process document files for OpenAI
+                            // Only include compatible file types and check size to prevent token overflow
+                            if (IsCompatibleFileType(fileAttachment.ContentType) && fileBytes.Length <= maxAiFileSize)
+                            {
+                                var base64Content = Convert.ToBase64String(fileBytes, Base64FormattingOptions.None);
+                                string fileTag = $"<file-base64:{fileAttachment.FileName}:{fileAttachment.ContentType};base64,{base64Content}>";
+                                processedContent += $"\n\n{fileTag}\n\n";
+                            }
+                            else
+                            {
+                                processedContent += $"\n[Document attachment: {fileAttachment.FileName} (not sent to AI due to incompatible format or size)]";
+                            }
+                        }
                     }
-                    else
+                    catch (IOException ex)
                     {
-                        processedContent += $"\n[Document attachment: {fileAttachment.FileName}]";
+                        Console.WriteLine($"Error reading file {fileAttachment.FilePath}: {ex.Message}");
+                        processedContent += $"\n[Error reading attachment: {fileAttachment.FileName}]";
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error processing attachment {fileAttachment.FileName}: {ex.Message}");
+                        processedContent += $"\n[Error processing attachment: {fileAttachment.FileName}]";
                     }
                 }
             }
@@ -171,37 +211,77 @@ public class ChatHub : Hub
                     var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId);
                     if (fileAttachment == null) continue;
 
+                    // Check file exists
+                    if (!File.Exists(fileAttachment.FilePath))
+                    {
+                        processedContent += $"\n[Attachment {fileAttachment.FileName} not found]";
+                        continue;
+                    }
+
                     if (fileAttachment.FileSize > 10 * 1024 * 1024) // 10 MB to match configured limit
                     {
                         processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit]";
                         continue;
                     }
 
-                    if (fileAttachment.FileType == FileType.Image)
+                    try
                     {
                         var fileBytes = await File.ReadAllBytesAsync(fileAttachment.FilePath);
-                        string normalizedContentType = NormalizeImageContentType(fileAttachment.ContentType);
-
-                        if (string.IsNullOrEmpty(normalizedContentType))
+                        
+                        // Set a reasonable size limit for files sent to AI (e.g., 5MB)
+                        const int maxAiFileSize = 5 * 1024 * 1024;
+                        if (fileBytes.Length > maxAiFileSize)
                         {
-                            normalizedContentType = DetectImageFormat(fileBytes);
-                        }
-
-                        if (string.IsNullOrEmpty(normalizedContentType))
-                        {
-                            processedContent += $"\n[Image attachment: {fileAttachment.FileName} (unsupported format)]";
+                            processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: too large for AI processing]";
                             continue;
                         }
+                        
+                        if (fileAttachment.FileType == FileType.Image)
+                        {
+                            string normalizedContentType = NormalizeImageContentType(fileAttachment.ContentType);
 
-                        byte[] optimizedImageBytes = OptimizeImageForAI(fileBytes, normalizedContentType);
-                        var base64Content = Convert.ToBase64String(optimizedImageBytes, Base64FormattingOptions.None);
+                            if (string.IsNullOrEmpty(normalizedContentType))
+                            {
+                                normalizedContentType = DetectImageFormat(fileBytes);
+                            }
 
-                        string imageTag = $"<image-base64:{normalizedContentType};base64,{base64Content}>";
-                        processedContent += $"\n\n{imageTag}\n\n";
+                            if (string.IsNullOrEmpty(normalizedContentType))
+                            {
+                                processedContent += $"\n[Image attachment: {fileAttachment.FileName} (unsupported format)]";
+                                continue;
+                            }
+
+                            byte[] optimizedImageBytes = OptimizeImageForAI(fileBytes, normalizedContentType);
+                            var base64Content = Convert.ToBase64String(optimizedImageBytes, Base64FormattingOptions.None);
+
+                            string imageTag = $"<image-base64:{normalizedContentType};base64,{base64Content}>";
+                            processedContent += $"\n\n{imageTag}\n\n";
+                        }
+                        else
+                        {
+                            // Process document files for OpenAI
+                            // Only include compatible file types and check size to prevent token overflow
+                            if (IsCompatibleFileType(fileAttachment.ContentType) && fileBytes.Length <= maxAiFileSize)
+                            {
+                                var base64Content = Convert.ToBase64String(fileBytes, Base64FormattingOptions.None);
+                                string fileTag = $"<file-base64:{fileAttachment.FileName}:{fileAttachment.ContentType};base64,{base64Content}>";
+                                processedContent += $"\n\n{fileTag}\n\n";
+                            }
+                            else
+                            {
+                                processedContent += $"\n[Document attachment: {fileAttachment.FileName} (not sent to AI due to incompatible format or size)]";
+                            }
+                        }
                     }
-                    else
+                    catch (IOException ex)
                     {
-                        processedContent += $"\n[Document attachment: {fileAttachment.FileName}]";
+                        Console.WriteLine($"Error reading file {fileAttachment.FilePath}: {ex.Message}");
+                        processedContent += $"\n[Error reading attachment: {fileAttachment.FileName}]";
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error processing attachment {fileAttachment.FileName}: {ex.Message}");
+                        processedContent += $"\n[Error processing attachment: {fileAttachment.FileName}]";
                     }
                 }
             }
@@ -388,5 +468,23 @@ public class ChatHub : Hub
         else if (originalSizeBytes > 500 * 1024) return 50;
         else if (originalSizeBytes > 200 * 1024) return 60;
         else return 70;
+    }
+
+    // Check if the file type is compatible with the AI service
+    private bool IsCompatibleFileType(string contentType)
+    {
+        if (string.IsNullOrEmpty(contentType)) return false;
+        
+        string typeLower = contentType.ToLowerInvariant().Trim();
+        
+        // Common document types that are likely to work with AI services
+        return typeLower.Contains("pdf") ||
+               typeLower.Contains("text/") ||
+               typeLower.Contains("application/json") ||
+               typeLower.Contains("application/xml") ||
+               typeLower.Contains("application/csv") ||
+               typeLower.Contains("application/msword") ||
+               typeLower.Contains("application/vnd.openxmlformats-officedocument") ||
+               typeLower.Contains("application/vnd.ms-");
     }
 }
