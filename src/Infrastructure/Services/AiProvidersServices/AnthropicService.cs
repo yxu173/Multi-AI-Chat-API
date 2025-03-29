@@ -64,26 +64,28 @@ public class AnthropicService : BaseAiService
 
         if (role == "user")
         {
-            var regex = new System.Text.RegularExpressions.Regex(@"<image-base64:([^;]+);base64,([^>]+)>");
+            var regex = new System.Text.RegularExpressions.Regex(@"<(image|file)-base64:([^;>]+);base64,([^>]+)>");
             var matches = regex.Matches(content);
+            int lastIndex = 0;
 
-            if (matches.Count > 0)
+            foreach (System.Text.RegularExpressions.Match match in matches)
             {
-                int lastIndex = 0;
-                foreach (System.Text.RegularExpressions.Match match in matches)
+                if (match.Index > lastIndex)
                 {
-                    if (match.Index > lastIndex)
+                    string textBefore = content.Substring(lastIndex, match.Index - lastIndex).Trim();
+                    if (!string.IsNullOrEmpty(textBefore))
                     {
-                        string textBefore = content.Substring(lastIndex, match.Index - lastIndex).Trim();
-                        if (!string.IsNullOrEmpty(textBefore))
-                        {
-                            contentItems.Add(new { type = "text", text = textBefore });
-                        }
+                        contentItems.Add(new { type = "text", text = textBefore });
                     }
+                }
 
-                    string mediaType = match.Groups[1].Value;
-                    string base64Data = match.Groups[2].Value;
+                string tagType = match.Groups[1].Value;
+                string metaData = match.Groups[2].Value;
+                string base64Data = match.Groups[3].Value;
 
+                if (tagType == "image")
+                {
+                    string mediaType = metaData;
                     if (IsValidAnthropicImageType(mediaType, out string normalizedMediaType))
                     {
                         contentItems.Add(new
@@ -101,22 +103,54 @@ public class AnthropicService : BaseAiService
                     {
                         contentItems.Add(new { type = "text", text = $"[Image: Unsupported format '{mediaType}']" });
                     }
-
-                    lastIndex = match.Index + match.Length;
                 }
-
-                if (lastIndex < content.Length)
+                else if (tagType == "file")
                 {
-                    string textAfter = content.Substring(lastIndex).Trim();
-                    if (!string.IsNullOrEmpty(textAfter))
+                    string fileName = "unknown";
+                    string fileContentType = "unknown";
+                    var metaParts = metaData.Split(new[] { ':' }, 2);
+                    if (metaParts.Length > 0) fileName = metaParts[0];
+                    if (metaParts.Length > 1) fileContentType = metaParts[1];
+
+                    if (fileContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
                     {
-                        contentItems.Add(new { type = "text", text = textAfter });
+                        contentItems.Add(new
+                        {
+                            type = "document",
+                            source = new
+                            {
+                                type = "base64",
+                                media_type = fileContentType,
+                                data = base64Data
+                            }
+                        });
+                    }
+                    else
+                    {
+                        contentItems.Add(new
+                            { type = "text", text = $"[Uploaded File: {fileName} ({fileContentType})]" });
                     }
                 }
+
+                lastIndex = match.Index + match.Length;
             }
-            else
+
+            if (lastIndex < content.Length)
+            {
+                string textAfter = content.Substring(lastIndex).Trim();
+                if (!string.IsNullOrEmpty(textAfter))
+                {
+                    contentItems.Add(new { type = "text", text = textAfter });
+                }
+            }
+
+            if (matches.Count == 0 && contentItems.Count == 0 && !string.IsNullOrEmpty(content))
             {
                 contentItems.Add(new { type = "text", text = content });
+            }
+            else if (matches.Count > 0 && contentItems.Count == 0)
+            {
+                contentItems.Add(new { type = "text", text = "[Content included attachments only]" });
             }
         }
         else
@@ -124,9 +158,14 @@ public class AnthropicService : BaseAiService
             contentItems.Add(new { type = "text", text = content });
         }
 
+        if (contentItems.Count == 0 && !string.IsNullOrEmpty(content))
+        {
+            contentItems.Add(new { type = "text", text = content });
+        }
+
         return new { role = role == "assistant" ? "assistant" : "user", content = contentItems.ToArray() };
     }
-    
+
     private bool IsValidAnthropicImageType(string mediaType, out string normalizedMediaType)
     {
         string mediaTypeLower = mediaType.ToLowerInvariant();
