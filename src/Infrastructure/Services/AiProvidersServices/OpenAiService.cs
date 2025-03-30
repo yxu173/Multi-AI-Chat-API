@@ -14,8 +14,6 @@ public class OpenAiService : BaseAiService
 {
     private const string BaseUrl = "https://api.openai.com/v1/";
     private readonly IResilienceService _resilienceService;
-    private static readonly Regex ImageBase64Regex = new Regex(@"<image-base64:(.*?);base64,(.*?)>", RegexOptions.Compiled);
-    private static readonly Regex FileBase64Regex = new Regex(@"<file-base64:(.*?):(.*?);base64,(.*?)>", RegexOptions.Compiled);
 
     public OpenAiService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
         IResilienceService resilienceService,
@@ -35,236 +33,109 @@ public class OpenAiService : BaseAiService
 
     protected override List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
     {
-        var messages = new List<(string Role, string Content)>();
-        var systemMessage = GetSystemMessage();
-        if (!string.IsNullOrEmpty(systemMessage))
-        {
-            messages.Add(("system", systemMessage));
-        }
-        
-        if (ShouldEnableThinking())
-        {
-            var reasoningEffort = GetReasoningEffort();
-            var thinkingPrompt = GetThinkingPromptForEffort(reasoningEffort);
-            messages.Add(("system", thinkingPrompt));
-        }
-        
-        foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
-        {
-            if (msg.Content.Contains("<image-base64:") || msg.Content.Contains("<file-base64:"))
-            {
-                messages.Add(ProcessMultimodalMessage(msg));
-            }
-            else
-            {
-                messages.Add((msg.IsFromAi ? "assistant" : "user", msg.Content.Trim()));
-            }
-        }
-        
-        return messages;
-    }
-
-    private (string Role, string Content) ProcessMultimodalMessage(MessageDto message)
-    {
-        if (!message.Content.Contains("<image-base64:") && !message.Content.Contains("<file-base64:"))
-        {
-            return (message.IsFromAi ? "assistant" : "user", message.Content.Trim());
-        }
-
-         return (message.IsFromAi ? "assistant" : "user", message.Content.Trim());
-    }
-
-    private string GetThinkingPromptForEffort(string reasoningEffort)
-    {
-        return reasoningEffort switch
-        {
-            "low" => "For simpler questions, provide a brief explanation under '### Thinking:' then give your answer under '### Answer:'. Keep your thinking concise.",
-            
-            "high" => "When solving problems, use thorough step-by-step reasoning:\n" +
-                      "1. First, under '### Thinking:', carefully explore the problem from multiple perspectives\n" +
-                      "2. Analyze all relevant factors and potential approaches\n" +
-                      "3. Consider edge cases and alternative solutions\n" +
-                      "4. Then provide your comprehensive final answer under '### Answer:'\n" +
-                      "Make your thinking process explicit, detailed, and logically structured.",
-                      
-            _ => "When solving problems, use step-by-step reasoning:\n" +
-                 "1. First, walk through your thought process under '### Thinking:'\n" +
-                 "2. Then provide your final answer under '### Answer:'\n" +
-                 "Make your thinking process clear and logical."
-        };
-    }
-
-    private string GetReasoningEffort()
-    {
-        if (CustomModelParameters?.ReasoningEffort.HasValue == true)
-        {
-            return CustomModelParameters.ReasoningEffort.Value switch
-            {
-                <= 33 => "low",
-                >= 66 => "high",
-                _ => "medium"
-            };
-        }
-        
-        
-        return "medium";
+        return base.PrepareMessageList(history);
     }
 
     protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
-        var messagesList = PrepareMessageList(history);
-        var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
-        
-        var parametersToRemove = new List<string>();
-        
-        if (ShouldEnableThinking())
-        {
-            parametersToRemove.AddRange(new[] {
-                "temperature", "top_p", "top_k", "frequency_penalty", 
-                "presence_penalty", "reasoning_effort", "seed", "response_format"
-            });
-            
-        }
-        
-        parametersToRemove.Add("top_k");
-        
-        foreach (var param in parametersToRemove)
-        {
-            if (requestObj.ContainsKey(param))
-            {
-                requestObj.Remove(param);
-                Console.WriteLine($"Preemptively removed {param} parameter for model {ModelCode}");
-            }
-        }
-        
-        if (requestObj.ContainsKey("max_tokens"))
-        {
-            var maxTokensValue = requestObj["max_tokens"];
-            requestObj.Remove("max_tokens");
-            requestObj["max_completion_tokens"] = maxTokensValue;
-        }
-        
+        var baseRequestBody = (Dictionary<string, object>)base.CreateRequestBody(history);
+
+        var messagesList = base.PrepareMessageList(history);
+
         var processedMessages = new List<object>();
-        foreach (var (role, content) in messagesList)
+        foreach (var (role, rawContent) in messagesList)
         {
-            if (content.Contains("<image-base64:") || content.Contains("<file-base64:"))
+            if (role == "user")
             {
-                var contentItems = CreateMultimodalContent(content);
-                processedMessages.Add(new { role, content = contentItems });
+                var contentParts = ParseMultimodalContent(rawContent);
+                bool isMultimodal = contentParts.Any(p => p is ImagePart || p is FilePart);
+
+                if (isMultimodal)
+                {
+                    var openAiContentItems = new List<object>();
+                    foreach (var part in contentParts)
+                    {
+                        switch (part)
+                        {
+                            case TextPart textPart:
+                                openAiContentItems.Add(new { type = "text", text = textPart.Text });
+                                break;
+                            case ImagePart imagePart:
+                                openAiContentItems.Add(new {
+                                    type = "image_url",
+                                    image_url = new { url = $"data:{imagePart.MimeType};base64,{imagePart.Base64Data}" }
+                                });
+                                break;
+                            case FilePart filePart:
+                                string fileDataUrl = $"data:{filePart.MimeType};base64,{filePart.Base64Data}";
+                                openAiContentItems.Add(new {
+                                    type = "file",
+                                    file = new {
+                                        filename = filePart.FileName,
+                                        file_data = fileDataUrl
+                                    }
+                                });
+                                break;
+                            default:
+                                openAiContentItems.Add(new { type = "text", text = "[Unsupported content type]" });
+                                break;
+                        }
+                    }
+                    if (openAiContentItems.Any())
+                    {
+                        processedMessages.Add(new { role, content = openAiContentItems });
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(rawContent))
+                {
+                    processedMessages.Add(new { role, content = rawContent });
+                }
             }
             else
             {
-                // Standard text message
-                processedMessages.Add(new { role, content });
-            }
-        }
-        
-        requestObj["messages"] = processedMessages;
-        return requestObj;
-    }
-    
-    private object CreateMultimodalContent(string messageContent)
-    {
-        var contentItems = new List<object>();
-        var remainingText = messageContent;
-        
-        int currentPosition = 0;
-        
-        // Process image tags
-        var imageMatches = ImageBase64Regex.Matches(messageContent);
-        foreach (Match match in imageMatches)
-        {
-            string textBefore = messageContent.Substring(currentPosition, match.Index - currentPosition);
-            if (!string.IsNullOrWhiteSpace(textBefore))
-            {
-                contentItems.Add(new { type = "text", text = textBefore.Trim() });
-            }
-            
-            string mimeType = match.Groups[1].Value;
-            string base64Data = match.Groups[2].Value;
-            
-            contentItems.Add(new
-            {
-                type = "image_url",
-                image_url = new
+                if (!string.IsNullOrWhiteSpace(rawContent))
                 {
-                    url = $"data:{mimeType};base64,{base64Data}"
+                    processedMessages.Add(new { role, content = rawContent });
                 }
-            });
-            
-            currentPosition = match.Index + match.Length;
+            }
         }
-        
-        // Process file tags
-        var fileMatches = FileBase64Regex.Matches(messageContent);
-        foreach (Match match in fileMatches)
+
+        baseRequestBody["messages"] = processedMessages;
+
+        if (ShouldEnableThinking())
         {
-            // Only process file tags that weren't already included in the currentPosition
-            if (match.Index >= currentPosition)
+            var parametersToRemove = new List<string> { "temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "seed", "response_format" };
+
+            foreach (var param in parametersToRemove)
             {
-                string textBefore = messageContent.Substring(currentPosition, match.Index - currentPosition);
-                if (!string.IsNullOrWhiteSpace(textBefore))
+                if (baseRequestBody.ContainsKey(param))
                 {
-                    contentItems.Add(new { type = "text", text = textBefore.Trim() });
+                    baseRequestBody.Remove(param);
+                    Console.WriteLine($"OpenAI Specific: Removed {param} due to thinking mode override.");
                 }
-                
-                string filename = match.Groups[1].Value;
-                string fileType = match.Groups[2].Value;
-                string base64Data = match.Groups[3].Value;
-                
-                contentItems.Add(new
-                {
-                    type = "file",
-                    file = new
-                    {
-                        filename = filename,
-                        // OpenAI requires the full data URL format including the 'data:' prefix
-                        file_data = $"data:{fileType};base64,{base64Data}"
-                    }
-                });
-                
-                currentPosition = match.Index + match.Length;
             }
         }
-        
-        if (currentPosition < messageContent.Length)
-        {
-            string textAfter = messageContent.Substring(currentPosition);
-            if (!string.IsNullOrWhiteSpace(textAfter))
-            {
-                contentItems.Add(new { type = "text", text = textAfter.Trim() });
-            }
-        }
-        
-        return contentItems;
+
+        return baseRequestBody;
     }
 
     protected override void AddProviderSpecificParameters(Dictionary<string, object> requestObj)
     {
         if (ShouldEnableThinking())
         {
-            string reasoningEffort = GetReasoningEffort();
-            
-            if (ModelCode.Contains("gpt-4o")) 
+            requestObj["response_format"] = new { type = "text" };
+            if (!requestObj.ContainsKey("seed"))
             {
-                requestObj["reasoning_effort"] = reasoningEffort;
-                
-                requestObj["response_format"] = new { type = "text" };
-                
-                if (!requestObj.ContainsKey("seed"))
-                {
-                    requestObj["seed"] = 42;
-                }
+                requestObj["seed"] = 42;
             }
         }
-        
-        // Check if model supports vision capabilities
-        if (ModelCode.Contains("gpt-4") && ModelCode.Contains("vision") || ModelCode.Contains("gpt-4o"))
+
+        bool isVisionModel = ModelCode.Contains("vision") || ModelCode.Contains("gpt-4o");
+        if (isVisionModel)
         {
-            // Vision models generally need JSON response for proper multimodal handling
             if (!requestObj.ContainsKey("response_format"))
             {
-                requestObj["response_format"] = new { type = "text" };
+                // requestObj["response_format"] = new { type = "json_object" };
             }
         }
     }
@@ -274,31 +145,28 @@ public class OpenAiService : BaseAiService
     {
         var requestBody = CreateRequestBody(history);
 
+        int inputTokens = 0;
         var tokenizer = Tiktoken.ModelToEncoder.For(ModelCode);
 
-        int inputTokens = 0;
         foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
         {
-            inputTokens += tokenizer.Encode(msg.Content).Count;
+            inputTokens += tokenizer?.Encode(msg.Content).Count ?? msg.Content.Length / 4;
         }
 
         HttpResponseMessage response;
 
         try
         {
-            // Instead of creating the request once and reusing it, create a request factory
-            // that generates a new request for each attempt
             response = await _resilienceService.CreatePluginResiliencePipeline<HttpResponseMessage>()
-                .ExecuteAsync(async ct => 
+                .ExecuteAsync(async ct =>
                 {
-                    // Create a new request for each attempt
-                    var newRequest = CreateRequest(requestBody);
-                    return await HttpClient.SendAsync(newRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                    var request = CreateRequest(requestBody);
+                    return await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 }, cancellationToken);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error sending request to OpenAI: {ex.Message}");
+            Console.WriteLine($"Error sending request to OpenAI via ResiliencePipeline: {ex.Message}");
             throw;
         }
 
@@ -313,20 +181,16 @@ public class OpenAiService : BaseAiService
 
         await foreach (var json in ReadStreamAsync(response, cancellationToken))
         {
-            if (cancellationToken.IsCancellationRequested)
-                break;
+            if (cancellationToken.IsCancellationRequested) break;
 
             string? text = null;
-
             try
             {
-                var chunk = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
-                if (chunk == null) continue;
-
-                if (chunk.TryGetValue("choices", out var choicesObj) && choicesObj is JsonElement choices &&
-                    choices[0].TryGetProperty("delta", out var delta))
+                using var chunkDoc = JsonDocument.Parse(json);
+                if (chunkDoc.RootElement.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
                 {
-                    if (delta.TryGetProperty("content", out var content))
+                    var firstChoice = choices[0];
+                    if (firstChoice.TryGetProperty("delta", out var delta) && delta.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
                     {
                         text = content.GetString();
                     }
@@ -334,28 +198,16 @@ public class OpenAiService : BaseAiService
             }
             catch (JsonException ex)
             {
-                Console.WriteLine($"Error processing OpenAI response chunk: {ex.Message}");
+                Console.WriteLine($"Error processing OpenAI response chunk: {ex.Message} - Chunk: {json}");
+                continue;
             }
 
             if (!string.IsNullOrEmpty(text))
             {
                 fullResponse.Append(text);
-                outputTokens += tokenizer.Encode(text).Count;
+                outputTokens += tokenizer?.Encode(text).Count ?? text.Length / 4;
                 yield return new StreamResponse(text, inputTokens, outputTokens);
             }
         }
-    }
-    
-    // Helper method to create a request
-    private HttpRequestMessage CreateRequest(object requestBody)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath())
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(requestBody),
-                Encoding.UTF8,
-                "application/json")
-        };
-        return request;
     }
 }

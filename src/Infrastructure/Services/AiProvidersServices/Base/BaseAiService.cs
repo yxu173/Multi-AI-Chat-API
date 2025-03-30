@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
@@ -7,6 +8,12 @@ using Domain.Aggregates.Users;
 using Domain.ValueObjects;
 
 namespace Infrastructure.Services.AiProvidersServices.Base;
+
+// Add these record types within the namespace or inside the BaseAiService class
+public abstract record ContentPart;
+public record TextPart(string Text) : ContentPart;
+public record ImagePart(string MimeType, string Base64Data, string? FileName = null) : ContentPart; // Added optional FileName
+public record FilePart(string MimeType, string Base64Data, string FileName) : ContentPart; // Assuming FileName is always present for files
 
 public abstract class BaseAiService : IAiModelService
 {
@@ -16,6 +23,10 @@ public abstract class BaseAiService : IAiModelService
     protected readonly UserAiModelSettings? ModelSettings;
     protected readonly AiModel? AiModel;
     protected readonly ModelParameters? CustomModelParameters;
+
+    // Regex to find image or file tags
+    protected static readonly Regex MultimodalTagRegex =
+        new Regex(@"<(image|file)-base64:(?:([^:]+):)?([^;>]+);base64,([^>]+)>", RegexOptions.Compiled);
 
     protected BaseAiService(
         IHttpClientFactory httpClientFactory,
@@ -42,6 +53,72 @@ public abstract class BaseAiService : IAiModelService
     public abstract IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history, CancellationToken cancellationToken);
 
     // Standard message preparation
+    protected virtual List<ContentPart> ParseMultimodalContent(string messageContent)
+    {
+        var contentParts = new List<ContentPart>();
+        var lastIndex = 0;
+
+        foreach (Match match in MultimodalTagRegex.Matches(messageContent))
+        {
+            // Add text part before the tag if any
+            if (match.Index > lastIndex)
+            {
+                string textBefore = messageContent.Substring(lastIndex, match.Index - lastIndex).Trim();
+                if (!string.IsNullOrEmpty(textBefore))
+                {
+                    contentParts.Add(new TextPart(textBefore));
+                }
+            }
+
+            string tagType = match.Groups[1].Value;
+            string fileNameOrMime = match.Groups[2].Value; // Might be filename (file) or empty (image)
+            string mimeTypeOrFileName = match.Groups[3].Value; // Might be mime (image/file) or filename (old file format)
+            string base64Data = match.Groups[4].Value;
+
+            if (tagType == "image")
+            {
+                // Assuming format <image-base64:mimeType;base64,data>
+                string mimeType = mimeTypeOrFileName;
+                contentParts.Add(new ImagePart(mimeType, base64Data));
+            }
+            else if (tagType == "file")
+            {
+                // Assuming format <file-base64:fileName:mimeType;base64,data>
+                string fileName = fileNameOrMime;
+                string mimeType = mimeTypeOrFileName;
+                // Add basic validation
+                if (!string.IsNullOrEmpty(fileName) && !string.IsNullOrEmpty(mimeType))
+                {
+                     contentParts.Add(new FilePart(mimeType, base64Data, fileName));
+                }
+                else {
+                    // Fallback or log error if format is unexpected
+                     contentParts.Add(new TextPart($"[Malformed file tag: {match.Value}]"));
+                }
+            }
+
+            lastIndex = match.Index + match.Length;
+        }
+
+        // Add remaining text part after the last tag
+        if (lastIndex < messageContent.Length)
+        {
+            string textAfter = messageContent.Substring(lastIndex).Trim();
+            if (!string.IsNullOrEmpty(textAfter))
+            {
+                contentParts.Add(new TextPart(textAfter));
+            }
+        }
+
+        // If no tags were found and content exists, treat it as pure text
+        if (!contentParts.Any() && !string.IsNullOrWhiteSpace(messageContent))
+        {
+            contentParts.Add(new TextPart(messageContent.Trim()));
+        }
+
+        return contentParts;
+    }
+
     protected virtual List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
     {
         var messages = new List<(string Role, string Content)>();
@@ -374,43 +451,66 @@ public abstract class BaseAiService : IAiModelService
     protected virtual bool SupportsParameter(string paramName)
     {
         // Default supported parameters across most models
-        var commonSupportedParams = new HashSet<string> { "model", "messages", "stream" };
-        
+        var commonSupportedParams = new HashSet<string> { "model", "messages", "stream", "system" }; // Added system as common
+
         if (commonSupportedParams.Contains(paramName))
             return true;
-            
+
         // OpenAI GPT models generally support these parameters
         if (IsOpenAIModel())
         {
-            if (ModelCode.Contains("gpt-4") || ModelCode.Contains("gpt-3.5"))
-            {
-                // Modern OpenAI models use different parameter names
-                if (paramName == "max_completion_tokens")
-                    return true;
-                    
-                // Some older parameters may still be supported
-                if (new[] { "temperature", "top_p", "frequency_penalty", "presence_penalty" }.Contains(paramName))
-                {
-                    // For the newer model versions, some of these may not be supported
-                    // The auto-correction will handle this case
-                    return !ModelCode.Contains("o3") && !ModelCode.Contains("claude-3");
-                }
-            }
+            // Explicitly list supported OpenAI parameters
+            var openAiSupported = new HashSet<string> {
+                "temperature", "top_p", "frequency_penalty", "presence_penalty",
+                "max_tokens", "stop", "seed", "response_format", "tools", "tool_choice" // Added common tool use params
+                // Note: max_tokens might be mapped to max_completion_tokens by GetProviderParameterName
+            };
+
+            // Check against the provider-specific name from GetProviderParameterName
+            string providerParamName = GetProviderParameterName(paramName);
+
+            if (openAiSupported.Contains(providerParamName)) return true;
+
+            // Specifically block top_k for OpenAI
+            if (providerParamName == "top_k") return false;
+
+            // Block other known unsupported or potentially problematic params
+            if (new[] { "topP", "topK", "maxOutputTokens" }.Contains(providerParamName)) return false; // Gemini names
+
+            // Fallback for OpenAI: assume unsupported unless explicitly listed? Or rely on API error?
+            // Let's be stricter for OpenAI and assume unsupported if not listed.
+            Console.WriteLine($"Parameter '{paramName}' (mapped to '{providerParamName}') is not explicitly supported by OpenAI in this configuration. Assuming unsupported.");
+            return false;
         }
-        
+
         // Anthropic Claude models
         if (IsAnthropicModel())
         {
-            return new[] { "max_tokens", "temperature", "top_k", "top_p", "system" }.Contains(paramName);
+            var anthropicSupported = new HashSet<string> { "max_tokens", "temperature", "top_k", "top_p", "stop_sequences", "tools" }; // Added tools
+            return anthropicSupported.Contains(paramName);
         }
-        
+
         // Gemini models
         if (IsGeminiModel())
         {
-            return new[] { "temperature", "topP", "topK", "maxOutputTokens" }.Contains(paramName);
+            // Use the provider-specific names for Gemini check
+            string providerParamName = GetProviderParameterName(paramName);
+            var geminiSupported = new HashSet<string> { "temperature", "topP", "topK", "maxOutputTokens", "stopSequences", "safetySettings" };
+            return geminiSupported.Contains(providerParamName);
         }
-        
-        // For any unknown model, return true and let the API decide
+
+        // DeepSeek models (check their documentation for specific supported params)
+        if (IsDeepSeekModel())
+        {
+            var deepSeekSupported = new HashSet<string> {
+                "temperature", "top_p", "max_tokens", "stop", "frequency_penalty", "presence_penalty"
+                // Add other supported params like enable_cot, reasoning_mode if applicable
+            };
+            return deepSeekSupported.Contains(paramName);
+        }
+
+        // Fallback for any unknown model provider: return true and let the API decide.
+        Console.WriteLine($"Warning: Unknown model type for parameter support check ('{paramName}'). Assuming supported.");
         return true;
     }
     

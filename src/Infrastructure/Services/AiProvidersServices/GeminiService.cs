@@ -1,7 +1,13 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Domain.Aggregates.Chats;
@@ -28,183 +34,141 @@ public class GeminiService : BaseAiService
 
     protected override string GetEndpointPath() => $"v1beta/models/{ModelCode}:streamGenerateContent?key={ApiKey}";
 
-    protected override List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
-    {
-        var messages = base.PrepareMessageList(history);
-        return messages;
-    }
-
     protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
-        var messages = PrepareMessageList(history);
-        var contents = new List<object>();
+        var baseRequestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
 
-        foreach (var message in messages)
+        var baseMessages = base.PrepareMessageList(history);
+
+        var geminiContents = new List<object>();
+        foreach (var (role, content) in baseMessages)
         {
-            var role = message.Role == "assistant" ? "model" : "user";
+            string geminiRole = role switch {
+                "assistant" => "model",
+                "user" => "user",
+                _ => null
+            };
+
+            if (geminiRole == null) continue;
+
             var parts = new List<object>();
-            string content = message.Content;
-
-            if (role == "user")
+            if (geminiRole == "user")
             {
-                var regex = new Regex(@"<(image|file)-base64:([^;>]+);base64,([^>]+)>");
-                var matches = regex.Matches(content);
-                int lastIndex = 0;
+                var contentParts = ParseMultimodalContent(content);
 
-                foreach (Match match in matches)
+                foreach(var part in contentParts)
                 {
-                    if (match.Index > lastIndex)
+                    switch (part)
                     {
-                        string textBefore = content.Substring(lastIndex, match.Index - lastIndex).Trim();
-                        if (!string.IsNullOrEmpty(textBefore))
-                        {
-                            parts.Add(new { text = textBefore });
-                        }
-                    }
-
-                    string tagType = match.Groups[1].Value;
-                    string metaData = match.Groups[2].Value;
-                    string base64Data = match.Groups[3].Value;
-
-                    if (tagType == "image")
-                    {
-                        string mediaType = metaData;
-                        if (IsValidGeminiImageType(mediaType, out string normalizedMediaType))
-                        {
-                            parts.Add(new
+                        case TextPart textPart:
+                            parts.Add(new { text = textPart.Text });
+                            break;
+                        case ImagePart imagePart:
+                            if (IsValidGeminiImageType(imagePart.MimeType, out string normalizedMediaType))
                             {
-                                inlineData = new
-                                {
-                                    mimeType = normalizedMediaType,
-                                    data = base64Data
-                                }
-                            });
-                        }
-                        else
-                        {
-                            parts.Add(new { text = $"[Image: Unsupported format '{mediaType}']" });
-                        }
-                    }
-                    else if (tagType == "file")
-                    {
-                        string fileName = "unknown";
-                        string fileContentType = "unknown";
-                        var metaParts = metaData.Split(new[] { ':' }, 2);
-                        if (metaParts.Length > 0) fileName = metaParts[0];
-                        if (metaParts.Length > 1) fileContentType = metaParts[1];
-
-                        try
-                        {
-                            byte[] fileBytes = Convert.FromBase64String(base64Data);
-
-                            if (fileContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
-                            {
-                                string extractedText = ExtractTextFromPdf(fileBytes, fileName);
-                                parts.Add(new { text = extractedText });
-                            }
-                            else if (IsPlainTextContentType(fileContentType))
-                            {
-                                string extractedText = Encoding.UTF8.GetString(fileBytes);
-                                parts.Add(new
-                                {
-                                    text = $"[Content from File: {fileName} ({fileContentType})]\n\n{extractedText}"
+                                parts.Add(new {
+                                    inlineData = new {
+                                        mimeType = normalizedMediaType,
+                                        data = imagePart.Base64Data
+                                    }
                                 });
                             }
                             else
                             {
-                                parts.Add(new
-                                {
-                                    text = $"[Uploaded File: {fileName} ({fileContentType}) - Content not embedded]"
-                                });
+                                parts.Add(new { text = $"[Image: Unsupported format '{imagePart.MimeType}']" });
                             }
-                        }
-                        catch (FormatException ex)
-                        {
-                            Console.WriteLine($"Error decoding base64 data for file {fileName}: {ex.Message}");
-                            parts.Add(new { text = $"[Error processing file: {fileName} - Invalid base64 data]" });
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Error processing file {fileName} ({fileContentType}): {ex.Message}");
-                            parts.Add(new { text = $"[Error processing file: {fileName} ({fileContentType})]" });
-                        }
-                    }
-
-                    lastIndex = match.Index + match.Length;
-                }
-
-                if (lastIndex < content.Length)
-                {
-                    string textAfter = content.Substring(lastIndex).Trim();
-                    if (!string.IsNullOrEmpty(textAfter))
-                    {
-                        parts.Add(new { text = textAfter });
+                            break;
+                        case FilePart filePart:
+                            parts.AddRange(ProcessGeminiFilePart(filePart));
+                            break;
                     }
                 }
 
-                if (matches.Count == 0)
+                if (parts.Count == 0 && !string.IsNullOrWhiteSpace(content))
                 {
-                    parts.Add(new { text = content });
-                }
-                else if (parts.Count == 0 && !string.IsNullOrWhiteSpace(content))
-                {
-                    parts.Add(new
-                        { text = "[Message included attachments, but none could be processed or added as parts]" });
+                    parts.Add(new { text = "[User message contained only unsupported attachments or processing failed]" });
                 }
             }
             else
             {
-                parts.Add(new { text = content });
-            }
-
-            if (role == "user" && parts.Count == 0 && !string.IsNullOrWhiteSpace(content))
-            {
-                parts.Add(new { text = "[User message contained only unsupported attachments]" });
-            }
-            else if (role == "model" && parts.Count == 0 && !string.IsNullOrWhiteSpace(content))
-            {
-                parts.Add(new { text = content });
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    parts.Add(new { text = content });
+                }
             }
 
             if (parts.Any())
             {
-                contents.Add(new { role, parts });
+                 geminiContents.Add(new { role = geminiRole, parts });
             }
             else if (!string.IsNullOrWhiteSpace(content))
             {
-                contents.Add(new { role, parts = new List<object> { new { text = content } } });
+                 geminiContents.Add(new { role = geminiRole, parts = new List<object> { new { text = content } } });
             }
         }
 
-        contents = EnsureAlternatingRoles(contents);
+        geminiContents = EnsureAlternatingRoles(geminiContents);
 
-        var parameters = GetModelParameters();
         var generationConfig = new Dictionary<string, object>();
-        var safetySettings = new List<object>
+        var safetySettings = GetGeminiSafetySettings();
+
+        var supportedGeminiParams = new HashSet<string>() { "temperature", "topP", "topK", "maxOutputTokens", "stopSequences" };
+
+        foreach(var kvp in baseRequestObj)
         {
-            new { category = "HARM_CATEGORY_HARASSMENT", threshold = "BLOCK_NONE" },
-            new { category = "HARM_CATEGORY_HATE_SPEECH", threshold = "BLOCK_NONE" },
-            new { category = "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold = "BLOCK_NONE" },
-            new { category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold = "BLOCK_NONE" }
-        };
-
-        var supportedParams = new HashSet<string>() { "temperature", "topP", "topK", "maxOutputTokens" };
-
-        if (parameters.ContainsKey("temperature")) generationConfig["temperature"] = parameters["temperature"];
-        if (parameters.ContainsKey("top_p")) generationConfig["topP"] = parameters["top_p"];
-        if (parameters.ContainsKey("top_k")) generationConfig["topK"] = parameters["top_k"];
-        if (parameters.ContainsKey("max_tokens")) generationConfig["maxOutputTokens"] = parameters["max_tokens"];
-        if (parameters.ContainsKey("stop")) generationConfig["stopSequences"] = parameters["stop"];
-
-        var keysToRemove = generationConfig.Keys.Where(k => !supportedParams.Contains(k)).ToList();
-        foreach (var key in keysToRemove)
-        {
-            Console.WriteLine($"Removing unsupported parameter for Gemini: {key}");
-            generationConfig.Remove(key);
+            if (supportedGeminiParams.Contains(kvp.Key))
+            {
+                generationConfig[kvp.Key] = kvp.Value;
+            }
+            else if (kvp.Key != "model" && kvp.Key != "stream")
+            {
+                 Console.WriteLine($"Gemini Specific: Ignoring parameter '{kvp.Key}' not used in generationConfig.");
+            }
         }
 
-        var requestObj = new { contents, generationConfig, safetySettings };
-        return requestObj;
+        var finalRequestBody = new
+        {
+            contents = geminiContents,
+            generationConfig,
+            safetySettings
+        };
+
+        return finalRequestBody;
+    }
+
+    private List<object> ProcessGeminiFilePart(FilePart filePart)
+    {
+        var parts = new List<object>();
+        try
+        {
+            byte[] fileBytes = Convert.FromBase64String(filePart.Base64Data);
+
+            if (filePart.MimeType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                string extractedText = ExtractTextFromPdf(fileBytes, filePart.FileName);
+                parts.Add(new { text = extractedText });
+            }
+            else if (IsPlainTextContentType(filePart.MimeType))
+            {
+                string extractedText = Encoding.UTF8.GetString(fileBytes);
+                parts.Add(new { text = $"[Content from File: {filePart.FileName} ({filePart.MimeType})]\n\n{extractedText}" });
+            }
+            else
+            {
+                parts.Add(new { text = $"[Uploaded File: {filePart.FileName} ({filePart.MimeType}) - Content not embedded]" });
+            }
+        }
+        catch (FormatException ex)
+        {
+            Console.WriteLine($"Error decoding base64 data for file {filePart.FileName}: {ex.Message}");
+            parts.Add(new { text = $"[Error processing file: {filePart.FileName} - Invalid base64 data]" });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing file {filePart.FileName} ({filePart.MimeType}): {ex.Message}");
+            parts.Add(new { text = $"[Error processing file: {filePart.FileName} ({filePart.MimeType})]" });
+        }
+        return parts;
     }
 
     private string ExtractTextFromPdf(byte[] pdfBytes, string fileName)
@@ -238,9 +202,10 @@ public class GeminiService : BaseAiService
         var typeLower = contentType.ToLowerInvariant().Trim();
 
         return typeLower.StartsWith("text/") ||
-               typeLower == "application/json" ||
-               typeLower == "application/xml" ||
-               typeLower == "application/javascript";
+               typeLower.EndsWith("/json") ||
+               typeLower.EndsWith("/xml") ||
+               typeLower.EndsWith("/javascript") ||
+               typeLower == "application/rtf";
     }
 
     private bool IsValidGeminiImageType(string mediaType, out string normalizedMediaType)
@@ -276,8 +241,9 @@ public class GeminiService : BaseAiService
 
         foreach (var contentItem in originalContents)
         {
-            var itemRole = (string)((dynamic)contentItem).role;
-            var itemParts = (List<object>)((dynamic)contentItem).parts;
+            dynamic item = contentItem;
+            string itemRole = item.role;
+            List<object> itemParts = item.parts;
 
             if (itemRole == currentRole)
             {
@@ -300,12 +266,27 @@ public class GeminiService : BaseAiService
             mergedContents.Add(new { role = currentRole, parts = currentParts });
         }
 
-        if (mergedContents.Any() && ((dynamic)mergedContents.First()).role == "model")
+        if (mergedContents.Any())
         {
-            mergedContents.Insert(0, new { role = "user", parts = new List<object> { new { text = "" } } });
+            dynamic firstItem = mergedContents.First();
+            if (firstItem.role == "model")
+            {
+                mergedContents.Insert(0, new { role = "user", parts = new List<object> { new { text = "" } } });
+            }
         }
 
         return mergedContents;
+    }
+
+    private List<object> GetGeminiSafetySettings()
+    {
+        return new List<object>
+        {
+            new { category = "HARM_CATEGORY_HARASSMENT", threshold = "BLOCK_NONE" },
+            new { category = "HARM_CATEGORY_HATE_SPEECH", threshold = "BLOCK_NONE" },
+            new { category = "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold = "BLOCK_NONE" },
+            new { category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold = "BLOCK_NONE" }
+        };
     }
 
     public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
@@ -313,80 +294,70 @@ public class GeminiService : BaseAiService
     {
         var requestBody = CreateRequestBody(history);
         HttpResponseMessage? response = null;
-        bool requestSucceeded = false;
 
-        try
-        {
-            var initialRequest = CreateRequest(requestBody);
-            response = await HttpClient.SendAsync(initialRequest, HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                int maxRetries = 3;
-                int retryCount = 0;
-                while (!response.IsSuccessStatusCode && retryCount < maxRetries)
-                {
-                    retryCount++;
-                    string errorContent = "";
-                    try
-                    {
-                        errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    }
-                    catch
-                    {
-                        /* Ignore read error */
-                    }
-
-                    Console.WriteLine(
-                        $"Gemini API Error (attempt {retryCount}): {response.StatusCode}. Content: {errorContent}");
-
-                    response.Dispose(); // Dispose failed response before retry
-                    await Task.Delay(1000 * retryCount, cancellationToken);
-
-                    Console.WriteLine($"Retrying Gemini request (attempt {retryCount})");
-                    var retryRequest = CreateRequest(requestBody);
-                    response = await HttpClient.SendAsync(retryRequest, HttpCompletionOption.ResponseHeadersRead,
-                        cancellationToken);
-                }
-            }
-
-            if (response.IsSuccessStatusCode)
-            {
-                requestSucceeded = true;
-            }
-            else
-            {
-                Console.WriteLine(
-                    $"Gemini request failed definitively after retries with status: {response.StatusCode}");
-                response.Dispose();
-                response = null; 
-                yield break; 
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            Console.WriteLine($"Critical error during Gemini request setup or retry: {ex.Message}");
-            response?.Dispose(); 
-            throw; 
-        }
-
-        if (requestSucceeded && response != null)
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
             try
             {
-                await foreach (var streamResponse in ProcessGeminiStream(response, cancellationToken)
-                                   .WithCancellation(cancellationToken))
+                var request = CreateRequest(requestBody);
+                response?.Dispose();
+                response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+                if (response.IsSuccessStatusCode)
                 {
-                    yield return streamResponse;
+                    break;
                 }
+
+                string errorContent = "";
+                try { errorContent = await response.Content.ReadAsStringAsync(cancellationToken); } catch { /* Ignore read error */ }
+                Console.WriteLine($"Gemini API Error (Attempt {attempt}/{maxRetries}): {response.StatusCode}. Content: {errorContent}");
+
+                if (attempt == maxRetries)
+                {
+                    await HandleApiErrorAsync(response, "Gemini");
+                    yield break;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
             }
-            finally
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                response.Dispose();
+                 Console.WriteLine("Gemini stream request cancelled.");
+                 response?.Dispose();
+                 yield break;
+            }
+            catch (Exception ex)
+            {
+                 Console.WriteLine($"Critical error during Gemini request (Attempt {attempt}/{maxRetries}): {ex.Message}");
+                 if (attempt == maxRetries)
+                 {
+                     response?.Dispose();
+                     throw;
+                 }
+                 await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
             }
         }
-        
+
+        if (response == null || !response.IsSuccessStatusCode)
+        {
+            Console.WriteLine("Gemini request failed after all attempts or due to an unhandled exception pathway.");
+            response?.Dispose();
+            yield break;
+        }
+
+        try
+        {
+            await foreach (var streamResponse in ProcessGeminiStream(response, cancellationToken)
+                               .WithCancellation(cancellationToken))
+            {
+                yield return streamResponse;
+            }
+        }
+        finally
+        {
+            response.Dispose();
+        }
     }
 
     private async IAsyncEnumerable<StreamResponse> ProcessGeminiStream(
@@ -401,38 +372,40 @@ public class GeminiService : BaseAiService
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
         await foreach (var jsonElement in JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(stream,
-                           new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, cancellationToken))
+                           new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true },
+                           cancellationToken))
         {
             if (cancellationToken.IsCancellationRequested) break;
 
             string? currentTextChunk = null;
+
             if (jsonElement.TryGetProperty("candidates", out var candidates) &&
                 candidates.ValueKind == JsonValueKind.Array && candidates.GetArrayLength() > 0 &&
                 candidates[0].TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object &&
                 content.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Array &&
                 parts.GetArrayLength() > 0 &&
-                parts[0].TryGetProperty("text", out var textElement))
+                parts[0].TryGetProperty("text", out var textElement) && textElement.ValueKind == JsonValueKind.String)
             {
                 currentTextChunk = textElement.GetString();
             }
 
             if (jsonElement.TryGetProperty("usageMetadata", out var usageMetadata))
             {
-                if (usageMetadata.TryGetProperty("promptTokenCount", out var promptTokenElement))
+                if (usageMetadata.TryGetProperty("promptTokenCount", out var promptTokenElement) && promptTokenElement.TryGetInt32(out var pt))
                 {
-                    promptTokens = promptTokenElement.GetInt32();
+                    promptTokens = pt;
                 }
 
-                if (usageMetadata.TryGetProperty("candidatesTokenCount", out var candidatesTokenElement))
+                if (usageMetadata.TryGetProperty("candidatesTokenCount", out var candidatesTokenElement) && candidatesTokenElement.TryGetInt32(out var ct))
                 {
-                    finalOutputTokens = candidatesTokenElement.GetInt32();
+                    finalOutputTokens = ct;
                 }
-                else if (finalOutputTokens == -1 &&
-                         usageMetadata.TryGetProperty("totalTokenCount", out var totalTokenElement))
+                else if (finalOutputTokens == -1 && usageMetadata.TryGetProperty("totalTokenCount", out var totalTokenElement) && totalTokenElement.TryGetInt32(out var tt))
                 {
                     if (promptTokens > 0)
                     {
-                        finalOutputTokens = totalTokenElement.GetInt32() - promptTokens;
+                        // This might represent the running total, treat with caution
+                        // finalOutputTokens = tt - promptTokens;
                     }
                 }
             }
@@ -440,14 +413,13 @@ public class GeminiService : BaseAiService
             if (!string.IsNullOrEmpty(currentTextChunk))
             {
                 fullResponse.Append(currentTextChunk);
-                currentOutputTokens =
-                    finalOutputTokens != -1 ? finalOutputTokens : Math.Max(1, fullResponse.Length / 4);
+                currentOutputTokens = (finalOutputTokens != -1) ? finalOutputTokens : Math.Max(1, fullResponse.Length / 4);
                 yield return new StreamResponse(currentTextChunk, promptTokens, currentOutputTokens);
             }
             else if (finalOutputTokens != -1 && currentOutputTokens != finalOutputTokens)
             {
-                currentOutputTokens = finalOutputTokens;
-                yield return new StreamResponse("", promptTokens, currentOutputTokens);
+                 currentOutputTokens = finalOutputTokens;
+                 yield return new StreamResponse("", promptTokens, currentOutputTokens);
             }
         }
     }

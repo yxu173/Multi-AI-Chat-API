@@ -9,12 +9,13 @@ using Domain.Aggregates.Users;
 using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
 using System.IO;
+using System.Collections.Generic;
+using System.Linq;
 
 public class AnthropicService : BaseAiService
 {
     private const string BaseUrl = "https://api.anthropic.com/v1/";
     private const string AnthropicVersion = "2023-06-01";
-    private const int DefaultThinkingBudget = 16000;
 
     public AnthropicService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
         UserAiModelSettings? modelSettings = null, AiModel? aiModel = null,
@@ -35,12 +36,30 @@ public class AnthropicService : BaseAiService
 
     protected override object CreateRequestBody(IEnumerable<MessageDto> history)
     {
-        var messages = PrepareMessageList(history);
-        var systemMessage = messages.FirstOrDefault(m => m.Role == "system").Content;
-        var otherMessages = messages.Where(m => m.Role != "system")
-            .Select(m => CreateContentMessage(m))
-            .ToList();
         var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
+
+        var baseMessages = base.PrepareMessageList(history);
+
+        var systemMessageContent = baseMessages
+            .Where(m => m.Role == "system")
+            .Select(m => m.Content)
+            .Aggregate(string.Empty, (current, next) => string.IsNullOrEmpty(current) ? next : $"{current}\n\n{next}")
+            .Trim();
+        if (!string.IsNullOrEmpty(systemMessageContent))
+        {
+            requestObj["system"] = systemMessageContent;
+        }
+
+        var otherMessages = baseMessages
+            .Where(m => m.Role != "system")
+            .Select(m => CreateAnthropicContentMessage(m.Role, m.Content))
+            .Where(m => m != null)
+            .ToList();
+
+        if (!requestObj.ContainsKey("max_tokens"))
+        {
+            requestObj["max_tokens"] = 20000;
+        }
 
         requestObj.Remove("frequency_penalty");
         requestObj.Remove("presence_penalty");
@@ -50,125 +69,86 @@ public class AnthropicService : BaseAiService
             requestObj.Remove("top_p");
         }
 
-        if (!requestObj.ContainsKey("max_tokens")) requestObj["max_tokens"] = 20000;
-        if (!string.IsNullOrEmpty(systemMessage)) requestObj["system"] = systemMessage;
         requestObj["messages"] = otherMessages;
         return requestObj;
     }
 
-    private object CreateContentMessage(ValueTuple<string, string> message)
+    private object? CreateAnthropicContentMessage(string role, string content)
     {
-        string role = message.Item1;
-        string content = message.Item2;
+        string anthropicRole = role == "assistant" ? "assistant" : "user";
         var contentItems = new List<object>();
 
-        if (role == "user")
+        if (anthropicRole == "user")
         {
-            var regex = new System.Text.RegularExpressions.Regex(@"<(image|file)-base64:([^;>]+);base64,([^>]+)>");
-            var matches = regex.Matches(content);
-            int lastIndex = 0;
+            var parsedParts = ParseMultimodalContent(content);
+            bool isMultimodal = parsedParts.Count > 1 || parsedParts.Any(p => p is ImagePart || p is FilePart);
 
-            foreach (System.Text.RegularExpressions.Match match in matches)
+            if (isMultimodal)
             {
-                if (match.Index > lastIndex)
+                foreach (var part in parsedParts)
                 {
-                    string textBefore = content.Substring(lastIndex, match.Index - lastIndex).Trim();
-                    if (!string.IsNullOrEmpty(textBefore))
+                    switch (part)
                     {
-                        contentItems.Add(new { type = "text", text = textBefore });
-                    }
-                }
-
-                string tagType = match.Groups[1].Value;
-                string metaData = match.Groups[2].Value;
-                string base64Data = match.Groups[3].Value;
-
-                if (tagType == "image")
-                {
-                    string mediaType = metaData;
-                    if (IsValidAnthropicImageType(mediaType, out string normalizedMediaType))
-                    {
-                        contentItems.Add(new
-                        {
-                            type = "image",
-                            source = new
+                        case TextPart textPart:
+                            contentItems.Add(new { type = "text", text = textPart.Text });
+                            break;
+                        case ImagePart imagePart:
+                            if (IsValidAnthropicImageType(imagePart.MimeType, out string normalizedMediaType))
                             {
-                                type = "base64",
-                                media_type = normalizedMediaType,
-                                data = base64Data
+                                contentItems.Add(new {
+                                    type = "image",
+                                    source = new {
+                                        type = "base64",
+                                        media_type = normalizedMediaType,
+                                        data = imagePart.Base64Data
+                                    }
+                                });
                             }
-                        });
-                    }
-                    else
-                    {
-                        contentItems.Add(new { type = "text", text = $"[Image: Unsupported format '{mediaType}']" });
-                    }
-                }
-                else if (tagType == "file")
-                {
-                    string fileName = "unknown";
-                    string fileContentType = "unknown";
-                    var metaParts = metaData.Split(new[] { ':' }, 2);
-                    if (metaParts.Length > 0) fileName = metaParts[0];
-                    if (metaParts.Length > 1) fileContentType = metaParts[1];
-
-                    if (fileContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
-                    {
-                        contentItems.Add(new
-                        {
-                            type = "document",
-                            source = new
+                            else
                             {
-                                type = "base64",
-                                media_type = fileContentType,
-                                data = base64Data
+                                contentItems.Add(new { type = "text", text = $"[Image: Unsupported format '{imagePart.MimeType}']" });
                             }
-                        });
-                    }
-                    else
-                    {
-                        contentItems.Add(new
-                            { type = "text", text = $"[Uploaded File: {fileName} ({fileContentType})]" });
+                            break;
+                        case FilePart filePart:
+                            contentItems.Add(new {
+                                type = "document",
+                                source = new {
+                                    type = "base64",
+                                    media_type = filePart.MimeType,
+                                    data = filePart.Base64Data
+                                }
+                            });
+                            break;
+                        default:
+                            contentItems.Add(new { type = "text", text = "[Unsupported content type]" });
+                            break;
                     }
                 }
-
-                lastIndex = match.Index + match.Length;
             }
-
-            if (lastIndex < content.Length)
+            else if (!string.IsNullOrWhiteSpace(content))
             {
-                string textAfter = content.Substring(lastIndex).Trim();
-                if (!string.IsNullOrEmpty(textAfter))
-                {
-                    contentItems.Add(new { type = "text", text = textAfter });
-                }
-            }
-
-            if (matches.Count == 0 && contentItems.Count == 0 && !string.IsNullOrEmpty(content))
-            {
-                contentItems.Add(new { type = "text", text = content });
-            }
-            else if (matches.Count > 0 && contentItems.Count == 0)
-            {
-                contentItems.Add(new { type = "text", text = "[Content included attachments only]" });
+                return new { role = anthropicRole, content = content.Trim() };
             }
         }
         else
         {
-            contentItems.Add(new { type = "text", text = content });
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                return new { role = anthropicRole, content = content.Trim() };
+            }
         }
 
-        if (contentItems.Count == 0 && !string.IsNullOrEmpty(content))
+        if (contentItems.Any())
         {
-            contentItems.Add(new { type = "text", text = content });
+            return new { role = anthropicRole, content = contentItems.ToArray() };
         }
 
-        return new { role = role == "assistant" ? "assistant" : "user", content = contentItems.ToArray() };
+        return null;
     }
 
     private bool IsValidAnthropicImageType(string mediaType, out string normalizedMediaType)
     {
-        string mediaTypeLower = mediaType.ToLowerInvariant();
+        string mediaTypeLower = mediaType.ToLowerInvariant().Trim();
 
         if (mediaTypeLower == "image/jpeg" || mediaTypeLower == "image/jpg")
         {
@@ -203,7 +183,7 @@ public class AnthropicService : BaseAiService
         if (ShouldEnableThinking())
         {
             requestObj["temperature"] = 1.0;
-            requestObj["thinking"] = new { type = "enabled", budget_tokens = DefaultThinkingBudget };
+            Console.WriteLine("Anthropic Specific: Thinking mode enabled (Temp=1.0). Ensure 'thinking' parameter is current.");
         }
     }
 
@@ -234,57 +214,97 @@ public class AnthropicService : BaseAiService
         int inputTokens = 0;
         int outputTokens = 0;
         int estimatedOutputTokens = 0;
-        HashSet<string> sentChunks = new HashSet<string>();
 
         await foreach (var json in ReadStreamAsync(response, cancellationToken))
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            using var doc = JsonDocument.Parse(json);
-            var type = doc.RootElement.GetProperty("type").GetString();
+            StreamResponse? responseToSend = null;
+            bool shouldBreak = false;
 
-            switch (type)
+            try
             {
-                case "message_start":
-                    if (doc.RootElement.TryGetProperty("message", out var messageElement) &&
-                        messageElement.TryGetProperty("usage", out var usageElement) &&
-                        usageElement.TryGetProperty("input_tokens", out var inputTokensElement))
-                    {
-                        inputTokens = inputTokensElement.GetInt32();
-                    }
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
 
-                    break;
+                if (!root.TryGetProperty("type", out var typeElement) || typeElement.GetString() == null) continue;
+                var type = typeElement.GetString()!;
 
-                case "content_block_delta":
-                    if (doc.RootElement.TryGetProperty("delta", out var delta) &&
-                        delta.TryGetProperty("text", out var textElement))
-                    {
-                        var text = textElement.GetString();
-                        if (!string.IsNullOrEmpty(text))
+                switch (type)
+                {
+                    case "message_start":
+                        if (root.TryGetProperty("message", out var messageElement) &&
+                            messageElement.TryGetProperty("usage", out var usageElement) &&
+                            usageElement.TryGetProperty("input_tokens", out var inputTokensElement) &&
+                            inputTokensElement.TryGetInt32(out var iTokens))
                         {
-                            fullResponse.Append(text);
-                            estimatedOutputTokens = Math.Max(1, fullResponse.Length / 4);
+                            inputTokens = iTokens;
+                        }
+                        break;
 
-                            if (!sentChunks.Contains(text))
+                    case "content_block_delta":
+                        if (root.TryGetProperty("delta", out var delta) &&
+                            delta.TryGetProperty("text", out var textElement) &&
+                            textElement.ValueKind == JsonValueKind.String)
+                        {
+                            var text = textElement.GetString();
+                            if (!string.IsNullOrEmpty(text))
                             {
-                                sentChunks.Add(text);
-                                yield return new StreamResponse(text, inputTokens, estimatedOutputTokens);
+                                fullResponse.Append(text);
+                                estimatedOutputTokens = outputTokens > 0 ? outputTokens : Math.Max(1, fullResponse.Length / 4);
+                                responseToSend = new StreamResponse(text, inputTokens, estimatedOutputTokens);
                             }
                         }
-                    }
+                        break;
 
-                    break;
+                    case "message_delta":
+                        if (root.TryGetProperty("usage", out var deltaUsage) &&
+                            deltaUsage.TryGetProperty("output_tokens", out var outputTokensElement) &&
+                            outputTokensElement.TryGetInt32(out var oTokens))
+                        {
+                            outputTokens = oTokens;
+                        }
+                        break;
 
-                case "message_delta":
-                    if (doc.RootElement.TryGetProperty("usage", out var deltaUsage) &&
-                        deltaUsage.TryGetProperty("output_tokens", out var outputTokensElement))
-                    {
-                        outputTokens = outputTokensElement.GetInt32();
-                        estimatedOutputTokens = outputTokens;
-                    }
+                    case "ping":
+                        break;
 
-                    break;
+                    case "error":
+                        if (root.TryGetProperty("error", out var errorDetails))
+                        {
+                            Console.WriteLine($"Anthropic Stream Error: {errorDetails.ToString()}");
+                        }
+                        shouldBreak = true;
+                        break;
+
+                    case "message_stop":
+                        if (outputTokens > 0 && estimatedOutputTokens != outputTokens)
+                        {
+                            responseToSend = new StreamResponse("", inputTokens, outputTokens);
+                        }
+                        shouldBreak = true;
+                        break;
+
+                    default:
+                        Console.WriteLine($"Anthropic Stream: Unknown event type '{type}'");
+                        break;
+                }
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"Error processing Anthropic response chunk: {ex.Message} - Chunk: {json}");
+                continue;
+            }
+
+            if (responseToSend != null)
+            {
+                yield return responseToSend;
+            }
+
+            if (shouldBreak)
+            {
+                break;
             }
         }
     }
