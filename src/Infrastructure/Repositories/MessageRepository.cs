@@ -51,4 +51,14 @@ public class MessageRepository : IMessageRepository
             await _context.SaveChangesAsync(cancellationToken);
         }
     }
+
+    public async Task<Message?> GetLatestAiMessageForChatAsync(Guid chatSessionId, CancellationToken? cancellationToken = null)
+    {
+        var token = cancellationToken ?? CancellationToken.None;
+        
+        return await _context.Messages
+            .Where(m => m.ChatSessionId == chatSessionId && m.IsFromAi && m.Status == Domain.Enums.MessageStatus.Streaming)
+            .OrderByDescending(m => m.CreatedAt)
+            .FirstOrDefaultAsync(token);
+    }
 }

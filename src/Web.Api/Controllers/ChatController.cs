@@ -78,7 +78,8 @@ public class ChatController : BaseController
 
     [HttpPost("ToggleThinking/{chatId}")]
     public async Task<IResult> ToggleThinking([FromRoute] Guid chatId, [FromBody] ToggleThinkingRequest request, 
-        [FromServices] Application.Services.ChatSessionService chatSessionService)
+        [FromServices] Application.Services.ChatSessionService chatSessionService,
+        [FromServices] Domain.Repositories.IAiModelRepository aiModelRepository)
     {
         try
         {
@@ -88,6 +89,17 @@ public class ChatController : BaseController
             if (session.UserId != UserId)
             {
                 return Results.Forbid();
+            }
+            
+            // Check if AI model supports thinking mode
+            var aiModel = await aiModelRepository.GetByIdAsync(session.AiModelId);
+            if (request.Enable && (aiModel == null || !aiModel.SupportsThinking))
+            {
+                return Results.BadRequest(new 
+                { 
+                    Message = "This AI model does not support thinking mode",
+                    AiModelName = aiModel?.Name ?? "Unknown model"
+                });
             }
             
             // Toggle thinking mode

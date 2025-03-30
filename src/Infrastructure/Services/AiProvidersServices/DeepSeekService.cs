@@ -43,7 +43,36 @@ public class DeepSeekService : BaseAiService
 
         string lastRole = messages.Count > 0 ? "system" : null;
         MessageDto? pendingMsg = null;
-        foreach (var msg in history.Where(m => !string.IsNullOrEmpty(m.Content)))
+        
+        // Check if model is a reasoner model (can be expanded to include more model checks if needed)
+        bool isReasonerModel = ModelCode?.ToLower().Contains("reasoner") ?? false;
+        bool hasUserMessage = false;
+        
+        var historyList = history.Where(m => !string.IsNullOrEmpty(m.Content)).ToList();
+        
+        // For reasoner models, ensure the first non-system message is from a user
+        if (isReasonerModel && historyList.Count > 0 && historyList[0].IsFromAi)
+        {
+            // Find the first user message
+            var firstUserMessage = historyList.FirstOrDefault(m => !m.IsFromAi);
+            if (firstUserMessage != null)
+            {
+                // Start with the first user message
+                var reorderedHistory = new List<MessageDto> { firstUserMessage };
+                
+                // Add all other messages that weren't the first user message
+                reorderedHistory.AddRange(historyList.Where(m => m.MessageId != firstUserMessage.MessageId));
+                
+                historyList = reorderedHistory;
+            }
+            else
+            {
+                // If no user messages exist, add a placeholder
+                historyList.Insert(0, new MessageDto("I need assistance.", false, Guid.NewGuid()));
+            }
+        }
+        
+        foreach (var msg in historyList)
         {
             // Process content to handle image and file tags
             string processedContent = msg.Content;
@@ -64,6 +93,8 @@ public class DeepSeekService : BaseAiService
             });
             
             string currentRole = msg.IsFromAi ? "assistant" : "user";
+            if (!msg.IsFromAi) hasUserMessage = true;
+            
             if (currentRole == lastRole && pendingMsg != null)
             {
                 pendingMsg = new MessageDto(
@@ -91,6 +122,14 @@ public class DeepSeekService : BaseAiService
         if (pendingMsg != null)
         {
             messages.Add((lastRole, pendingMsg.Content.Trim()));
+        }
+
+        // Final verification for reasoner models
+        if (isReasonerModel && messages.Count > 0 && messages[0].Role == "system" && 
+            messages.Count > 1 && messages[1].Role == "assistant")
+        {
+            // Insert a minimal user message if the first non-system message is still an assistant message
+            messages.Insert(1, ("user", "I need assistance."));
         }
 
         return messages;

@@ -29,6 +29,11 @@ public class ChatHub : Hub
     private readonly MessageService _messageService;
     private readonly FileUploadService _fileUploadService;
 
+    // Constants for file processing
+    private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    private const int MAX_AI_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    private const int SMALL_IMAGE_THRESHOLD = 10 * 1024; // 10KB
+
     public ChatHub(
         ChatService chatService,
         StreamingOperationManager streamingOperationManager,
@@ -38,36 +43,65 @@ public class ChatHub : Hub
         MessageService messageService,
         FileUploadService fileUploadService)
     {
-        _chatService = chatService;
-        _streamingOperationManager = streamingOperationManager;
-        _messageRepository = messageRepository;
-        _fileAttachmentRepository = fileAttachmentRepository;
-        _mediator = mediator;
-        _messageService = messageService;
-        _fileUploadService = fileUploadService;
+        _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
+        _streamingOperationManager = streamingOperationManager ?? throw new ArgumentNullException(nameof(streamingOperationManager));
+        _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
+        _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
+        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
+        _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
+        _fileUploadService = fileUploadService ?? throw new ArgumentNullException(nameof(fileUploadService));
     }
 
+    /// <summary>
+    /// Handles connection of a client to the hub
+    /// </summary>
     public override async Task OnConnectedAsync()
     {
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        Console.WriteLine($"User {userId} connected to chat hub");
         await base.OnConnectedAsync();
     }
 
+    /// <summary>
+    /// Handles disconnection of a client from the hub
+    /// </summary>
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        Console.WriteLine($"User {userId} disconnected from chat hub. Reason: {exception?.Message ?? "Normal disconnection"}");
         await base.OnDisconnectedAsync(exception);
     }
 
+    /// <summary>
+    /// Adds a client to a specific chat session group
+    /// </summary>
     public async Task JoinChatSession(string chatSessionId)
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, chatSessionId);
+        try
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, chatSessionId);
+            Console.WriteLine($"User {Context.UserIdentifier} joined chat session {chatSessionId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error joining chat session: {ex.Message}");
+            await Clients.Caller.SendAsync("Error", $"Failed to join chat session: {ex.Message}");
+        }
     }
 
+    /// <summary>
+    /// Sends a text message to the AI
+    /// </summary>
     public async Task SendMessage(string chatSessionId, string content)
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                await Clients.Caller.SendAsync("Error", "Message content cannot be empty");
+                return;
+            }
+
             var userId = Guid.Parse(Context.UserIdentifier);
             await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content);
         }
@@ -75,10 +109,12 @@ public class ChatHub : Hub
         {
             Console.WriteLine($"Error sending message: {ex.Message}");
             await Clients.Caller.SendAsync("Error", $"Failed to send message: {ex.Message}");
-            throw;
         }
     }
 
+    /// <summary>
+    /// Sends a message with file attachments to the AI
+    /// </summary>
     public async Task SendMessageWithAttachments(string chatSessionId, string content, List<Guid> fileAttachmentIds)
     {
         var userId = Guid.Parse(Context.UserIdentifier);
@@ -89,84 +125,7 @@ public class ChatHub : Hub
 
             if (fileAttachmentIds != null && fileAttachmentIds.Any())
             {
-                foreach (var fileId in fileAttachmentIds)
-                {
-                    var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId);
-                    if (fileAttachment == null) continue;
-
-                    // Check file exists
-                    if (!File.Exists(fileAttachment.FilePath))
-                    {
-                        processedContent += $"\n[Attachment {fileAttachment.FileName} not found]";
-                        continue;
-                    }
-
-                    if (fileAttachment.FileSize > 10 * 1024 * 1024)
-                    {
-                        processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit]";
-                        continue;
-                    }
-
-                    try
-                    {
-                        var fileBytes = await File.ReadAllBytesAsync(fileAttachment.FilePath);
-                        
-                        // Set a reasonable size limit for files sent to AI (e.g., 5MB)
-                        const int maxAiFileSize = 5 * 1024 * 1024;
-                        if (fileBytes.Length > maxAiFileSize)
-                        {
-                            processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: too large for AI processing]";
-                            continue;
-                        }
-                        
-                        if (fileAttachment.FileType == FileType.Image)
-                        {
-                            string normalizedContentType = NormalizeImageContentType(fileAttachment.ContentType);
-
-                            if (string.IsNullOrEmpty(normalizedContentType))
-                            {
-                                normalizedContentType = DetectImageFormat(fileBytes);
-                            }
-
-                            if (string.IsNullOrEmpty(normalizedContentType))
-                            {
-                                processedContent += $"\n[Image attachment: {fileAttachment.FileName} (unsupported format)]";
-                                continue;
-                            }
-
-                            byte[] optimizedImageBytes = OptimizeImageForAI(fileBytes, normalizedContentType);
-                            var base64Content = Convert.ToBase64String(optimizedImageBytes, Base64FormattingOptions.None);
-
-                            string imageTag = $"<image-base64:{normalizedContentType};base64,{base64Content}>";
-                            processedContent += $"\n\n{imageTag}\n\n";
-                        }
-                        else
-                        {
-                            // Process document files for OpenAI
-                            // Only include compatible file types and check size to prevent token overflow
-                            if (IsCompatibleFileType(fileAttachment.ContentType) && fileBytes.Length <= maxAiFileSize)
-                            {
-                                var base64Content = Convert.ToBase64String(fileBytes, Base64FormattingOptions.None);
-                                string fileTag = $"<file-base64:{fileAttachment.FileName}:{fileAttachment.ContentType};base64,{base64Content}>";
-                                processedContent += $"\n\n{fileTag}\n\n";
-                            }
-                            else
-                            {
-                                processedContent += $"\n[Document attachment: {fileAttachment.FileName} (not sent to AI due to incompatible format or size)]";
-                            }
-                        }
-                    }
-                    catch (IOException ex)
-                    {
-                        Console.WriteLine($"Error reading file {fileAttachment.FilePath}: {ex.Message}");
-                        processedContent += $"\n[Error reading attachment: {fileAttachment.FileName}]";
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Error processing attachment {fileAttachment.FileName}: {ex.Message}");
-                        processedContent += $"\n[Error processing attachment: {fileAttachment.FileName}]";
-                    }
-                }
+                processedContent = await ProcessFileAttachmentsAsync(processedContent, fileAttachmentIds);
             }
 
             await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, processedContent);
@@ -175,14 +134,22 @@ public class ChatHub : Hub
         {
             Console.WriteLine($"Error sending message with attachments: {ex.Message}");
             await Clients.Caller.SendAsync("Error", $"Failed to send message: {ex.Message}");
-            throw;
         }
     }
 
+    /// <summary>
+    /// Edit an existing message
+    /// </summary>
     public async Task EditMessage(string chatSessionId, string messageId, string newContent)
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(newContent))
+            {
+                await Clients.Caller.SendAsync("Error", "Message content cannot be empty");
+                return;
+            }
+
             var userId = Guid.Parse(Context.UserIdentifier);
             await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId),
                 newContent);
@@ -191,10 +158,12 @@ public class ChatHub : Hub
         {
             Console.WriteLine($"Error editing message: {ex.Message}");
             await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
-            throw;
         }
     }
 
+    /// <summary>
+    /// Edit a message with file attachments
+    /// </summary>
     public async Task EditMessageWithAttachments(string chatSessionId, string messageId, string newContent,
         List<Guid> fileAttachmentIds)
     {
@@ -206,84 +175,7 @@ public class ChatHub : Hub
 
             if (fileAttachmentIds != null && fileAttachmentIds.Any())
             {
-                foreach (var fileId in fileAttachmentIds)
-                {
-                    var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId);
-                    if (fileAttachment == null) continue;
-
-                    // Check file exists
-                    if (!File.Exists(fileAttachment.FilePath))
-                    {
-                        processedContent += $"\n[Attachment {fileAttachment.FileName} not found]";
-                        continue;
-                    }
-
-                    if (fileAttachment.FileSize > 10 * 1024 * 1024) // 10 MB to match configured limit
-                    {
-                        processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit]";
-                        continue;
-                    }
-
-                    try
-                    {
-                        var fileBytes = await File.ReadAllBytesAsync(fileAttachment.FilePath);
-                        
-                        // Set a reasonable size limit for files sent to AI (e.g., 5MB)
-                        const int maxAiFileSize = 5 * 1024 * 1024;
-                        if (fileBytes.Length > maxAiFileSize)
-                        {
-                            processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: too large for AI processing]";
-                            continue;
-                        }
-                        
-                        if (fileAttachment.FileType == FileType.Image)
-                        {
-                            string normalizedContentType = NormalizeImageContentType(fileAttachment.ContentType);
-
-                            if (string.IsNullOrEmpty(normalizedContentType))
-                            {
-                                normalizedContentType = DetectImageFormat(fileBytes);
-                            }
-
-                            if (string.IsNullOrEmpty(normalizedContentType))
-                            {
-                                processedContent += $"\n[Image attachment: {fileAttachment.FileName} (unsupported format)]";
-                                continue;
-                            }
-
-                            byte[] optimizedImageBytes = OptimizeImageForAI(fileBytes, normalizedContentType);
-                            var base64Content = Convert.ToBase64String(optimizedImageBytes, Base64FormattingOptions.None);
-
-                            string imageTag = $"<image-base64:{normalizedContentType};base64,{base64Content}>";
-                            processedContent += $"\n\n{imageTag}\n\n";
-                        }
-                        else
-                        {
-                            // Process document files for OpenAI
-                            // Only include compatible file types and check size to prevent token overflow
-                            if (IsCompatibleFileType(fileAttachment.ContentType) && fileBytes.Length <= maxAiFileSize)
-                            {
-                                var base64Content = Convert.ToBase64String(fileBytes, Base64FormattingOptions.None);
-                                string fileTag = $"<file-base64:{fileAttachment.FileName}:{fileAttachment.ContentType};base64,{base64Content}>";
-                                processedContent += $"\n\n{fileTag}\n\n";
-                            }
-                            else
-                            {
-                                processedContent += $"\n[Document attachment: {fileAttachment.FileName} (not sent to AI due to incompatible format or size)]";
-                            }
-                        }
-                    }
-                    catch (IOException ex)
-                    {
-                        Console.WriteLine($"Error reading file {fileAttachment.FilePath}: {ex.Message}");
-                        processedContent += $"\n[Error reading attachment: {fileAttachment.FileName}]";
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Error processing attachment {fileAttachment.FileName}: {ex.Message}");
-                        processedContent += $"\n[Error processing attachment: {fileAttachment.FileName}]";
-                    }
-                }
+                processedContent = await ProcessFileAttachmentsAsync(processedContent, fileAttachmentIds);
             }
 
             await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId),
@@ -293,26 +185,175 @@ public class ChatHub : Hub
         {
             Console.WriteLine($"Error editing message with attachments: {ex.Message}");
             await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
-            throw;
         }
     }
 
+    /// <summary>
+    /// Stop an ongoing AI response
+    /// </summary>
+    public async Task StopResponse(string chatSessionId)
+    {
+        try
+        {
+            var userId = Guid.Parse(Context.UserIdentifier);
+            
+            // Find the latest AI message that's still streaming
+            var latestAiMessages = await _messageRepository.GetLatestAiMessageForChatAsync(Guid.Parse(chatSessionId));
+            if (latestAiMessages != null)
+            {
+                bool stopped = _streamingOperationManager.StopStreaming(latestAiMessages.Id);
+                if (stopped)
+                {
+                    Console.WriteLine($"Successfully stopped response for message {latestAiMessages.Id}");
+                    await Clients.Caller.SendAsync("ResponseStopped", chatSessionId, latestAiMessages.Id);
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("Error", "No active response to stop");
+                }
+            }
+            else
+            {
+                await Clients.Caller.SendAsync("Error", "No active AI message found");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error stopping response: {ex.Message}");
+            await Clients.Caller.SendAsync("Error", $"Failed to stop response: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Get all file attachments for a message
+    /// </summary>
     public async Task GetMessageAttachments(string messageId)
     {
-        var attachments = await _messageService.GetMessageAttachmentsAsync(Guid.Parse(messageId));
-
-        foreach (var attachment in attachments)
+        try
         {
-            await Clients.Caller.SendAsync("ReceiveFile", new
+            var attachments = await _messageService.GetMessageAttachmentsAsync(Guid.Parse(messageId));
+
+            foreach (var attachment in attachments)
             {
-                id = attachment.Id,
-                messageId = attachment.MessageId,
-                fileName = attachment.FileName,
-                contentType = attachment.ContentType,
-                fileType = attachment.FileType.ToString(),
-                fileSize = attachment.FileSize,
-                url = $"/api/file/{attachment.Id}"
-            });
+                await Clients.Caller.SendAsync("ReceiveFile", new
+                {
+                    id = attachment.Id,
+                    messageId = attachment.MessageId,
+                    fileName = attachment.FileName,
+                    contentType = attachment.ContentType,
+                    fileType = attachment.FileType.ToString(),
+                    fileSize = attachment.FileSize,
+                    url = $"/api/file/{attachment.Id}"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error retrieving message attachments: {ex.Message}");
+            await Clients.Caller.SendAsync("Error", $"Failed to get message attachments: {ex.Message}");
+        }
+    }
+
+    #region Private Helper Methods
+
+    /// <summary>
+    /// Processes file attachments and integrates them into the message content
+    /// </summary>
+    private async Task<string> ProcessFileAttachmentsAsync(string content, List<Guid> fileAttachmentIds)
+    {
+        var processedContent = content;
+
+        foreach (var fileId in fileAttachmentIds)
+        {
+            var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId);
+            if (fileAttachment == null) continue;
+
+            // Check file exists
+            if (!File.Exists(fileAttachment.FilePath))
+            {
+                processedContent += $"\n[Attachment {fileAttachment.FileName} not found]";
+                continue;
+            }
+
+            if (fileAttachment.FileSize > MAX_CLIENT_FILE_SIZE)
+            {
+                processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit of {MAX_CLIENT_FILE_SIZE / (1024 * 1024)}MB]";
+                continue;
+            }
+
+            try
+            {
+                var fileBytes = await File.ReadAllBytesAsync(fileAttachment.FilePath);
+                
+                if (fileBytes.Length > MAX_AI_FILE_SIZE)
+                {
+                    processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: too large for AI processing (max {MAX_AI_FILE_SIZE / (1024 * 1024)}MB)]";
+                    continue;
+                }
+                
+                if (fileAttachment.FileType == FileType.Image)
+                {
+                    processedContent = await ProcessImageAttachmentAsync(processedContent, fileAttachment, fileBytes);
+                }
+                else
+                {
+                    processedContent = ProcessDocumentAttachmentAsync(processedContent, fileAttachment, fileBytes);
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error reading file {fileAttachment.FilePath}: {ex.Message}");
+                processedContent += $"\n[Error reading attachment: {fileAttachment.FileName}]";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing attachment {fileAttachment.FileName}: {ex.Message}");
+                processedContent += $"\n[Error processing attachment: {fileAttachment.FileName}]";
+            }
+        }
+
+        return processedContent;
+    }
+
+    /// <summary>
+    /// Process an image attachment
+    /// </summary>
+    private async Task<string> ProcessImageAttachmentAsync(string content, FileAttachment fileAttachment, byte[] fileBytes)
+    {
+        string normalizedContentType = NormalizeImageContentType(fileAttachment.ContentType);
+
+        if (string.IsNullOrEmpty(normalizedContentType))
+        {
+            normalizedContentType = DetectImageFormat(fileBytes);
+        }
+
+        if (string.IsNullOrEmpty(normalizedContentType))
+        {
+            return content + $"\n[Image attachment: {fileAttachment.FileName} (unsupported format)]";
+        }
+
+        byte[] optimizedImageBytes = OptimizeImageForAI(fileBytes, normalizedContentType);
+        var base64Content = Convert.ToBase64String(optimizedImageBytes, Base64FormattingOptions.None);
+
+        string imageTag = $"<image-base64:{normalizedContentType};base64,{base64Content}>";
+        return content + $"\n\n{imageTag}\n\n";
+    }
+
+    /// <summary>
+    /// Process a document attachment
+    /// </summary>
+    private string ProcessDocumentAttachmentAsync(string content, FileAttachment fileAttachment, byte[] fileBytes)
+    {
+        // Process document files for OpenAI
+        if (IsCompatibleFileType(fileAttachment.ContentType) && fileBytes.Length <= MAX_AI_FILE_SIZE)
+        {
+            var base64Content = Convert.ToBase64String(fileBytes, Base64FormattingOptions.None);
+            string fileTag = $"<file-base64:{fileAttachment.FileName}:{fileAttachment.ContentType};base64,{base64Content}>";
+            return content + $"\n\n{fileTag}\n\n";
+        }
+        else
+        {
+            return content + $"\n[Document attachment: {fileAttachment.FileName} (not sent to AI due to incompatible format or size)]";
         }
     }
 
@@ -362,7 +403,7 @@ public class ChatHub : Hub
             if (imageBytes == null || imageBytes.Length == 0)
                 return imageBytes;
 
-            if (imageBytes.Length <= 10 * 1024) // Skip optimization for very small images
+            if (imageBytes.Length <= SMALL_IMAGE_THRESHOLD) // Skip optimization for very small images
                 return imageBytes;
 
             using var imageStream = new MemoryStream(imageBytes);
@@ -429,8 +470,7 @@ public class ChatHub : Hub
             {
                 if (result.Length > 100 * 1024)
                 {
-                    Console.WriteLine(
-                        $"First pass result: {result.Length / 1024}KB - still too large, trying second pass");
+                    Console.WriteLine($"First pass result: {result.Length / 1024}KB - still too large, trying second pass");
                     using var secondPassStream = new MemoryStream(result);
                     using var secondPassImage = Image.Load(secondPassStream);
 
@@ -444,8 +484,7 @@ public class ChatHub : Hub
                     byte[] secondPassResult = secondResultStream.ToArray();
                     if (secondPassResult.Length < result.Length)
                     {
-                        Console.WriteLine(
-                            $"Second pass optimization: {result.Length / 1024}KB → {secondPassResult.Length / 1024}KB");
+                        Console.WriteLine($"Second pass optimization: {result.Length / 1024}KB → {secondPassResult.Length / 1024}KB");
                         return secondPassResult;
                     }
                 }
@@ -487,4 +526,6 @@ public class ChatHub : Hub
                typeLower.Contains("application/vnd.openxmlformats-officedocument") ||
                typeLower.Contains("application/vnd.ms-");
     }
+
+    #endregion
 }

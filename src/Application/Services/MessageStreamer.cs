@@ -44,6 +44,8 @@ public class MessageStreamer
 
         var tokenUsage = await _tokenUsageService.GetOrCreateTokenUsageAsync(chatSession.Id, cancellationToken);
         var responseContent = new StringBuilder();
+        
+        // User can only use thinking if it's enabled in both the AI model and chat session
         bool shouldEnableThinking = chatSession.EnableThinking && chatSession.AiModel.SupportsThinking;
 
         // Reset token accumulators for this message

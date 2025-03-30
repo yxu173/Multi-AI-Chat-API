@@ -33,13 +33,28 @@ public class AiModelServiceFactory : IAiModelServiceFactory
     {
         var aiModel = await _dbContext.AiModels.Include(m => m.AiProvider).FirstOrDefaultAsync(m => m.Id == modelId)
                       ?? throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
+        
         var apiKey = await GetApiKeyAsync(userId, aiModel.AiProviderId, customApiKey);
+        
+        // Get user settings for this AI model
         var userSettings = await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+        
+        // Check if user has specific settings for this model
+        var userAiModel = await _dbContext.UserAiModels
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.AiModelId == modelId);
+        
+        // ModelParameters priority:
+        // 1. If agent is used and has custom parameters, use those
+        // 2. Else use user settings
         ModelParameters? customModelParameters = null;
+        
         if (aiAgentId.HasValue)
         {
             var aiAgent = await _dbContext.AiAgents.FirstOrDefaultAsync(a => a.Id == aiAgentId.Value);
-            if (aiAgent?.AssignCustomModelParameters == true) customModelParameters = aiAgent.ModelParameter;
+            if (aiAgent?.AssignCustomModelParameters == true) 
+            {
+                customModelParameters = aiAgent.ModelParameter;
+            }
         }
 
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
