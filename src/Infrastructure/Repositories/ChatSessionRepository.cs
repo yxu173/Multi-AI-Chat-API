@@ -32,7 +32,7 @@ public class ChatSessionRepository : IChatSessionRepository
     public async Task<ChatSession> GetByIdWithModelAsync(Guid id)
     {
         var chat = await _context.ChatSessions
-            .AsNoTracking()
+            //.AsNoTracking() // Removed for testing potential identity resolution issues
             .Include(c => c.Messages)
             .ThenInclude(m => m.FileAttachments)
             .Include(c => c.AiModel)

@@ -12,23 +12,24 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services, IConfiguration configuration)
     {
         // Configure uploads directory
-        var uploadsBasePath = configuration["FilesStorage:BasePath"] 
-            ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
-        
+        var uploadsBasePath = configuration["FilesStorage:BasePath"]
+                              ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+
         if (!Directory.Exists(uploadsBasePath))
         {
             Directory.CreateDirectory(uploadsBasePath);
         }
-        
+
         services.AddScoped<ChatService>();
         services.AddScoped<ChatSessionService>();
         services.AddScoped<MessageService>();
         services.AddScoped<PluginService>();
         services.AddScoped<TokenUsageService>();
         services.AddScoped<MessageStreamer>();
-        services.AddScoped<FileUploadService>(provider => 
+        services.AddScoped<IAiRequestHandler, AiRequestHandler>();
+        services.AddScoped<FileUploadService>(provider =>
             new FileUploadService(
-                provider.GetRequiredService<Domain.Repositories.IFileAttachmentRepository>(), 
+                provider.GetRequiredService<Domain.Repositories.IFileAttachmentRepository>(),
                 uploadsBasePath));
         services.AddSingleton<StreamingOperationManager>();
         services.AddMediatR(config =>

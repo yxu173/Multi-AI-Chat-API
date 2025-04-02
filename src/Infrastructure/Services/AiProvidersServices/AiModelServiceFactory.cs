@@ -6,21 +6,19 @@ using Infrastructure.Services.AiProvidersServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Net.Http;
 
 public class AiModelServiceFactory : IAiModelServiceFactory
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IApplicationDbContext _dbContext;
     private readonly IConfiguration _configuration;
-    private readonly IResilienceService _resilienceService;
 
-    public AiModelServiceFactory(IServiceProvider serviceProvider, IApplicationDbContext dbContext,
-        IConfiguration configuration, IResilienceService resilienceService)
+    public AiModelServiceFactory(IServiceProvider serviceProvider, IApplicationDbContext dbContext, IConfiguration configuration)
     {
         _serviceProvider = serviceProvider;
         _dbContext = dbContext;
         _configuration = configuration;
-        _resilienceService = resilienceService;
     }
 
     public IAiModelService GetService(Guid userId, Guid modelId, string? customApiKey = null, Guid? aiAgentId = null)
@@ -28,46 +26,23 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         return GetServiceAsync(userId, modelId, customApiKey, aiAgentId).GetAwaiter().GetResult();
     }
 
-    private async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string? customApiKey,
-        Guid? aiAgentId)
+    private async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string? customApiKey, Guid? aiAgentId)
     {
-        var aiModel = await _dbContext.AiModels.Include(m => m.AiProvider).FirstOrDefaultAsync(m => m.Id == modelId)
+        var aiModel = await _dbContext.AiModels
+                          .Include(m => m.AiProvider)
+                          .FirstOrDefaultAsync(m => m.Id == modelId) 
                       ?? throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
         
         var apiKey = await GetApiKeyAsync(userId, aiModel.AiProviderId, customApiKey);
         
-        // Get user settings for this AI model
-        var userSettings = await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId);
-        
-        // Check if user has specific settings for this model
-        var userAiModel = await _dbContext.UserAiModels
-            .FirstOrDefaultAsync(m => m.UserId == userId && m.AiModelId == modelId);
-        
-        // ModelParameters priority:
-        // 1. If agent is used and has custom parameters, use those
-        // 2. Else use user settings
-        ModelParameters? customModelParameters = null;
-        
-        if (aiAgentId.HasValue)
-        {
-            var aiAgent = await _dbContext.AiAgents.FirstOrDefaultAsync(a => a.Id == aiAgentId.Value);
-            if (aiAgent?.AssignCustomModelParameters == true) 
-            {
-                customModelParameters = aiAgent.ModelParameter;
-            }
-        }
-
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
+        
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => new OpenAiService(httpClientFactory, apiKey, aiModel.ModelCode, _resilienceService,
-                userSettings, aiModel, customModelParameters),
-            ModelType.Anthropic => new AnthropicService(httpClientFactory, apiKey, aiModel.ModelCode, userSettings,
-                aiModel, customModelParameters),
-            ModelType.DeepSeek => new DeepSeekService(httpClientFactory, apiKey, aiModel.ModelCode, userSettings,
-                aiModel, customModelParameters),
-            ModelType.Gemini => new GeminiService(httpClientFactory, apiKey, aiModel.ModelCode, userSettings, aiModel,
-                customModelParameters),
+            ModelType.OpenAi => new OpenAiService(httpClientFactory, apiKey, aiModel.ModelCode),
+            ModelType.Anthropic => new AnthropicService(httpClientFactory, apiKey, aiModel.ModelCode),
+            ModelType.DeepSeek => new DeepSeekService(httpClientFactory, apiKey, aiModel.ModelCode),
+            ModelType.Gemini => new GeminiService(httpClientFactory, apiKey, aiModel.ModelCode),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
     }
@@ -75,8 +50,10 @@ public class AiModelServiceFactory : IAiModelServiceFactory
     private async Task<string> GetApiKeyAsync(Guid userId, Guid providerId, string? customApiKey)
     {
         if (!string.IsNullOrEmpty(customApiKey)) return customApiKey;
-        var userApiKey =
-            await _dbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == userId && k.AiProviderId == providerId);
+        
+        var userApiKey = await _dbContext.UserApiKeys
+            .FirstOrDefaultAsync(k => k.UserId == userId && k.AiProviderId == providerId);
+            
         if (userApiKey != null)
         {
             userApiKey.UpdateLastUsed();
@@ -84,7 +61,10 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             return userApiKey.ApiKey;
         }
 
-        var provider = await _dbContext.AiProviders.FirstOrDefaultAsync(p => p.Id == providerId);
-        return provider?.DefaultApiKey ?? throw new Exception("No API key found");
+        var provider = await _dbContext.AiProviders.FindAsync(providerId) 
+            ?? throw new Exception($"AI Provider with ID {providerId} not found.");
+            
+        return provider.DefaultApiKey 
+            ?? throw new Exception($"No API key configured for user {userId} or provider {provider.Name}, and no default key available.");
     }
 }

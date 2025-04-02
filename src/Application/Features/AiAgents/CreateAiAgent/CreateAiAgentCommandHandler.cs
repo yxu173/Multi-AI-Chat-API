@@ -43,7 +43,6 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                     maxTokens: request.MaxTokens,
                     enableThinking: request.EnableThinking,
                     stopSequences: request.StopSequences,
-                    reasoningEffort: request.ReasoningEffort,
                     promptCaching: request.PromptCaching,
                     contextLimit: request.ContextLimit,
                     safetySettings: request.SafetySettings

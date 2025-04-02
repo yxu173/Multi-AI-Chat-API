@@ -1,0 +1,1089 @@
+using System.Text;
+using System.Text.RegularExpressions;
+using Application.Abstractions.Interfaces;
+using Domain.Aggregates.Chats;
+using Domain.Aggregates.Users;
+using Domain.Enums;
+using Domain.ValueObjects;
+using Microsoft.Extensions.Logging;
+using System.Text.Json;
+
+namespace Application.Services;
+
+public record AiRequestContext(
+    Guid UserId,
+    ChatSession ChatSession,
+    List<MessageDto> History,
+    AiAgent? AiAgent,
+    UserAiModelSettings? UserSettings,
+    AiModel SpecificModel,
+    bool? RequestSpecificThinking = null
+);
+
+public interface IAiRequestHandler
+{
+    Task<AiRequestPayload> PrepareRequestPayloadAsync(
+        AiRequestContext context,
+        CancellationToken cancellationToken = default);
+}
+
+public abstract record ContentPart;
+
+public record TextPart(string Text) : ContentPart;
+
+public record ImagePart(string MimeType, string Base64Data, string? FileName = null) : ContentPart;
+
+public record FilePart(string MimeType, string Base64Data, string FileName) : ContentPart;
+
+public class AiRequestHandler : IAiRequestHandler
+{
+    private readonly ILogger<AiRequestHandler>? _logger;
+    private readonly IAiModelServiceFactory _serviceFactory;
+
+    private static readonly Regex MultimodalTagRegex =
+        new Regex(@"<(image|file)-base64:(?:([^:]*?):)?([^;]*?);base64,([^>]*?)>",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+    public AiRequestHandler(IAiModelServiceFactory serviceFactory, ILogger<AiRequestHandler>? logger = null)
+    {
+        _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
+        _logger = logger;
+    }
+
+    public async Task<AiRequestPayload> PrepareRequestPayloadAsync(AiRequestContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(context.ChatSession);
+        ArgumentNullException.ThrowIfNull(context.SpecificModel);
+        ArgumentNullException.ThrowIfNull(context.History);
+
+        var modelType = context.SpecificModel.ModelType;
+
+        try
+        {
+            var payload = modelType switch
+            {
+                ModelType.OpenAi => await PrepareOpenAiPayloadAsync(context, cancellationToken),
+                ModelType.Anthropic => await PrepareAnthropicPayloadAsync(context, cancellationToken),
+                ModelType.Gemini => await PrepareGeminiPayloadAsync(context, cancellationToken),
+                ModelType.DeepSeek => await PrepareDeepSeekPayloadAsync(context, cancellationToken),
+                _ => throw new NotSupportedException(
+                    $"Model type {modelType} is not supported for request preparation."),
+            };
+            return payload;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error preparing payload for {ModelType}", modelType);
+            throw;
+        }
+    }
+
+
+    private async Task<AiRequestPayload> PrepareOpenAiPayloadAsync(AiRequestContext context,
+        CancellationToken cancellationToken)
+    {
+        var payload = PrepareOpenAiPayload(context);
+        await Task.CompletedTask;
+        return payload;
+    }
+
+    private AiRequestPayload PrepareOpenAiPayload(AiRequestContext context)
+    {
+        var requestObj = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+
+        requestObj["model"] = model.ModelCode;
+        requestObj["stream"] = true;
+
+        var parameters = GetMergedParameters(context);
+        ApplyParametersToRequest(requestObj, parameters, model.ModelType);
+
+        var processedMessages = ProcessMessagesForOpenAI(context.History, context);
+        requestObj["messages"] = processedMessages;
+
+        AddOpenAiSpecificParameters(requestObj, context);
+
+        return new AiRequestPayload(requestObj);
+    }
+
+    private async Task<AiRequestPayload> PrepareAnthropicPayloadAsync(AiRequestContext context,
+        CancellationToken cancellationToken)
+    {
+        var requestObj = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+
+        requestObj["model"] = model.ModelCode;
+        requestObj["stream"] = true;
+
+        var parameters = GetMergedParameters(context);
+        ApplyParametersToRequest(requestObj, parameters, model.ModelType);
+        var (systemPrompt, processedMessages) = ProcessMessagesForAnthropic(context.History, context);
+        if (!string.IsNullOrWhiteSpace(systemPrompt))
+        {
+            requestObj["system"] = systemPrompt;
+        }
+
+        requestObj["messages"] = processedMessages;
+
+        AddAnthropicSpecificParameters(requestObj, context);
+
+        bool useEffectiveThinking = context.RequestSpecificThinking ?? model.SupportsThinking;
+        if (useEffectiveThinking && !requestObj.ContainsKey("thinking"))
+        {
+            const int defaultThinkingBudget = 1024;
+            requestObj["temperature"] = 1;
+            requestObj.Remove("top_k");
+            requestObj.Remove("top_p");
+            requestObj["thinking"] = new { type = "enabled", budget_tokens = defaultThinkingBudget };
+            _logger?.LogDebug("Enabled Anthropic 'thinking' parameter with budget {Budget} (Effective: {UseThinking})",
+                defaultThinkingBudget, useEffectiveThinking);
+        }
+
+        if (!requestObj.ContainsKey("max_tokens"))
+        {
+            const int defaultMaxTokens = 4096;
+            requestObj["max_tokens"] = defaultMaxTokens;
+            _logger?.LogWarning(
+                "Anthropic request payload was missing 'max_tokens'. Added default value: {DefaultMaxTokens}",
+                defaultMaxTokens);
+        }
+
+        await Task.CompletedTask; // Placeholder
+        return new AiRequestPayload(requestObj);
+    }
+
+    private async Task<AiRequestPayload> PrepareGeminiPayloadAsync(AiRequestContext context,
+        CancellationToken cancellationToken)
+    {
+        var requestObj = new Dictionary<string, object>();
+        var generationConfig = new Dictionary<string, object>();
+        var safetySettings = GetGeminiSafetySettings();
+
+        var parameters = GetMergedParameters(context);
+        ApplyGeminiParametersToConfig(generationConfig, parameters, context.SpecificModel.ModelType);
+
+        var geminiContents = await ProcessMessagesForGeminiAsync(context.History, context, cancellationToken);
+
+        requestObj["contents"] = geminiContents;
+        requestObj["generationConfig"] = generationConfig;
+        requestObj["safetySettings"] = safetySettings;
+
+        return new AiRequestPayload(requestObj);
+    }
+
+    private async Task<AiRequestPayload> PrepareDeepSeekPayloadAsync(AiRequestContext context,
+        CancellationToken cancellationToken)
+    {
+        var requestObj = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+
+        requestObj["model"] = model.ModelCode;
+        requestObj["stream"] = true;
+
+        var parameters = GetMergedParameters(context);
+        ApplyParametersToRequest(requestObj, parameters, model.ModelType);
+
+
+        var processedMessages = await ProcessMessagesForDeepSeekAsync(context.History, context, cancellationToken);
+        requestObj["messages"] = processedMessages;
+
+        AddDeepSeekSpecificParameters(requestObj, context);
+
+        await Task.CompletedTask;
+        return new AiRequestPayload(requestObj);
+    }
+
+    private Dictionary<string, object> GetMergedParameters(AiRequestContext context)
+    {
+        var parameters = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+        var agent = context.AiAgent;
+        var userSettings = context.UserSettings;
+
+        ModelParameters? sourceParams = null;
+        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
+        {
+            sourceParams = agent.ModelParameter;
+            if (sourceParams.Temperature.HasValue) parameters["temperature"] = sourceParams.Temperature.Value;
+            if (sourceParams.TopP.HasValue) parameters["top_p"] = sourceParams.TopP.Value;
+            if (sourceParams.TopK.HasValue) parameters["top_k"] = sourceParams.TopK.Value;
+            if (sourceParams.FrequencyPenalty.HasValue)
+                parameters["frequency_penalty"] = sourceParams.FrequencyPenalty.Value;
+            if (sourceParams.PresencePenalty.HasValue)
+                parameters["presence_penalty"] = sourceParams.PresencePenalty.Value;
+            if (sourceParams.MaxTokens.HasValue) parameters["max_tokens"] = sourceParams.MaxTokens.Value;
+            if (sourceParams.StopSequences?.Any() == true) parameters["stop"] = sourceParams.StopSequences;
+        }
+        else if (userSettings != null)
+        {
+            if (userSettings.Temperature.HasValue) parameters["temperature"] = userSettings.Temperature.Value;
+            if (userSettings.TopP.HasValue) parameters["top_p"] = userSettings.TopP.Value;
+            if (userSettings.TopK.HasValue) parameters["top_k"] = userSettings.TopK.Value;
+            if (userSettings.FrequencyPenalty.HasValue)
+                parameters["frequency_penalty"] = userSettings.FrequencyPenalty.Value;
+            if (userSettings.PresencePenalty.HasValue)
+                parameters["presence_penalty"] = userSettings.PresencePenalty.Value;
+            if (userSettings.StopSequences?.Any() == true) parameters["stop"] = userSettings.StopSequences;
+        }
+
+        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
+        {
+            parameters["max_tokens"] = model.MaxOutputTokens.Value;
+        }
+
+        return parameters;
+    }
+
+    private void ApplyParametersToRequest(Dictionary<string, object> requestObj, Dictionary<string, object> parameters,
+        ModelType modelType)
+    {
+        foreach (var kvp in parameters)
+        {
+            string standardParamName = kvp.Key;
+            string providerParamName = GetProviderParameterName(standardParamName, modelType);
+
+            if (IsParameterSupported(providerParamName, modelType))
+            {
+                object valueToSend = kvp.Value;
+                requestObj[providerParamName] = valueToSend;
+            }
+            else
+            {
+                _logger?.LogDebug(
+                    "Skipping unsupported parameter '{StandardName}' (mapped to '{ProviderName}') for model type {ModelType}",
+                    standardParamName, providerParamName, modelType);
+            }
+        }
+    }
+
+
+    private List<object> ProcessMessagesForOpenAI(List<MessageDto> history, AiRequestContext context)
+    {
+        var processedMessages = new List<object>();
+        bool thinkingEnabled = context.SpecificModel.SupportsThinking;
+        string? systemMessage = context.AiAgent?.SystemInstructions ?? context.UserSettings?.SystemMessage;
+
+        if (!string.IsNullOrWhiteSpace(systemMessage))
+        {
+            processedMessages.Add(new { role = "system", content = systemMessage.Trim() });
+        }
+
+        if (thinkingEnabled)
+        {
+            processedMessages.Add(new
+            {
+                role = "system",
+                content =
+                    "When solving complex problems, show your step-by-step thinking process marked as '### Thinking:' before the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly."
+            });
+        }
+
+        foreach (var msg in history)
+        {
+            string role = msg.IsFromAi ? "assistant" : "user";
+            string rawContent = msg.Content?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(rawContent)) continue;
+
+            if (role == "user")
+            {
+                var contentParts = ParseMultimodalContent(rawContent);
+                var openAiContentItems = new List<object>();
+                foreach (var part in contentParts)
+                {
+                    switch (part)
+                    {
+                        case TextPart textPart:
+                            openAiContentItems.Add(new { type = "text", text = textPart.Text }); break;
+                        case ImagePart imagePart:
+                            openAiContentItems.Add(new
+                            {
+                                type = "image_url",
+                                image_url = new { url = $"data:{imagePart.MimeType};base64,{imagePart.Base64Data}" }
+                            }); break;
+                        case FilePart filePart: // Add as text placeholder
+                            openAiContentItems.Add(
+                                new { type = "text", text = $"[Attached File: {filePart.FileName}]" });
+                            break;
+                    }
+                }
+
+                // Determine final content format (string or array)
+                if (openAiContentItems.Any())
+                {
+                    // Check if it's purely text after parsing
+                    if (openAiContentItems.All(item =>
+                            item.GetType().GetProperty("type")?.GetValue(item)?.ToString() == "text"))
+                    {
+                        string combinedText = string.Join("\n",
+                            openAiContentItems.Select(item =>
+                                item.GetType().GetProperty("text")?.GetValue(item)?.ToString() ?? "")).Trim();
+                        // Only add if combined text is not empty
+                        if (!string.IsNullOrEmpty(combinedText))
+                        {
+                            processedMessages.Add(new { role = "user", content = combinedText });
+                        }
+                    }
+                    else
+                    {
+                        // Contains images or was originally multi-part, send as array
+                        processedMessages.Add(new { role = "user", content = openAiContentItems.ToArray() });
+                    }
+                }
+            }
+            else
+            {
+                processedMessages.Add(new { role = "assistant", content = rawContent });
+            }
+        }
+
+        return processedMessages;
+    }
+
+    private (string? SystemPrompt, List<object> Messages) ProcessMessagesForAnthropic(List<MessageDto> history,
+        AiRequestContext context)
+    {
+        bool thinkingEnabled = context.SpecificModel.SupportsThinking;
+        string? agentSystemMessage = context.AiAgent?.SystemInstructions;
+        string? finalSystemPrompt = agentSystemMessage?.Trim() ?? context.UserSettings?.SystemMessage?.Trim();
+
+        var otherMessages = new List<object>();
+        var mergedHistory =
+            MergeConsecutiveRoles(history.Select(m => (m.IsFromAi ? "assistant" : "user", m.Content?.Trim() ?? ""))
+                .ToList());
+
+        foreach (var (role, rawContent) in mergedHistory)
+        {
+            string anthropicRole = (role == "assistant") ? "assistant" : "user";
+            if (string.IsNullOrEmpty(rawContent)) continue;
+
+            var contentParts = ParseMultimodalContent(rawContent);
+            if (contentParts.Count > 1 || contentParts.Any(p => p is not TextPart))
+            {
+                // Multimodal
+                var anthropicContentItems = new List<object>();
+                foreach (var part in contentParts)
+                {
+                    switch (part)
+                    {
+                        case TextPart tp: anthropicContentItems.Add(new { type = "text", text = tp.Text }); break;
+                        case ImagePart ip:
+                            if (IsValidAnthropicImageType(ip.MimeType, out var mediaType))
+                            {
+                                anthropicContentItems.Add(new
+                                {
+                                    type = "image",
+                                    source = new { type = "base64", media_type = mediaType, data = ip.Base64Data }
+                                });
+                            }
+                            else
+                            {
+                                anthropicContentItems.Add(new
+                                {
+                                    type = "text", text = $"[Image: {ip.FileName ?? ip.MimeType} - Unsupported Type]"
+                                });
+                            }
+
+                            break;
+                        case FilePart fp:
+                            if (IsValidAnthropicDocumentType(fp.MimeType, out var docMediaType))
+                            {
+                                anthropicContentItems.Add(new
+                                {
+                                    type = "document",
+                                    source = new
+                                    {
+                                        type = "base64",
+                                        media_type = docMediaType,
+                                        data = fp.Base64Data
+                                    }
+                                });
+                            }
+                            else
+                            {
+                                anthropicContentItems.Add(new
+                                {
+                                    type = "text",
+                                    text = $"[Document: {fp.FileName} - Unsupported Type ({fp.MimeType})]"
+                                });
+                            }
+
+                            break;
+                    }
+                }
+
+                if (anthropicContentItems.Any())
+                    otherMessages.Add(new { role = anthropicRole, content = anthropicContentItems.ToArray() });
+            }
+            else if (contentParts.Count == 1 && contentParts[0] is TextPart singleTextPart)
+            {
+                // Single text part message
+                otherMessages.Add(new { role = anthropicRole, content = singleTextPart.Text });
+            }
+            // Ignore if contentParts is empty (shouldn't happen with current ParseMultimodalContent logic)
+        }
+
+        EnsureAlternatingRoles(otherMessages, "user", "assistant");
+        return (finalSystemPrompt, otherMessages);
+    }
+
+    private async Task<List<object>> ProcessMessagesForGeminiAsync(
+        List<MessageDto> history,
+        AiRequestContext context,
+        CancellationToken cancellationToken)
+    {
+        bool thinkingEnabled = context.SpecificModel.SupportsThinking;
+        string? systemMessage = context.AiAgent?.SystemInstructions ?? context.UserSettings?.SystemMessage;
+        var geminiContents = new List<object>();
+
+        var systemPrompts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(systemMessage)) systemPrompts.Add(systemMessage.Trim());
+        if (thinkingEnabled)
+            systemPrompts.Add(
+                "When solving complex problems, show your step-by-step thinking process marked as '### Thinking:' before the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly.");
+        string combinedSystem = string.Join("\n\n", systemPrompts);
+
+        var historyToProcess = new List<(string Role, string Content)>();
+        bool systemInjected = false;
+        foreach (var msg in history)
+        {
+            string role = msg.IsFromAi ? "model" : "user";
+            string content = msg.Content?.Trim() ?? "";
+
+            if (!systemInjected && role == "user" && !string.IsNullOrWhiteSpace(combinedSystem))
+            {
+                content = $"{combinedSystem}\n\n{content}";
+                systemInjected = true;
+            }
+
+            historyToProcess.Add((role, content));
+        }
+
+        if (!systemInjected && !string.IsNullOrWhiteSpace(combinedSystem) &&
+            !historyToProcess.Any(h => h.Role == "user"))
+        {
+            historyToProcess.Insert(0, ("user", combinedSystem));
+            _logger?.LogWarning("Prepended Gemini system/thinking prompt as initial user message.");
+        }
+
+        var mergedHistory = MergeConsecutiveRoles(historyToProcess);
+
+        IAiFileUploader? fileUploader = null;
+        bool needsFileUpload = mergedHistory.Any(m => ParseMultimodalContent(m.Content).OfType<FilePart>().Any());
+
+        if (needsFileUpload)
+        {
+            var modelService = _serviceFactory.GetService(context.UserId, context.SpecificModel.Id,
+                context.ChatSession.CustomApiKey);
+            if (modelService is IAiFileUploader uploader)
+            {
+                fileUploader = uploader;
+                _logger?.LogInformation("File uploader service obtained for provider {ProviderType}",
+                    modelService.GetType().Name);
+            }
+            else
+            {
+                _logger?.LogWarning(
+                    "The AI service {ServiceType} for model {ModelCode} does not implement IAiFileUploader. Files will be added as placeholders.",
+                    modelService.GetType().Name, context.SpecificModel.ModelCode);
+            }
+        }
+
+        foreach (var (role, rawContent) in mergedHistory)
+        {
+            if (string.IsNullOrEmpty(rawContent)) continue;
+
+            var contentParts = ParseMultimodalContent(rawContent);
+            var geminiParts = new List<object>();
+
+            foreach (var part in contentParts)
+            {
+                switch (part)
+                {
+                    case TextPart tp: geminiParts.Add(new { text = tp.Text }); break;
+                    case ImagePart ip:
+                        if (IsValidGeminiImageType(ip.MimeType, out var mediaType))
+                        {
+                            geminiParts.Add(new { inlineData = new { mimeType = mediaType, data = ip.Base64Data } });
+                        }
+                        else
+                        {
+                            geminiParts.Add(new { text = $"[Image: {ip.FileName ?? ip.MimeType} - Unsupported Type]" });
+                        }
+
+                        break;
+                    case FilePart fp:
+                        if (fileUploader != null)
+                        {
+                            try
+                            {
+                                byte[] fileBytes = Convert.FromBase64String(fp.Base64Data);
+                                _logger?.LogInformation("Uploading file {FileName} ({MimeType}) to Gemini File API...",
+                                    fp.FileName, fp.MimeType);
+                                var uploadResult = await fileUploader.UploadFileForAiAsync(fileBytes, fp.MimeType,
+                                    fp.FileName, cancellationToken);
+
+                                if (uploadResult != null)
+                                {
+                                    geminiParts.Add(new
+                                    {
+                                        fileData = new { mimeType = uploadResult.MimeType, fileUri = uploadResult.Uri }
+                                    });
+                                    _logger?.LogInformation("File {FileName} uploaded successfully. URI: {FileUri}",
+                                        fp.FileName, uploadResult.Uri);
+                                }
+                                else
+                                {
+                                    geminiParts.Add(new { text = $"[File Upload Failed: {fp.FileName}]" });
+                                }
+                            }
+                            catch (FormatException ex)
+                            {
+                                _logger?.LogError(ex, "Invalid Base64 data for file {FileName}", fp.FileName);
+                                geminiParts.Add(new { text = $"[Invalid File Data: {fp.FileName}]" });
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogError(ex, "Error during Gemini file upload processing for {FileName}",
+                                    fp.FileName);
+                                geminiParts.Add(new { text = $"[File Processing Error: {fp.FileName}]" });
+                            }
+                        }
+                        else
+                        {
+                            geminiParts.Add(new { text = $"[Attached File: {fp.FileName} ({fp.MimeType})]" });
+                        }
+
+                        break;
+                }
+            }
+
+            if (geminiParts.Any())
+            {
+                geminiContents.Add(new { role = role, parts = geminiParts.ToArray() });
+            }
+        }
+
+        EnsureAlternatingRoles(geminiContents, "user", "model");
+        return geminiContents;
+    }
+
+    private async Task<List<object>> ProcessMessagesForDeepSeekAsync(List<MessageDto> history, AiRequestContext context,
+        CancellationToken cancellationToken)
+    {
+        var processedMessages = new List<object>();
+        bool thinkingEnabled = context.SpecificModel.SupportsThinking;
+        string? systemMessage = context.AiAgent?.SystemInstructions ?? context.UserSettings?.SystemMessage;
+
+        if (!string.IsNullOrWhiteSpace(systemMessage))
+        {
+            processedMessages.Add(new { role = "system", content = systemMessage.Trim() });
+        }
+
+        if (thinkingEnabled)
+        {
+            processedMessages.Add(new
+            {
+                role = "system",
+                content =
+                    "When solving complex problems, please show your step-by-step thinking process marked as '### Thinking:' before the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly."
+            });
+        }
+
+        var mergedHistory =
+            MergeConsecutiveRoles(history.Select(m => (m.IsFromAi ? "assistant" : "user", m.Content?.Trim() ?? ""))
+                .ToList());
+
+        foreach (var (role, rawContent) in mergedHistory)
+        {
+            if (string.IsNullOrEmpty(rawContent)) continue;
+            var contentParts = ParseMultimodalContent(rawContent);
+            string contentText;
+            if (contentParts.Count > 1 || contentParts.Any(p => p is not TextPart))
+            {
+                contentText = string.Join("\n", contentParts.Select(p => p switch
+                {
+                    TextPart tp => tp.Text,
+                    ImagePart ip => $"[Image: {ip.FileName ?? ip.MimeType}]",
+                    FilePart fp => $"[File: {fp.FileName} ({fp.MimeType})]",
+                    _ => ""
+                })).Trim();
+            }
+            else
+            {
+                contentText = rawContent;
+            }
+
+            if (!string.IsNullOrWhiteSpace(contentText))
+            {
+                processedMessages.Add(new { role, content = contentText });
+            }
+        }
+
+        bool isReasonerModel = context.SpecificModel.ModelCode?.ToLower().Contains("reasoner") ?? false;
+        if (isReasonerModel && processedMessages.Count > 0)
+        {
+            int firstNonSystemIndex = processedMessages.FindIndex(m => GetRoleFromDynamicMessage(m) != "system");
+            if (firstNonSystemIndex == -1 ||
+                GetRoleFromDynamicMessage(processedMessages[firstNonSystemIndex]) != "user")
+            {
+                processedMessages.Insert(firstNonSystemIndex == -1 ? 0 : firstNonSystemIndex,
+                    new { role = "user", content = "Proceed." });
+                _logger?.LogWarning("Inserted placeholder user message for DeepSeek reasoner model.");
+            }
+        }
+
+        await Task.CompletedTask;
+        return processedMessages;
+    }
+
+
+    private void AddOpenAiSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
+        if (useEffectiveThinking)
+        {
+            bool isReasoningSupportedForModel = false;
+
+
+            if (isReasoningSupportedForModel &&
+                IsParameterSupported("reasoning_effort", context.SpecificModel.ModelType))
+            {
+                if (!requestObj.ContainsKey("reasoning_effort"))
+                {
+                    requestObj["reasoning_effort"] = "medium";
+                    _logger?.LogDebug("Adding reasoning_effort: medium for OpenAI model {ModelCode}",
+                        context.SpecificModel.ModelCode);
+                }
+            }
+            else if (useEffectiveThinking)
+            {
+                _logger?.LogDebug("OpenAI reasoning enabled via system prompt instead of reasoning_effort parameter");
+            }
+        }
+    }
+
+    private void AddAnthropicSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        // Anthropic automatically removes unsupported params based on IsParameterSupported
+    }
+
+    private void ApplyGeminiParametersToConfig(Dictionary<string, object> generationConfig,
+        Dictionary<string, object> parameters, ModelType modelType)
+    {
+        var supported = new HashSet<string>
+            { "temperature", "topP", "topK", "maxOutputTokens", "stopSequences", "candidateCount" };
+        foreach (var kvp in parameters)
+        {
+            string geminiName = GetProviderParameterName(kvp.Key, modelType);
+            if (supported.Contains(geminiName))
+            {
+                generationConfig[geminiName] = kvp.Value;
+            }
+        }
+    }
+
+    private List<object> GetGeminiSafetySettings()
+    {
+        return new List<object>
+        {
+            new { category = "HARM_CATEGORY_HARASSMENT", threshold = "BLOCK_NONE" },
+            new { category = "HARM_CATEGORY_HATE_SPEECH", threshold = "BLOCK_NONE" },
+            new { category = "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold = "BLOCK_NONE" },
+            new { category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold = "BLOCK_NONE" }
+        };
+    }
+
+
+    private void AddDeepSeekSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
+        if (useEffectiveThinking)
+        {
+            if (!requestObj.ContainsKey("enable_cot"))
+            {
+                requestObj["enable_cot"] = true;
+                _logger?.LogDebug("Enabled DeepSeek 'enable_cot' parameter (Effective: {UseThinking})",
+                    useEffectiveThinking);
+            }
+
+            if (!requestObj.ContainsKey("enable_reasoning"))
+            {
+                requestObj["enable_reasoning"] = true;
+                _logger?.LogDebug("Enabled DeepSeek 'enable_reasoning' parameter (Effective: {UseThinking})",
+                    useEffectiveThinking);
+            }
+        }
+    }
+
+
+    private List<ContentPart> ParseMultimodalContent(string messageContent)
+    {
+        var contentParts = new List<ContentPart>();
+        if (string.IsNullOrEmpty(messageContent)) return contentParts;
+        var lastIndex = 0;
+
+        try
+        {
+            foreach (Match match in MultimodalTagRegex.Matches(messageContent))
+            {
+                if (match.Index > lastIndex)
+                {
+                    string textBefore = messageContent.Substring(lastIndex, match.Index - lastIndex);
+                    if (!string.IsNullOrEmpty(textBefore)) contentParts.Add(new TextPart(textBefore));
+                }
+
+                string tagType = match.Groups[1].Value.ToLowerInvariant();
+                string? potentialFileName = match.Groups[2].Value;
+                string? potentialMimeType = match.Groups[3].Value;
+                string base64Data = match.Groups[4].Value;
+
+                // Basic validation
+                if (string.IsNullOrWhiteSpace(base64Data))
+                {
+                    _logger?.LogWarning("Malformed tag (missing base64 data): {Tag}", match.Value);
+                    contentParts.Add(new TextPart(match.Value));
+                    lastIndex = match.Index + match.Length;
+                    continue;
+                }
+
+                // Extract and validate MimeType
+                string? mimeType = potentialMimeType?.Trim();
+                if (string.IsNullOrEmpty(mimeType) || !mimeType.Contains('/'))
+                {
+                    _logger?.LogWarning("Malformed tag (invalid or missing mime type '{MimeType}'): {Tag}", mimeType,
+                        match.Value);
+                    contentParts.Add(new TextPart(match.Value));
+                    lastIndex = match.Index + match.Length;
+                    continue;
+                }
+
+                if (tagType == "image")
+                {
+                    contentParts.Add(new ImagePart(mimeType, base64Data, potentialFileName));
+                }
+                else if (tagType == "file")
+                {
+                    string? fileName = potentialFileName?.Trim();
+                    if (!string.IsNullOrEmpty(fileName))
+                    {
+                        contentParts.Add(new FilePart(mimeType, base64Data, fileName));
+                    }
+                    else
+                    {
+                        _logger?.LogWarning("Malformed file tag (missing filename): {Tag}", match.Value);
+                        contentParts.Add(new TextPart(match.Value));
+                    }
+                }
+
+                lastIndex = match.Index + match.Length;
+            }
+
+            if (lastIndex < messageContent.Length)
+            {
+                string textAfter = messageContent.Substring(lastIndex);
+                if (!string.IsNullOrEmpty(textAfter)) contentParts.Add(new TextPart(textAfter));
+            }
+
+            if (!contentParts.Any(p => !(p is TextPart tp && string.IsNullOrWhiteSpace(tp.Text))) &&
+                !string.IsNullOrWhiteSpace(messageContent))
+            {
+                _logger?.LogWarning("Multimodal parsing resulted in no valid parts, returning original content.");
+                return new List<ContentPart> { new TextPart(messageContent) };
+            }
+
+            var combinedParts = new List<ContentPart>();
+            StringBuilder currentText = null;
+            foreach (var part in contentParts)
+            {
+                if (part is TextPart tp)
+                {
+                    if (currentText == null) currentText = new StringBuilder();
+                    currentText.Append(tp.Text);
+                }
+                else
+                {
+                    if (currentText != null && currentText.Length > 0)
+                    {
+                        combinedParts.Add(new TextPart(currentText.ToString().Trim()));
+                        currentText = null;
+                    }
+
+                    combinedParts.Add(part);
+                }
+            }
+
+            if (currentText != null && currentText.Length > 0)
+            {
+                combinedParts.Add(new TextPart(currentText.ToString().Trim()));
+            }
+
+            return combinedParts.Where(p => !(p is TextPart tp && string.IsNullOrEmpty(tp.Text))).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error during multimodal content parsing for content length: {ContentLength}",
+                messageContent.Length);
+            return new List<ContentPart> { new TextPart(messageContent) };
+        }
+    }
+
+
+    private string GetProviderParameterName(string standardName, ModelType modelType)
+    {
+        if (modelType == ModelType.Gemini)
+        {
+            return standardName switch
+            {
+                "top_p" => "topP",
+                "top_k" => "topK",
+                "max_tokens" => "maxOutputTokens",
+                "stop" => "stopSequences",
+                _ => standardName
+            };
+        }
+
+        if (modelType == ModelType.Anthropic)
+        {
+            return standardName switch
+            {
+                "stop" => "stop_sequences",
+                "max_tokens" => "max_tokens",
+                _ => standardName
+            };
+        }
+
+        return standardName;
+    }
+
+    private bool IsParameterSupported(string providerParamName, ModelType modelType)
+    {
+        switch (modelType)
+        {
+            case ModelType.OpenAi:
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens", "stop",
+                    "seed", "response_format", "tools", "tool_choice", "logit_bias", "user", "n", "logprobs",
+                    "top_logprobs"
+                }.Contains(providerParamName);
+
+            case ModelType.Anthropic:
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "max_tokens", "temperature", "top_k", "top_p", "stop_sequences", "stream", "system", "messages",
+                    "metadata", "model", "tools", "tool_choice"
+                }.Contains(providerParamName);
+
+            case ModelType.Gemini:
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "temperature", "topP", "topK", "maxOutputTokens", "stopSequences", "candidateCount",
+                    "response_mime_type", "response_schema" // safetySettings is separate top-level
+                }.Contains(providerParamName);
+
+            case ModelType.DeepSeek:
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "temperature", "top_p", "max_tokens", "stop", "frequency_penalty", "presence_penalty",
+                    "logit_bias", "logprobs", "top_logprobs", "stream", "model", "messages", "n", "seed",
+                    "response_format", "tools", "tool_choice",
+                    "enable_cot", "enable_reasoning", "reasoning_mode"
+                }.Contains(providerParamName);
+
+            default:
+                _logger?.LogWarning("Parameter support check requested for unknown ModelType: {ModelType}", modelType);
+                return false;
+        }
+    }
+
+
+    private List<(string Role, string Content)> MergeConsecutiveRoles(List<(string Role, string Content)> messages)
+    {
+        if (messages == null || !messages.Any()) return new List<(string Role, string Content)>();
+
+        var merged = new List<(string Role, string Content)>();
+        var currentRole = messages[0].Role;
+        var currentContent = new StringBuilder(messages[0].Content);
+
+        for (int i = 1; i < messages.Count; i++)
+        {
+            if (messages[i].Role == currentRole)
+            {
+                if (currentContent.Length > 0 && !string.IsNullOrWhiteSpace(currentContent.ToString()))
+                {
+                    currentContent.AppendLine().AppendLine();
+                }
+
+                currentContent.Append(messages[i].Content);
+            }
+            else
+            {
+                merged.Add((currentRole, currentContent.ToString().Trim()));
+                currentRole = messages[i].Role;
+                currentContent.Clear().Append(messages[i].Content);
+            }
+        }
+
+        merged.Add((currentRole, currentContent.ToString().Trim()));
+        return merged.Where(m => !string.IsNullOrEmpty(m.Content)).ToList();
+    }
+
+    private void EnsureAlternatingRoles(List<object> messages, string userRole, string modelRole)
+    {
+        if (messages == null || !messages.Any()) return;
+
+        // 1. Ensure starts with user role
+        string firstRole = GetRoleFromDynamicMessage(messages[0]);
+        if (firstRole != userRole)
+        {
+            // Need to insert a user message. Content format depends on provider.
+            object userMessageContent;
+            if (modelRole == "model")
+            {
+                // Gemini uses 'parts' array
+                userMessageContent = new List<object> { new { text = "" } }; // Minimal empty text part
+            }
+            else
+            {
+                // Anthropic expects string or content array
+                userMessageContent = ""; // Empty string content
+            }
+
+            messages.Insert(0, new { role = userRole, content = userMessageContent });
+            _logger?.LogWarning($"Inserted leading '{userRole}' message to ensure alternating roles.");
+            firstRole = userRole; // Update first role after insertion
+        }
+
+        // 2. Remove consecutive roles by building a new list
+        var cleanedMessages = new List<object>();
+        if (messages.Count > 0)
+        {
+            cleanedMessages.Add(messages[0]); // Add the first message
+            for (int i = 1; i < messages.Count; i++)
+            {
+                string previousRole = GetRoleFromDynamicMessage(cleanedMessages.Last());
+                string currentRole = GetRoleFromDynamicMessage(messages[i]);
+
+                if (currentRole != previousRole)
+                {
+                    cleanedMessages.Add(messages[i]);
+                }
+                else
+                {
+                    _logger?.LogError(
+                        $"Found and skipping consecutive '{currentRole}' role at index {i} during role alternation cleanup. Original Message: {{OriginalMessage}}",
+                        TrySerialize(messages[i])); // Log the skipped message for debugging
+                }
+            }
+        }
+
+        messages.Clear();
+        messages.AddRange(cleanedMessages);
+    }
+
+    private string GetRoleFromDynamicMessage(dynamic message)
+    {
+        try
+        {
+            if (message is IDictionary<string, object> dict && dict.TryGetValue("role", out var roleValue) &&
+                roleValue is string roleStr) return roleStr;
+
+            var roleProp = message.GetType().GetProperty("role");
+            if (roleProp != null)
+            {
+                var value = roleProp.GetValue(message);
+                if (value is string roleVal)
+                {
+                    return roleVal;
+                }
+            }
+
+            if (message is System.Dynamic.ExpandoObject expando)
+            {
+                if (((IDictionary<string, object>)expando).TryGetValue("role", out var expandoRole) &&
+                    expandoRole is string expandoRoleStr)
+                {
+                    return expandoRoleStr;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_logger != null)
+            {
+                // Pre-calculate the type name string
+                string typeName = message?.GetType().Name ?? "null";
+                // Explicitly call the static extension method
+                LoggerExtensions.LogWarning(_logger, ex,
+                    "Could not determine role from dynamic message object of type {Type}", typeName);
+            }
+        }
+
+        return string.Empty;
+    }
+
+    // Helper to safely serialize dynamic/object for logging
+    private string TrySerialize(object obj)
+    {
+        try
+        {
+            // Use options that handle potential reference loops if necessary
+            return JsonSerializer.Serialize(obj,
+                new JsonSerializerOptions
+                {
+                    WriteIndented = false,
+                    ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles
+                });
+        }
+        catch (Exception ex)
+        {
+            return $"[Serialization Error: {ex.Message}]";
+        }
+    }
+
+    private bool IsValidAnthropicImageType(string mimeType, out string normalizedMediaType)
+    {
+        normalizedMediaType = mimeType.ToLowerInvariant().Trim();
+        var supported = new Dictionary<string, string>
+        {
+            { "image/jpeg", "image/jpeg" },
+            { "image/png", "image/png" },
+            { "image/gif", "image/gif" },
+            { "image/webp", "image/webp" }
+        };
+        normalizedMediaType = supported.GetValueOrDefault(normalizedMediaType);
+        return !string.IsNullOrEmpty(normalizedMediaType);
+    }
+
+    private bool IsValidGeminiImageType(string mimeType, out string normalizedMediaType)
+    {
+        string lowerMime = mimeType?.ToLowerInvariant() ?? "";
+        var supported = new Dictionary<string, string>
+        {
+            { "image/png", "image/png" },
+            { "image/jpeg", "image/jpeg" },
+            { "image/webp", "image/webp" },
+            { "image/heic", "image/heic" },
+            { "image/heif", "image/heif" }
+        };
+        normalizedMediaType = supported.GetValueOrDefault(lowerMime);
+        return !string.IsNullOrEmpty(normalizedMediaType);
+    }
+
+    private bool IsValidAnthropicDocumentType(string mimeType, out string normalizedMediaType)
+    {
+        normalizedMediaType = mimeType.ToLowerInvariant().Trim();
+        var supported = new HashSet<string>
+        {
+            "application/pdf",
+            "text/plain",
+            "text/csv",
+            "text/markdown",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+        };
+        return supported.Contains(normalizedMediaType);
+    }
+}

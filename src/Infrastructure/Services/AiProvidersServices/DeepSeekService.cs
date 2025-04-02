@@ -2,20 +2,14 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
-using Application.Services;
-using Domain.Aggregates.Chats;
-using Domain.Aggregates.Users;
-using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices.Base;
 
 public class DeepSeekService : BaseAiService
 {
     private const string BaseUrl = "https://api.deepseek.com/v1/";
 
-    public DeepSeekService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
-        UserAiModelSettings? modelSettings = null, AiModel? aiModel = null,
-        ModelParameters? customModelParameters = null)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, modelSettings, aiModel, customModelParameters)
+    public DeepSeekService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {
     }
 
@@ -26,231 +20,56 @@ public class DeepSeekService : BaseAiService
 
     protected override string GetEndpointPath() => "chat/completions";
 
-    protected override List<(string Role, string Content)> PrepareMessageList(IEnumerable<MessageDto> history)
-    {
-        var messages = new List<(string Role, string Content)>();
-        var systemMessage = GetSystemMessage();
-        if (!string.IsNullOrEmpty(systemMessage))
-        {
-            messages.Add(("system", systemMessage));
-        }
-
-        if (ShouldEnableThinking())
-        {
-            messages.Add(("system",
-                "When solving complex problems, please show your detailed step-by-step thinking process marked as '### Thinking:' before providing the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly."));
-        }
-
-        string lastRole = messages.Count > 0 ? "system" : null;
-        MessageDto? pendingMsg = null;
-        
-        // Check if model is a reasoner model (can be expanded to include more model checks if needed)
-        bool isReasonerModel = ModelCode?.ToLower().Contains("reasoner") ?? false;
-        bool hasUserMessage = false;
-        
-        var historyList = history.Where(m => !string.IsNullOrEmpty(m.Content)).ToList();
-        
-        // For reasoner models, ensure the first non-system message is from a user
-        if (isReasonerModel && historyList.Count > 0 && historyList[0].IsFromAi)
-        {
-            // Find the first user message
-            var firstUserMessage = historyList.FirstOrDefault(m => !m.IsFromAi);
-            if (firstUserMessage != null)
-            {
-                // Start with the first user message
-                var reorderedHistory = new List<MessageDto> { firstUserMessage };
-                
-                // Add all other messages that weren't the first user message
-                reorderedHistory.AddRange(historyList.Where(m => m.MessageId != firstUserMessage.MessageId));
-                
-                historyList = reorderedHistory;
-            }
-            else
-            {
-                // If no user messages exist, add a placeholder
-                historyList.Insert(0, new MessageDto("I need assistance.", false, Guid.NewGuid()));
-            }
-        }
-        
-        foreach (var msg in historyList)
-        {
-            // Process content to handle image and file tags
-            string processedContent = msg.Content;
-            
-            // Replace image tags with text descriptions
-            var imgRegex = new System.Text.RegularExpressions.Regex(@"<image\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
-            processedContent = imgRegex.Replace(processedContent, match => {
-                string fileName = match.Groups[2].Value;
-                return $"[Image: {fileName}]";
-            });
-            
-            // Replace file tags with text descriptions
-            var fileRegex = new System.Text.RegularExpressions.Regex(@"<file\s+type=[""']([^""']+)[""']\s+name=[""']([^""']+)[""']\s+base64=[""']([^""']+)[""']\s*>");
-            processedContent = fileRegex.Replace(processedContent, match => {
-                string mimeType = match.Groups[1].Value;
-                string fileName = match.Groups[2].Value;
-                return $"[File: {fileName} ({mimeType})]";
-            });
-            
-            string currentRole = msg.IsFromAi ? "assistant" : "user";
-            if (!msg.IsFromAi) hasUserMessage = true;
-            
-            if (currentRole == lastRole && pendingMsg != null)
-            {
-                pendingMsg = new MessageDto(
-                    pendingMsg.Content + "\n\n" + processedContent.Trim(),
-                    pendingMsg.IsFromAi,
-                    pendingMsg.MessageId
-                );
-            }
-            else
-            {
-                if (pendingMsg != null)
-                {
-                    messages.Add((lastRole, pendingMsg.Content.Trim()));
-                }
-
-                pendingMsg = new MessageDto(
-                    processedContent.Trim(),
-                    msg.IsFromAi,
-                    msg.MessageId
-                );
-                lastRole = currentRole;
-            }
-        }
-
-        if (pendingMsg != null)
-        {
-            messages.Add((lastRole, pendingMsg.Content.Trim()));
-        }
-
-        // Final verification for reasoner models
-        if (isReasonerModel && messages.Count > 0 && messages[0].Role == "system" && 
-            messages.Count > 1 && messages[1].Role == "assistant")
-        {
-            // Insert a minimal user message if the first non-system message is still an assistant message
-            messages.Insert(1, ("user", "I need assistance."));
-        }
-
-        return messages;
-    }
-
-    protected override object CreateRequestBody(IEnumerable<MessageDto> history)
-    {
-        var messages = PrepareMessageList(history)
-            .Select(m => new { role = m.Role, content = m.Content }).ToList();
-        var requestObj = (Dictionary<string, object>)base.CreateRequestBody(history);
-
-        // Define known supported parameters for DeepSeek models
-        var standardSupportedParams = new HashSet<string>()
-        {
-            "model", "messages", "stream", "temperature", "top_p",
-            "max_tokens", "enable_cot", "enable_reasoning", "reasoning_mode"
-        };
-
-        // Remove unsupported parameters
-        var keysToRemove = requestObj.Keys
-            .Where(k => !standardSupportedParams.Contains(k))
-            .ToList();
-
-        foreach (var key in keysToRemove)
-        {
-            Console.WriteLine($"Preemptively removing unsupported parameter for DeepSeek: {key}");
-            requestObj.Remove(key);
-        }
-
-        requestObj["messages"] = messages;
-        return requestObj;
-    }
-
-    protected override void AddProviderSpecificParameters(Dictionary<string, object> requestObj)
-    {
-        if (ShouldEnableThinking())
-        {
-            requestObj["enable_cot"] = true;
-            requestObj["enable_reasoning"] = true;
-            requestObj["reasoning_mode"] = "chain_of_thought";
-        }
-    }
-
-    public override async IAsyncEnumerable<StreamResponse> StreamResponseAsync(IEnumerable<MessageDto> history,
+    public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+        AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var request = CreateRequest(CreateRequestBody(history));
-        using var response =
-            await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        var request = CreateRequest(requestPayload);
+        HttpResponseMessage? response = null;
+
+        try
         {
-            await HandleApiErrorAsync(response, "DeepSeek");
+            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (HttpRequestException httpEx)
+        {
+            await HandleApiErrorAsync(response ?? new HttpResponseMessage(httpEx.StatusCode ?? System.Net.HttpStatusCode.InternalServerError), "DeepSeek");
             yield break;
         }
-
-        var fullResponse = new StringBuilder();
-        var contentBuffer = new List<string>();
-        DeepSeekUsage? finalUsage = null;
-
-        await foreach (var json in ReadStreamAsync(response, cancellationToken))
+        catch (Exception ex)
         {
-            var chunk = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
-
-            if (chunk.TryGetValue("choices", out var choicesElement) &&
-                choicesElement.ValueKind == JsonValueKind.Array)
-            {
-                var choice = choicesElement[0];
-
-                if (choice.TryGetProperty("finish_reason", out var finishReason) &&
-                    finishReason.ValueKind != JsonValueKind.Null &&
-                    chunk.TryGetValue("usage", out var usageElement))
-                {
-                    finalUsage = JsonSerializer.Deserialize<DeepSeekUsage>(usageElement.GetRawText());
-
-                    foreach (var bufferedContent in contentBuffer)
-                    {
-                        yield return new StreamResponse(
-                            bufferedContent,
-                            finalUsage.prompt_tokens,
-                            finalUsage.completion_tokens);
-                    }
-
-                    contentBuffer.Clear();
-                }
-
-                if (choice.TryGetProperty("delta", out var delta) &&
-                    delta.TryGetProperty("content", out var content) &&
-                    content.ValueKind != JsonValueKind.Null)
-                {
-                    var text = content.GetString();
-                    if (!string.IsNullOrEmpty(text))
-                    {
-                        fullResponse.Append(text);
-
-                        if (finalUsage != null)
-                        {
-                            yield return new StreamResponse(
-                                text,
-                                finalUsage.prompt_tokens,
-                                finalUsage.completion_tokens);
-                        }
-                        else
-                        {
-                            contentBuffer.Add(text);
-                        }
-                    }
-                }
-            }
+            Console.WriteLine($"Error sending request to DeepSeek: {ex.Message}");
+            throw;
         }
 
-        if (finalUsage != null && contentBuffer.Count > 0)
+        try
         {
-            foreach (var bufferedContent in contentBuffer)
+            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
+                                .WithCancellation(cancellationToken))
             {
-                yield return new StreamResponse(
-                    bufferedContent,
-                    finalUsage.prompt_tokens,
-                    finalUsage.completion_tokens);
+                if (cancellationToken.IsCancellationRequested) break;
+
+                bool isCompletion = false;
+                try
+                {
+                    using var doc = JsonDocument.Parse(jsonChunk);
+                    if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
+                    { 
+                         if(choices[0].TryGetProperty("finish_reason", out var finishReason) && finishReason.ValueKind != JsonValueKind.Null)
+                         {
+                            isCompletion = true;
+                         }
+                    }
+                }
+                catch (JsonException) { /* Ignore parse errors, yield raw chunk anyway */ }
+
+                yield return new AiRawStreamChunk(jsonChunk, isCompletion);
             }
+        }
+        finally
+        {
+            response.Dispose();
         }
     }
-
-    private record DeepSeekUsage(int prompt_tokens, int completion_tokens, int total_tokens);
 }

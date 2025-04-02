@@ -15,6 +15,7 @@ using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Gif;
+using Application.Features.Chats.GetChatById;
 
 namespace Web.Api.Hubs;
 
@@ -25,9 +26,8 @@ public class ChatHub : Hub
     private readonly StreamingOperationManager _streamingOperationManager;
     private readonly IMessageRepository _messageRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
-    private readonly IMediator _mediator;
     private readonly MessageService _messageService;
-    private readonly FileUploadService _fileUploadService;
+    private readonly IMediator _mediator;
 
     // Constants for file processing
     private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -39,17 +39,15 @@ public class ChatHub : Hub
         StreamingOperationManager streamingOperationManager,
         IMessageRepository messageRepository,
         IFileAttachmentRepository fileAttachmentRepository,
-        IMediator mediator,
         MessageService messageService,
-        FileUploadService fileUploadService)
+        IMediator mediator)
     {
         _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
         _streamingOperationManager = streamingOperationManager ?? throw new ArgumentNullException(nameof(streamingOperationManager));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
-        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
-        _fileUploadService = fileUploadService ?? throw new ArgumentNullException(nameof(fileUploadService));
+        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
 
     /// <summary>
@@ -81,6 +79,26 @@ public class ChatHub : Hub
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, chatSessionId);
             Console.WriteLine($"User {Context.UserIdentifier} joined chat session {chatSessionId}");
+            
+            // Get chat history and send it to the client
+            try
+            {
+                var chatGuid = Guid.Parse(chatSessionId);
+                var query = new GetChatByIdQuery(chatGuid);
+                var chatResult = await _mediator.Send(query);
+                
+                if (chatResult.IsSuccess)
+                {
+                    // Send chat history to the caller
+                    await Clients.Caller.SendAsync("ReceiveChatHistory", chatResult.Value);
+                }
+            }
+            catch (Exception historyEx)
+            {
+                Console.WriteLine($"Error loading chat history: {historyEx.Message}");
+                // Don't throw - we still want the user to join the chat even if history fails
+                await Clients.Caller.SendAsync("Error", $"Joined chat but failed to load history: {historyEx.Message}");
+            }
         }
         catch (Exception ex)
         {
@@ -92,7 +110,7 @@ public class ChatHub : Hub
     /// <summary>
     /// Sends a text message to the AI
     /// </summary>
-    public async Task SendMessage(string chatSessionId, string content)
+    public async Task SendMessage(string chatSessionId, string content, bool enableThinking = false)
     {
         try
         {
@@ -103,7 +121,7 @@ public class ChatHub : Hub
             }
 
             var userId = Guid.Parse(Context.UserIdentifier);
-            await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content);
+            await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content, enableThinking, cancellationToken: default);
         }
         catch (Exception ex)
         {
@@ -115,7 +133,7 @@ public class ChatHub : Hub
     /// <summary>
     /// Sends a message with file attachments to the AI
     /// </summary>
-    public async Task SendMessageWithAttachments(string chatSessionId, string content, List<Guid> fileAttachmentIds)
+    public async Task SendMessageWithAttachments(string chatSessionId, string content, List<Guid> fileAttachmentIds, bool enableThinking = false)
     {
         var userId = Guid.Parse(Context.UserIdentifier);
 
@@ -128,7 +146,7 @@ public class ChatHub : Hub
                 processedContent = await ProcessFileAttachmentsAsync(processedContent, fileAttachmentIds);
             }
 
-            await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, processedContent);
+            await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, processedContent, enableThinking, cancellationToken: default);
         }
         catch (Exception ex)
         {
@@ -185,42 +203,6 @@ public class ChatHub : Hub
         {
             Console.WriteLine($"Error editing message with attachments: {ex.Message}");
             await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Stop an ongoing AI response
-    /// </summary>
-    public async Task StopResponse(string chatSessionId)
-    {
-        try
-        {
-            var userId = Guid.Parse(Context.UserIdentifier);
-            
-            // Find the latest AI message that's still streaming
-            var latestAiMessages = await _messageRepository.GetLatestAiMessageForChatAsync(Guid.Parse(chatSessionId));
-            if (latestAiMessages != null)
-            {
-                bool stopped = _streamingOperationManager.StopStreaming(latestAiMessages.Id);
-                if (stopped)
-                {
-                    Console.WriteLine($"Successfully stopped response for message {latestAiMessages.Id}");
-                    await Clients.Caller.SendAsync("ResponseStopped", chatSessionId, latestAiMessages.Id);
-                }
-                else
-                {
-                    await Clients.Caller.SendAsync("Error", "No active response to stop");
-                }
-            }
-            else
-            {
-                await Clients.Caller.SendAsync("Error", "No active AI message found");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error stopping response: {ex.Message}");
-            await Clients.Caller.SendAsync("Error", $"Failed to stop response: {ex.Message}");
         }
     }
 

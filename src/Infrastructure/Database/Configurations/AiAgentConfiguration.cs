@@ -101,8 +101,7 @@ public class AiAgentConfiguration : IEntityTypeConfiguration<AiAgent>
                     c => c == null ? null : c.ToList()
                 ));
 
-            mp.Property(p => p.ReasoningEffort)
-                .HasColumnName("ReasoningEffort");
+   
 
             mp.Property(p => p.PromptCaching)
                 .HasColumnName("PromptCaching");

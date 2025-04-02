@@ -64,6 +64,10 @@
             --border-radius: 12px;
             --border-radius-lg: 16px;
             --shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+
+            /* Pending Attachments */
+            --pending-attachment-bg: rgba(36, 37, 93, 0.3);
+            --pending-attachment-border: rgba(99, 102, 241, 0.3);
         }
 
         /* Base styles */
@@ -1189,14 +1193,18 @@
             color: var(--primary);
         }
 
+        /* Pending Attachments Styling (similar to test-client) */
         .pending-attachments {
-            margin: 0.5rem 0;
+            margin-bottom: 0.5rem; /* Added margin */
             padding: 0.5rem;
             border-radius: var(--border-radius);
-            background: var(--bg-dark-accent);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--pending-attachment-bg);
+            border: 1px solid var(--pending-attachment-border);
+            max-height: 120px; /* Limit height */
+            overflow-y: auto;  /* Add scroll */
         }
 
+        /* General Attachment Styling (Used by Pending & Message Attachments) */
         .attachment {
             display: flex;
             align-items: center;
@@ -1204,11 +1212,42 @@
             margin: 0.25rem 0;
             border-radius: var(--border-radius-sm);
             background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1); /* Added border */
+            max-width: 250px; /* Limit width */
         }
 
         .attachment-icon {
             margin-right: 0.5rem;
             color: var(--text-secondary-dark);
+            width: 20px; /* Fixed width for icon */
+            text-align: center;
+        }
+
+        .attachment-info {
+            flex: 1;
+            min-width: 0; /* Allow shrinking */
+            display: flex; /* Use flex for status */
+            flex-direction: column;
+        }
+
+        .attachment-name {
+            font-weight: 500;
+            font-size: 0.875rem; /* Slightly larger */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .attachment-size {
+            font-size: 0.75rem;
+            color: var(--text-secondary-dark);
+        }
+
+        /* Attachment status text */
+        .attachment-status {
+            font-size: 0.7rem;
+            margin-top: 0.25rem;
+            font-style: italic;
         }
 
         .attachment-btn {
@@ -1217,71 +1256,70 @@
             color: var(--text-secondary-dark);
             cursor: pointer;
             transition: color 0.2s;
+            padding: 0.25rem; /* Added padding */
         }
 
         .attachment-btn:hover {
             color: var(--danger);
         }
 
-        /* Light mode overrides for file attachments */
-        .light-mode .file-attachment {
-            background: rgba(99, 102, 241, 0.1);
-            border-color: rgba(99, 102, 241, 0.3);
+        /* Light mode overrides for pending attachments */
+        .light-mode .pending-attachments {
+            background: rgba(0, 0, 0, 0.03);
+            border-color: rgba(0, 0, 0, 0.1);
+        }
+        .light-mode .attachment {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        .light-mode .attachment-icon,
+        .light-mode .attachment-btn,
+        .light-mode .attachment-size,
+        .light-mode .attachment-status {
+            color: var(--text-secondary-light);
+        }
+        .light-mode .attachment-btn:hover {
+            color: var(--danger);
         }
 
-        .light-mode .file-preview {
-            background-color: rgba(0, 0, 0, 0.05);
-        }
 
-        .light-mode .file-preview i {
-            color: rgba(0, 0, 0, 0.6);
-        }
-
-        .light-mode .file-download {
-            color: rgba(0, 0, 0, 0.6);
-        }
-
-        .light-mode .file-download:hover {
-            color: #000;
-        }
-
+        /* Message Attachment Styling */
         .message-attachments {
             margin-bottom: 8px;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
         }
-        
+
         .message-attachment {
             border-radius: 8px;
             overflow: hidden;
             border: 1px solid rgba(255, 255, 255, 0.1);
             background: rgba(255, 255, 255, 0.05);
         }
-        
+
         .image-attachment {
             position: relative;
         }
-        
+
         .image-attachment img {
             display: block;
             max-width: 100%;
             max-height: 300px;
             object-fit: contain;
         }
-        
+
         .attachment-info {
             padding: 6px 8px;
             font-size: 0.8rem;
             color: var(--text-secondary-dark);
         }
-        
+
         .file-attachment {
             display: flex;
             align-items: center;
             padding: 8px;
         }
-        
+
         .file-preview {
             width: 32px;
             height: 32px;
@@ -1294,7 +1332,7 @@
             font-size: 1.2rem;
             color: var(--primary-light);
         }
-        
+
         .file-download {
             display: inline-flex;
             align-items: center;
@@ -1307,10 +1345,33 @@
             border-radius: 4px;
             transition: all var(--transition-fast);
         }
-        
+
         .file-download:hover {
             background: rgba(99, 102, 241, 0.2);
             color: white;
+        }
+
+        /* Specific style for attachments inside a message bubble */
+        .message .message-attachments .attachment {
+            background: rgba(255, 255, 255, 0.1); /* Slightly different background */
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Styling for the download link in message attachments */
+        .message .message-attachments .attachment-download-link {
+            color: var(--primary-light);
+            background: transparent;
+            border: none;
+            padding: 0.25rem;
+            margin-left: 0.5rem; /* Space it out */
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            font-size: 0.9em; /* Match icon size */
+        }
+        .message .message-attachments .attachment-download-link:hover {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
         }
     </style>
 </head>
@@ -1426,13 +1487,12 @@
                             placeholder="Type your message here..."
                             disabled
                     ></textarea>
+                    <!-- Container for pending attachments -->
+                    <div id="pendingAttachments" class="pending-attachments" style="display: none;"></div>
                     <div class="input-actions">
                         <button class="input-action-btn" id="fileButton" aria-label="Attach file">
                             <i class="fas fa-paperclip"></i>
                             <input type="file" id="fileUpload" class="file-upload-input" multiple />
-                        </button>
-                        <button class="input-action-btn" id="uploadButton" aria-label="Upload file" onclick="uploadFile()">
-                            <i class="fas fa-upload"></i>
                         </button>
                     </div>
                 </div>
@@ -1492,6 +1552,7 @@
     let currentThinkingMessageId = null;
     let darkModeEnabled = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     let pendingAttachments = []; // Track files waiting to be sent with the next message
+    let fileUploadCounter = 0; // To generate unique IDs for UI elements before API ID exists
 
     // DOM Elements
     const messageInput = document.getElementById('messageInput');
@@ -1546,12 +1607,7 @@
             }
         });
 
-        // Set up thinking toggle listener
-        document.getElementById('enableThinking').addEventListener('change', function() {
-            if (document.getElementById('chatSessionId').value) {
-                toggleThinking(this.checked);
-            }
-        });
+        // Thinking toggle state is read during sendMessage
     };
 
     function toggleDarkMode() {
@@ -1722,17 +1778,36 @@
                 addMessageToChat(message.content, false, message.messageId);
                 lastUserMessageId = message.messageId;
             } else {
-                currentResponseMessageId = message.messageId;
-                isReceivingResponse = true;
-                updateStopButton(true);
+                // AI message might arrive fully formed after chunks, or directly
+                addMessageToChat(message.content, true, message.messageId);
+                if (message.messageId === currentResponseMessageId) {
+                    isReceivingResponse = false;
+                    currentResponseMessageId = null;
+                    currentThinkingMessageId = null;
+                    updateStopButton(false);
+                    addCodeBlockActions(); // Add actions if full message has code
+                }
             }
         });
 
+
         connection.on('ReceiveMessageChunk', (messageId, chunk) => {
-            updateMessageChunk(messageId, chunk);
+            // Ensure we are tracking this response
+            if (!isReceivingResponse || messageId !== currentResponseMessageId) {
+                currentResponseMessageId = messageId;
+                isReceivingResponse = true;
+                updateStopButton(true);
+            }
+             updateMessageChunk(messageId, chunk);
         });
 
         connection.on('ReceiveThinkingChunk', (messageId, chunk) => {
+            // Ensure we are tracking this response
+             if (!isReceivingResponse || messageId !== currentResponseMessageId) {
+                 currentResponseMessageId = messageId;
+                 isReceivingResponse = true;
+                 updateStopButton(true);
+             }
             updateThinkingChunk(messageId, chunk);
         });
 
@@ -1759,6 +1834,10 @@
 
         connection.on('Error', (error) => {
             showSystemMessage(`Error: ${error}`, 'error');
+             if (isReceivingResponse) { // If an error occurs mid-stream
+                 isReceivingResponse = false;
+                 updateStopButton(false);
+             }
         });
 
         connection.on('ReceiveFile', (fileAttachment) => {
@@ -1767,10 +1846,22 @@
 
         connection.on('MessageEditConfirmed', (messageId) => {
             showSystemMessage('Message edited successfully', 'success');
+             // Potentially update UI if needed, though RegenerateMessage might handle it
         });
 
         connection.on('RegenerationStarted', (messageId) => {
             showSystemMessage('Regenerating AI response...', 'info');
+             isReceivingResponse = true; // Treat regeneration like receiving a new response
+             currentResponseMessageId = messageId; // Track the message being regenerated
+             updateStopButton(true);
+             // Clear existing AI content for the regenerated message
+             const messageElement = document.querySelector(`.message[data-message-id="${messageId}"]`);
+             if (messageElement) {
+                 const contentDiv = messageElement.querySelector('.message-content');
+                 if (contentDiv) contentDiv.innerHTML = ''; // Clear old content
+                 const attachmentsContainer = messageElement.querySelector('.message-attachments');
+                  if (attachmentsContainer) attachmentsContainer.innerHTML = ''; // Clear old attachments if necessary
+             }
         });
 
         connection.on('ErrorMessage', (error) => {
@@ -1883,330 +1974,332 @@
         }
     }
 
+    // --- SEND MESSAGE LOGIC ---
     async function sendMessage() {
         const message = messageInput.value.trim();
         const chatSessionId = document.getElementById('chatSessionId').value;
-        
-        // Basic validation
-        if (!chatSessionId) {
-            showSystemMessage('No chat session selected', 'error');
+
+        if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+            showToast('Not connected to chat server', 'error');
             return;
         }
-        
+        if (!chatSessionId) {
+            showToast('No chat session selected', 'error');
+            return;
+        }
         if (!message && pendingAttachments.length === 0) {
             return; // Nothing to send
         }
 
+        const enableThinking = document.getElementById('enableThinking').checked;
+        const userToken = localStorage.getItem('userToken'); // Needed for uploads
+
+        // Disable input while processing
+        messageInput.disabled = true;
+        sendButton.disabled = true;
+        fileButton.disabled = true;
+        stopButton.style.display = 'none'; // Hide stop button during send prep
+
+        let uploadedFileIds = [];
+        let uploadFailed = false;
+
+        // 1. Upload pending files if any
+        if (pendingAttachments.length > 0) {
+            showToast(`Uploading ${pendingAttachments.length} file(s)...`, 'info');
+            // Ensure uploadSingleFile updates the status UI correctly
+            const uploadPromises = pendingAttachments.map(att => uploadSingleFile(att));
+            const results = await Promise.all(uploadPromises);
+
+            uploadedFileIds = results.filter(id => id !== null); // Filter out nulls (failed uploads)
+            if (uploadedFileIds.length < pendingAttachments.length) {
+                uploadFailed = true;
+                showToast('Some file uploads failed. Check status in attachment list.', 'warning');
+                // Decide how to handle failures: Keep them? Clear them? For now, we proceed but clear all later.
+            }
+        }
+
+        // 2. Send the message via SignalR
         try {
-            // Disable input while sending
-            messageInput.disabled = true;
-            sendButton.disabled = true;
-            
-            // First, send the message
-            await connection.invoke('SendMessage', chatSessionId, message || "Sharing files...", null);
-            
-            // Get the latest messages to find our message
-            const response = await fetch(`/api/Chat/${chatSessionId}`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('userToken')}` }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Failed to get chat messages: ${response.status}`);
+            let messageToSend = message || (uploadedFileIds.length > 0 ? "Attached files." : ""); // Default message if only files
+
+            if (uploadedFileIds.length > 0) {
+                console.log(`Sending message with ${uploadedFileIds.length} attachments.`);
+                // Use the SendMessageWithAttachments hub method
+                await connection.invoke('SendMessageWithAttachments', chatSessionId, messageToSend, uploadedFileIds, enableThinking);
+            } else if (message) { // Only send if there's actual text content
+                console.log("Sending text message.");
+                 // Use the SendMessage hub method
+                await connection.invoke('SendMessage', chatSessionId, messageToSend, enableThinking);
+            } else {
+                // This case implies no text and all uploads failed (or there were none initially)
+                console.warn("Nothing to send (likely due to failed uploads or empty input).");
+                 if (!uploadFailed) { // Avoid double messages if upload failure was already noted
+                    showToast("Nothing to send.", "info");
+                 }
+                 // *** Important: Need to re-enable UI here if nothing was sent ***
+                 messageInput.disabled = false;
+                 fileButton.disabled = false;
+                 checkSendButtonState();
+                 return; // Exit the function as nothing was sent
             }
-            
-            const result = await response.json();
-            const userMessages = result.messages.filter(m => !m.isFromAi);
-            
-            if (userMessages.length === 0) {
-                throw new Error("No user messages found in chat");
-            }
-            
-            // Get our message
-            const ourMessage = userMessages[userMessages.length - 1];
-            
-            // If we have attachments, upload them directly to the chat session
-            // (this is safer than trying to link them to a specific message)
-            if (pendingAttachments.length > 0) {
-                showSystemMessage('Uploading attachments...', 'info');
-                
-                // Track successful uploads
-                let successCount = 0;
-                
-                // Upload each attachment
-                for (const attachment of pendingAttachments) {
-                    try {
-                        // Upload the file to this chat session
-                        await uploadFile(chatSessionId, attachment);
-                        successCount++;
-                        updateAttachmentStatus(attachment, 'success');
-                    } catch (error) {
-                        console.error('Error uploading file:', error);
-                        updateAttachmentStatus(attachment, 'error');
-                    }
-                }
-                
-                // Clear pending attachments
-                pendingAttachments = [];
-                const container = document.getElementById('pendingAttachments');
-                if (container) container.remove();
-                
-                // Show upload status
-                if (successCount > 0) {
-                    showSystemMessage(`Uploaded ${successCount} file(s)`, 'success');
-                } else {
-                    showSystemMessage('No files were uploaded successfully', 'error');
-                }
-            }
-            
-            // Clear input
+
+            // Clear input and pending attachments ONLY if the SignalR invoke was initiated successfully
+            // (Backend might still fail, but the attempt was made)
             messageInput.value = '';
             autoResizeTextarea();
-            
+            pendingAttachments = []; // Clear internal array
+            const pendingContainer = document.getElementById('pendingAttachments');
+            pendingContainer.innerHTML = ''; // Clear UI
+            pendingContainer.style.display = 'none'; // Hide container
+            fileUploadCounter = 0; // Reset counter
+
         } catch (error) {
-            console.error('Error sending message:', error);
-            showSystemMessage('Failed to send message: ' + error, 'error');
+            console.error('Error sending message via SignalR:', error);
+            showToast(`Failed to send message: ${error.message || 'Unknown error'}`, 'error');
+            // Do NOT clear input/attachments if send fails, allow retry. Keep UI disabled until user interaction.
         } finally {
-            // Re-enable input
-            messageInput.disabled = false;
-            messageInput.focus();
-            sendButton.disabled = false;
-            checkSendButtonState();
+            // Re-enable input components *unless* an error occurred during send.
+            // If an error happened, leave them disabled allowing the user to retry or modify.
+            // If successful, they should be re-enabled. This part might need refinement based on desired UX on error.
+            // For now, let's re-enable them generally, but checkSendButtonState handles disabling if needed.
+             if (!error) { // Only re-enable fully if no error sending
+                 messageInput.disabled = false;
+                 fileButton.disabled = false;
+             }
+             checkSendButtonState(); // This will re-evaluate sendButton based on current state (text/attachments/connection)
         }
     }
-    
+
     // Helper function to delete a message (this doesn't appear to be available in the API)
     async function deleteMessage(messageId) {
         console.warn("Message deletion is not supported by the API. This is a no-op function.");
         return false; // Just return false without throwing errors
     }
 
-   
 
-    // Helper function to upload a single file and return its ID
-    async function uploadFile(messageId, attachment) {
+
+    // Helper function to upload a single file and return its API ID
+    async function uploadSingleFile(attachment) {
         const userToken = localStorage.getItem('userToken') || '';
         const chatSessionId = document.getElementById('chatSessionId').value;
 
-        if (!chatSessionId) {
-            throw new Error("Chat session ID is required");
+        if (!chatSessionId || !userToken) {
+            updateAttachmentStatusUI(attachment.uiId, 'error', 'Connection details missing');
+            return null;
         }
 
-        // Update attachment status in UI
-        updateAttachmentStatus(attachment, 'uploading');
+        updateAttachmentStatusUI(attachment.uiId, 'uploading', 'Uploading...');
 
-        // Create form data
         const formData = new FormData();
         formData.append('file', attachment.file);
-        
-        // messageId is optional - don't include it if not provided or invalid
-        if (messageId && messageId.trim() !== '') {
-            try {
-                // Check if it's a valid GUID format
-                const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                if (guidRegex.test(messageId)) {
-                    formData.append('messageId', messageId);
-                }
-            } catch (e) {
-                console.warn("Invalid messageId format:", e);
-                // Don't add messageId to form if it's invalid
-            }
-        }
 
         try {
-            console.log(`Uploading file to chat session: ${chatSessionId}`, attachment);
-            
-            // Try uploading without setting the messageId through the form
-            // Just use the chat session ID in the URL as required by the controller
             const response = await fetch(`/api/Files/Upload/${chatSessionId}`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`
-                },
+                headers: { 'Authorization': `Bearer ${userToken}` },
                 body: formData
             });
 
             if (!response.ok) {
-                let errorText = response.statusText;
+                let errorText = `Upload failed (${response.status})`;
                 try {
-                    // Try to get more detailed error from response
-                    const errorJson = await response.json();
-                    if (errorJson && errorJson.error) {
-                        errorText = errorJson.error;
-                    }
-                } catch (jsonError) {
-                    // If we can't parse JSON, try to get text
-                    try {
-                        const errorContent = await response.text();
-                        if (errorContent) {
-                            errorText = errorContent;
-                        }
-                    } catch (textError) {
-                        // Ignore error in getting text
-                    }
-                }
-                throw new Error(`Server returned ${response.status}: ${errorText}`);
+                    const errorData = await response.json();
+                    errorText = errorData.detail || errorData.title || errorText;
+                } catch { /* ignore */ }
+                throw new Error(errorText);
             }
 
             const result = await response.json();
-            console.log(`File uploaded: ${result.fileName}`, result);
-
+            updateAttachmentStatusUI(attachment.uiId, 'success', 'Uploaded');
+            attachment.apiId = result.id; // Store the API ID
             return result.id;
+
         } catch (error) {
-            console.error('File upload failed:', error);
-            throw error;
+            console.error(`Upload failed for ${attachment.fileName}:`, error);
+            updateAttachmentStatusUI(attachment.uiId, 'error', `Failed: ${error.message || 'Unknown error'}`);
+            return null;
         }
     }
 
-    // Helper function to update status UI for an attachment with progress
-    function updateAttachmentStatus(attachment, status, progress = 0) {
-        const container = document.getElementById('pendingAttachments');
-        if (!container) return;
+    // Helper function to update status UI for a pending attachment
+    function updateAttachmentStatusUI(uiId, status, text) {
+        const statusEl = document.getElementById(`${uiId}-status`);
+        const iconEl = document.querySelector(`#${uiId} .attachment-icon i`);
+        if (!statusEl || !iconEl) return;
 
-        const attachmentIndex = pendingAttachments.indexOf(attachment);
-        if (attachmentIndex === -1) return;
-
-        const attachmentEl = container.children[attachmentIndex];
-        if (!attachmentEl) return;
-
-        // Find the icon element
-        const iconEl = attachmentEl.querySelector('.attachment-icon i');
-        if (!iconEl) return;
-
-        // Remove any existing status classes
-        iconEl.classList.remove('fa-spin', 'text-warning', 'text-success', 'text-danger');
-
-        // Find or create status text element
-        let statusTextEl = attachmentEl.querySelector('.attachment-status');
-        if (!statusTextEl) {
-            statusTextEl = document.createElement('div');
-            statusTextEl.className = 'attachment-status';
-            statusTextEl.style.fontSize = '0.7rem';
-            statusTextEl.style.marginTop = '0.25rem';
-            attachmentEl.querySelector('.attachment-info').appendChild(statusTextEl);
-        }
+        statusEl.textContent = text;
+        // Reset classes
+        statusEl.classList.remove('text-warning', 'text-success', 'text-danger');
+        iconEl.classList.remove('fa-spin'); // Remove spinner specifically
 
         switch (status) {
             case 'uploading':
-                iconEl.classList.add('fa-spin', 'text-warning');
-                statusTextEl.textContent = progress > 0 ? `Uploading (${progress}%)` : 'Uploading...';
-                statusTextEl.style.color = 'var(--warning)';
+                statusEl.classList.add('text-warning');
+                iconEl.classList.add('fa-spin'); // Add spinner
                 break;
             case 'success':
-                iconEl.classList.add('text-success');
-                statusTextEl.textContent = 'Uploaded';
-                statusTextEl.style.color = 'var(--success)';
+                statusEl.classList.add('text-success');
                 break;
             case 'error':
-                iconEl.classList.add('text-danger');
-                statusTextEl.textContent = 'Failed';
-                statusTextEl.style.color = 'var(--danger)';
+                statusEl.classList.add('text-danger');
+                break;
+            case 'pending':
+            default:
+                // No specific color for pending
                 break;
         }
     }
+
 
     // Add this function to handle adding files to pending attachments
     function handleFileSelection(event) {
         const files = event.target.files;
         if (!files || files.length === 0) return;
-        
+
+        const container = document.getElementById('pendingAttachments');
+        container.style.display = 'block'; // Show container
+
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            
-            // Determine file type
-            let fileType = 'Document';
+            const uniqueUiId = `pending-${fileUploadCounter++}`; // Unique ID for UI element
+
+            // Determine file type for icon
+            let fileType = 'File'; // Default
+            let iconClass = 'fa-file';
             if (file.type.startsWith('image/')) {
-                fileType = 'Image';
+                fileType = 'Image'; iconClass = 'fa-file-image';
             } else if (file.type === 'application/pdf') {
-                fileType = 'PDF';
+                fileType = 'PDF'; iconClass = 'fa-file-pdf';
+            } else if (file.type.startsWith('audio/')) {
+                fileType = 'Audio'; iconClass = 'fa-file-audio';
+            } else if (file.type.startsWith('video/')) {
+                fileType = 'Video'; iconClass = 'fa-file-video';
+            } else if (file.type.startsWith('text/')) {
+                fileType = 'Document'; iconClass = 'fa-file-alt';
             }
-            
-            // Create attachment object
+
             const attachment = {
+                uiId: uniqueUiId,
                 file: file,
                 fileName: file.name,
                 fileSize: file.size,
                 fileType: fileType,
-                status: 'pending'
+                iconClass: iconClass,
+                status: 'pending', // Initial status
+                apiId: null // Will be filled after upload
             };
-            
-            // Add to pending attachments
+
             pendingAttachments.push(attachment);
-            
-            // Show in UI
             showPendingAttachment(attachment);
         }
-        
-        // Clear the file input to allow selecting the same file again
-        event.target.value = '';
-        
-        // Update send button state
+
+        event.target.value = ''; // Clear the input
         checkSendButtonState();
     }
 
     // Format file size for display
     function formatFileSize(bytes) {
-        if (bytes < 1024) return bytes + ' B';
-        else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-        else return (bytes / 1048576).toFixed(1) + ' MB';
+        if (bytes === 0) return '0 Bytes';
+        if (!bytes || isNaN(bytes)) return '0 Bytes';
+
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]; // Use 1 decimal place
     }
+
+    // Function to display pending attachments in the UI before they're sent
+    function showPendingAttachment(attachment) {
+        const pendingContainer = document.getElementById('pendingAttachments');
+        if (!pendingContainer) return; // Should exist, but safety check
+
+        pendingContainer.style.display = 'block'; // Ensure visible
+
+        const attachmentEl = document.createElement('div');
+        attachmentEl.className = 'attachment';
+        attachmentEl.id = attachment.uiId; // Use the unique UI ID
+
+        attachmentEl.innerHTML = `
+            <span class="attachment-icon"><i class="fas ${attachment.iconClass}"></i></span>
+            <div class="attachment-info">
+                <div class="attachment-name" title="${escapeHtml(attachment.fileName)}">${escapeHtml(attachment.fileName)}</div>
+                <div class="attachment-size">${formatFileSize(attachment.fileSize)}</div>
+                <div class="attachment-status" id="${attachment.uiId}-status">Pending</div>
+            </div>
+            <button class="attachment-btn" onclick="removePendingAttachment('${attachment.uiId}')" title="Remove">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+
+        pendingContainer.appendChild(attachmentEl);
+    }
+
+    // Function to remove pending attachment by UI ID
+    function removePendingAttachment(uiId) {
+        pendingAttachments = pendingAttachments.filter(att => att.uiId !== uiId);
+        const element = document.getElementById(uiId);
+        if (element) {
+            element.remove();
+        }
+        // Hide container if empty
+        if (pendingAttachments.length === 0) {
+            document.getElementById('pendingAttachments').style.display = 'none';
+        }
+        checkSendButtonState();
+    }
+
 
     // Function to add file attachment to message in UI
     function addFileAttachmentToMessage(messageId, fileAttachment) {
-        const messageElement = document.getElementById(`message-${messageId}`);
+        const messageElement = document.querySelector(`.message[data-message-id="${messageId}"]`);
         if (!messageElement) return;
-        
-        const contentDiv = messageElement.querySelector('.message-content');
-        if (!contentDiv) return;
-        
-        // Create attachment element
+
+        const attachmentsContainer = messageElement.querySelector('.message-attachments');
+        if (!attachmentsContainer) return; // Should exist, but check
+
+        // Avoid adding duplicates
+        if (attachmentsContainer.querySelector(`[data-file-id="${fileAttachment.id}"]`)) return;
+
         const attachmentElement = document.createElement('div');
-        attachmentElement.className = 'message-attachment';
+        // Use the general 'attachment' class for base styling
+        attachmentElement.className = 'attachment';
         attachmentElement.setAttribute('data-file-id', fileAttachment.id);
-        
-        // Different display based on file type
-        if (fileAttachment.fileType === 'Image' && fileAttachment.base64Content) {
-            // For images, show the image
-            attachmentElement.innerHTML = `
-                <div class="image-attachment">
-                    <img src="data:${fileAttachment.contentType};base64,${fileAttachment.base64Content}" 
-                         alt="${fileAttachment.fileName}" />
-                    <div class="attachment-info">
-                        <span class="attachment-name">${fileAttachment.fileName}</span>
-                    </div>
-                </div>
-            `;
-        } else if (fileAttachment.fileType === 'PDF' && fileAttachment.base64Content) {
-            // For PDFs, show an icon with download link
-            attachmentElement.innerHTML = `
-                <div class="file-attachment">
-                    <div class="file-preview">
-                        <i class="fas fa-file-pdf"></i>
-                    </div>
-                    <div class="attachment-info">
-                        <span class="attachment-name">${fileAttachment.fileName}</span>
-                        <a href="data:${fileAttachment.contentType};base64,${fileAttachment.base64Content}" 
-                           download="${fileAttachment.fileName}" class="file-download">
-                            <i class="fas fa-download"></i> Download
-                        </a>
-                    </div>
-                </div>
-            `;
-        } else {
-            // For other files
-            attachmentElement.innerHTML = `
-                <div class="file-attachment">
-                    <div class="file-preview">
-                        <i class="fas fa-file"></i>
-                    </div>
-                    <div class="attachment-info">
-                        <span class="attachment-name">${fileAttachment.fileName}</span>
-                    </div>
-                </div>
-            `;
+        // max-width is handled by the .attachment class CSS
+
+        // Determine icon based on file type string
+        let iconClass = 'fa-file';
+        const fileTypeLower = fileAttachment.fileType?.toLowerCase();
+        if (fileTypeLower === 'image') iconClass = 'fa-file-image';
+        else if (fileTypeLower === 'pdf') iconClass = 'fa-file-pdf';
+        else if (fileTypeLower === 'audio') iconClass = 'fa-file-audio';
+        else if (fileTypeLower === 'video') iconClass = 'fa-file-video';
+        else if (fileTypeLower === 'document') iconClass = 'fa-file-alt';
+
+        // Generate authenticated URL for download link
+        const userToken = localStorage.getItem('userToken') || '';
+        let fileUrl = fileAttachment.url || `/api/file/${fileAttachment.id}`;
+        // Ensure it's an absolute URL if it starts with /
+        if (fileUrl.startsWith('/') && !fileUrl.startsWith('//')) {
+            fileUrl = window.location.origin + fileUrl;
         }
-        
-        // Add attachment before content
-        contentDiv.prepend(attachmentElement);
+        const authenticatedUrl = `${fileUrl}?token=${encodeURIComponent(userToken)}`;
+
+
+        attachmentElement.innerHTML = `
+            <span class="attachment-icon"><i class="fas ${iconClass}"></i></span>
+            <div class="attachment-info">
+                <div class="attachment-name" title="${escapeHtml(fileAttachment.fileName)}">
+                    ${escapeHtml(fileAttachment.fileName)}
+                </div>
+                <div class="attachment-size">${formatFileSize(fileAttachment.fileSize)}</div>
+            </div>
+            <a href="${authenticatedUrl}" target="_blank" class="attachment-btn" title="Download/Open">
+                <i class="fas fa-download"></i>
+            </a>
+        `;
+
+        attachmentsContainer.appendChild(attachmentElement);
     }
 
     function editMessage(messageId) {
@@ -2364,6 +2457,7 @@
     function updateMessageChunk(messageId, chunk) {
         let messageElement = document.getElementById(`message-${messageId}`);
         if (!messageElement) {
+            // If message doesn't exist, create it (likely the first chunk)
             addMessageToChat('', true, messageId);
             messageElement = document.getElementById(`message-${messageId}`);
         }
@@ -2375,7 +2469,8 @@
         // while preserving intentional paragraph breaks (double newlines)
         const processedChunk = chunk
             .replace(/\r\n/g, '\n') // Normalize line endings
-            .replace(/\n(?!\n)/g, ' '); // Replace single newlines with spaces
+            .replace(/(?<!\n)\n(?!\n)/g, ' '); // Replace single newlines not preceded/followed by another newline with space
+
 
         // Parse the processed chunk with marked
         contentDiv.innerHTML += marked.parse(processedChunk);
@@ -2390,7 +2485,7 @@
             // Process the text in the same way as updateMessageChunk
             const processedText = text
                 .replace(/\r\n/g, '\n')
-                .replace(/\n(?!\n)/g, ' ');
+                .replace(/(?<!\n)\n(?!\n)/g, ' ');
 
             contentDiv.innerHTML += marked.parse(processedText);
         }
@@ -2425,7 +2520,8 @@
 
     function enableChatInterface() {
         messageInput.disabled = false;
-        sendButton.disabled = false;
+        fileButton.disabled = false; // Enable file button too
+        checkSendButtonState(); // Check send button state based on content/attachments
         messageInput.focus();
         if (isReceivingResponse) updateStopButton(true);
     }
@@ -2433,6 +2529,7 @@
     function disableChatInterface() {
         messageInput.disabled = true;
         sendButton.disabled = true;
+        fileButton.disabled = true; // Disable file button
         updateStopButton(false);
     }
 
@@ -2466,203 +2563,20 @@
         }
     }
 
-    // Add this function to handle base64 encoding of files client-side
-    function readFileAsBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const base64String = reader.result;
-                resolve(base64String);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    }
-
-    // Function to display pending attachments in the UI before they're sent
-    function showPendingAttachment(attachment) {
-        const pendingContainer = document.getElementById('pendingAttachments');
-        if (!pendingContainer) {
-            // Create pending attachments container if it doesn't exist
-            const container = document.createElement('div');
-            container.id = 'pendingAttachments';
-            container.className = 'pending-attachments';
-            container.style.margin = '0.5rem 0';
-            container.style.padding = '0.5rem';
-            container.style.borderRadius = 'var(--radius)';
-            container.style.background = 'var(--bg-dark-accent)';
-
-            const inputArea = document.querySelector('.input-container');
-            inputArea.prepend(container);
-        }
-
-        const attachmentEl = document.createElement('div');
-        attachmentEl.className = 'attachment';
-        attachmentEl.style.display = 'flex';
-        attachmentEl.style.alignItems = 'center';
-        attachmentEl.style.margin = '0.25rem 0';
-
-        // Determine icon based on file type
-        let icon = 'fa-file';
-        if (attachment.fileType === 'Image') icon = 'fa-file-image';
-        else if (attachment.fileType === 'PDF') icon = 'fa-file-pdf';
-        else if (attachment.fileType === 'Document') icon = 'fa-file-alt';
-
-        attachmentEl.innerHTML = `
-                <span class="attachment-icon" style="margin-right: 0.5rem;"><i class="fas ${icon}"></i></span>
-                <div class="attachment-info" style="flex: 1;">
-                    <div class="attachment-name" style="font-weight: 500;">${attachment.fileName}</div>
-                    <div class="attachment-size" style="font-size: 0.75rem; color: var(--text-secondary-dark);">${formatFileSize(attachment.fileSize)}</div>
-                </div>
-                <button class="attachment-btn" style="background: transparent; border: none; color: var(--text-secondary-dark); cursor: pointer;" 
-                        onclick="removePendingAttachment(${pendingAttachments.length - 1})">
-                    <i class="fas fa-times"></i>
-                </button>
-            `;
-
-        document.getElementById('pendingAttachments').appendChild(attachmentEl);
-    }
-
-    // Function to remove pending attachment
-    function removePendingAttachment(index) {
-        if (index >= 0 && index < pendingAttachments.length) {
-            pendingAttachments.splice(index, 1);
-            refreshPendingAttachments();
-            checkSendButtonState();
-        }
-    }
-
-    // Refresh the display of pending attachments
-    function refreshPendingAttachments() {
-        const container = document.getElementById('pendingAttachments');
-        if (container) {
-            container.innerHTML = '';
-
-            if (pendingAttachments.length === 0) {
-                container.remove();
-                return;
-            }
-
-            pendingAttachments.forEach((attachment, index) => {
-                const attachmentEl = document.createElement('div');
-                attachmentEl.className = 'attachment';
-                attachmentEl.style.display = 'flex';
-                attachmentEl.style.alignItems = 'center';
-                attachmentEl.style.margin = '0.25rem 0';
-
-                // Determine icon based on file type
-                let icon = 'fa-file';
-                if (attachment.fileType === 'Image') icon = 'fa-file-image';
-                else if (attachment.fileType === 'PDF') icon = 'fa-file-pdf';
-                else if (attachment.fileType === 'Document') icon = 'fa-file-alt';
-
-                attachmentEl.innerHTML = `
-                        <span class="attachment-icon" style="margin-right: 0.5rem;"><i class="fas ${icon}"></i></span>
-                        <div class="attachment-info" style="flex: 1;">
-                            <div class="attachment-name" style="font-weight: 500;">${attachment.fileName}</div>
-                            <div class="attachment-size" style="font-size: 0.75rem; color: var(--text-secondary-dark);">${formatFileSize(attachment.fileSize)}</div>
-                        </div>
-                        <button class="attachment-btn" style="background: transparent; border: none; color: var(--text-secondary-dark); cursor: pointer;" 
-                                onclick="removePendingAttachment(${index})">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    `;
-
-                container.appendChild(attachmentEl);
-            });
-        }
-    }
-
-    function formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        if (!bytes || isNaN(bytes)) return '0 Bytes'; // Changed from 'Unknown size' to '0 Bytes'
-
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    function addCodeBlockActions() {
-        // Find all pre>code elements and add copy buttons
-        document.querySelectorAll('.message-content pre > code').forEach((codeBlock, index) => {
-            const pre = codeBlock.parentNode;
-            if (pre.querySelector('.copy-button')) return; // Skip if already has button
-
-            // Add a container to position things properly
-            pre.style.position = 'relative';
-
-            // Try to detect language
-            const className = codeBlock.className;
-            let language = 'text';
-            if (className) {
-                const match = className.match(/language-(\w+)/);
-                if (match) language = match[1];
-            }
-
-            // Add language label
-            const languageLabel = document.createElement('span');
-            languageLabel.className = 'language-label';
-            languageLabel.textContent = language;
-            pre.appendChild(languageLabel);
-
-            // Add copy button
-            const copyButton = document.createElement('button');
-            copyButton.className = 'copy-button';
-            copyButton.innerHTML = '<i class="fas fa-copy"></i> Copy';
-            copyButton.onclick = function() {
-                const code = codeBlock.textContent;
-                navigator.clipboard.writeText(code).then(() => {
-                    copyButton.innerHTML = '<i class="fas fa-check"></i> Copied!';
-                    setTimeout(() => {
-                        copyButton.innerHTML = '<i class="fas fa-copy"></i> Copy';
-                    }, 2000);
-                }).catch(err => {
-                    console.error('Failed to copy: ', err);
-                    copyButton.innerHTML = '<i class="fas fa-times"></i> Error';
-                    setTimeout(() => {
-                        copyButton.innerHTML = '<i class="fas fa-copy"></i> Copy';
-                    }, 2000);
-                });
-            };
-            pre.appendChild(copyButton);
-        });
-    }
-
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    function stopCurrentResponse() {
-        if (!isReceivingResponse || !currentResponseMessageId) return;
-
-        stopButton.disabled = true;
-        fetch(`/api/chat/StopResponse/${currentResponseMessageId}`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('userToken')}` }
-        })
-            .then(response => {
-                if (!response.ok) throw new Error('Failed to stop response');
-            })
-            .catch(() => showSystemMessage('Error stopping response', 'error'))
-            .finally(() => stopButton.disabled = false);
-    }
-
     function addMessageToChat(content, isFromAi, messageId, timestamp = null) {
         const messageElement = document.createElement('div');
         messageElement.className = `message ${isFromAi ? 'ai' : 'user'}`;
         messageElement.id = `message-${messageId}`;
+        messageElement.setAttribute('data-message-id', messageId); // Added for easier selection
 
         // For AI messages, process the content to prevent unwanted line breaks
         let formattedContent;
         if (isFromAi) {
-            const processedContent = content
-                .replace(/\r\n/g, '\n')
-                .replace(/\n(?!\n)/g, ' ');
-            formattedContent = marked.parse(processedContent);
+             // Process slightly differently for AI to preserve structure better maybe?
+             const processedContent = content
+                 .replace(/\r\n/g, '\n'); // Normalize first
+             // Let marked handle block-level elements like lists and code blocks
+             formattedContent = marked.parse(processedContent);
         } else {
             formattedContent = escapeHtml(content);
         }
@@ -2703,21 +2617,36 @@
                     <span class="timestamp">${formattedTime}</span>
                 </div>
             `;
+
+    // Add container for attachments inside the message
+    const attachmentsContainer = document.createElement('div');
+    attachmentsContainer.className = 'message-attachments'; // Class for styling attachments within messages
+    messageElement.insertBefore(attachmentsContainer, messageElement.querySelector('.message-meta')); // Insert before meta info
+
         messagesContainer.appendChild(messageElement);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // Fetch attachments for this message if connected
+    if (connection && connection.state === signalR.HubConnectionState.Connected) {
+        connection.invoke("GetMessageAttachments", messageId)
+            .catch(err => console.error(`Error fetching attachments for ${messageId}:`, err));
     }
+}
 
     function updateThinkingChunk(messageId, chunk) {
         if (currentThinkingMessageId !== messageId) {
+            // Remove previous thinking bubble if any
+            const oldThinkingElement = document.getElementById(`thinking-${currentThinkingMessageId}`);
+             if(oldThinkingElement) oldThinkingElement.remove();
+
             currentThinkingMessageId = messageId;
             const thinkingElement = document.createElement('div');
             thinkingElement.className = 'thinking';
             thinkingElement.id = `thinking-${messageId}`;
 
             // Process the chunk to prevent unwanted line breaks
-            const processedChunk = chunk
-                .replace(/\r\n/g, '\n')
-                .replace(/\n(?!\n)/g, ' ');
+             const processedChunk = chunk
+                 .replace(/\r\n/g, '\n'); // Normalize
 
             thinkingElement.innerHTML = `
                     <div class="thinking-badge"><i class="fas fa-brain"></i> Thinking Process</div>
@@ -2735,9 +2664,8 @@
                 const contentDiv = thinkingElement.querySelector('.message-content');
 
                 // Process the chunk to prevent unwanted line breaks
-                const processedChunk = chunk
-                    .replace(/\r\n/g, '\n')
-                    .replace(/\n(?!\n)/g, ' ');
+                 const processedChunk = chunk
+                     .replace(/\r\n/g, '\n'); // Normalize
 
                 const newContent = marked.parse(processedChunk);
                 contentDiv.innerHTML += newContent;
@@ -2753,13 +2681,14 @@
         document.getElementById('outputTokens').textContent = tokenUsage.outputTokens.toLocaleString();
         document.getElementById('totalTokens').textContent = tokenUsage.totalTokens.toLocaleString();
 
-        // Enhanced cost display with better formatting
+        // Enhanced cost display with better formatting (ensure value exists)
+        const cost = tokenUsage.totalCost || 0;
         const formattedCost = new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
             minimumFractionDigits: 4,
             maximumFractionDigits: 4
-        }).format(tokenUsage.totalCost);
+        }).format(cost);
 
         document.getElementById('totalCost').textContent = formattedCost;
 
@@ -2819,7 +2748,8 @@
     function checkSendButtonState() {
         const hasText = messageInput.value.trim().length > 0;
         const hasAttachments = pendingAttachments.length > 0;
-        sendButton.disabled = !(hasText || hasAttachments);
+        // Also consider connection state and if generating
+        sendButton.disabled = !connection || connection.state !== signalR.HubConnectionState.Connected || isReceivingResponse || !(hasText || hasAttachments);
     }
 
     async function startConnection() {
@@ -2900,9 +2830,9 @@
     // Function to handle file events received from SignalR
     function handleFileReceived(fileInfo) {
         console.log("File received:", fileInfo);
-        
+
         // Find the message this file is attached to
-        const messageElement = document.getElementById(`message-${fileInfo.messageId}`);
+        const messageElement = document.querySelector(`.message[data-message-id="${fileInfo.messageId}"]`);
         if (!messageElement) {
             console.warn(`Message ${fileInfo.messageId} not found for file attachment`);
             return;
@@ -2912,28 +2842,81 @@
         addFileAttachmentToMessage(fileInfo.messageId, fileInfo);
     }
 
-    // Helper function to format file size - remove duplicate function
-    function formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        if (!bytes || isNaN(bytes)) return '0 Bytes';
-
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
 
     // Function to handle sending messages with file attachments through the SendMessageWithAttachments hub method
     async function sendMessageWithAttachments(chatSessionId, message, fileIds) {
         try {
-            await connection.invoke('SendMessageWithAttachments', chatSessionId, message, fileIds);
+            const enableThinking = document.getElementById('enableThinking').checked;
+            await connection.invoke('SendMessageWithAttachments', chatSessionId, message, fileIds, enableThinking);
             return true;
         } catch (error) {
             console.error('Error sending message with attachments:', error);
             throw error;
         }
     }
+    
+    // Simple Toast Notification function (replace with a library if needed)
+    function showToast(message, type = "info", duration = 3000) {
+        const toastContainer = document.body; // Or a dedicated container
+        const toast = document.createElement('div');
+        toast.style.position = 'fixed';
+        toast.style.top = '20px';
+        toast.style.right = '20px';
+        toast.style.padding = '10px 20px';
+        toast.style.borderRadius = 'var(--border-radius-sm)';
+        toast.style.zIndex = '1000';
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.5s ease';
+        toast.textContent = message;
+
+        switch (type) {
+            case 'success': toast.style.backgroundColor = 'var(--success)'; toast.style.color = 'white'; break;
+            case 'error': toast.style.backgroundColor = 'var(--danger)'; toast.style.color = 'white'; break;
+            case 'warning': toast.style.backgroundColor = 'var(--warning)'; toast.style.color = 'var(--text-primary-light)'; break;
+            case 'info':
+            default: toast.style.backgroundColor = 'var(--info)'; toast.style.color = 'white'; break;
+        }
+
+        toastContainer.appendChild(toast);
+        // Fade in
+        setTimeout(() => { toast.style.opacity = '1'; }, 50);
+        // Fade out and remove
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => { toast.remove(); }, 500); // Remove after fade out
+        }, duration);
+    }
+
+    function escapeHtml(text) {
+        if (typeof text !== 'string') return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function stopCurrentResponse() {
+        if (!isReceivingResponse || !currentResponseMessageId) return;
+        if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+            showToast('Not connected', 'error');
+            return;
+        }
+
+        stopButton.disabled = true;
+        const chatId = document.getElementById('chatSessionId').value;
+
+        connection.invoke('StopResponse', chatId)
+            .then(() => {
+                console.log('Stop request sent successfully.');
+                // UI update will be handled by ResponseStopped event
+            })
+            .catch(err => {
+                console.error('Error stopping response:', err);
+                showToast(`Failed to send stop request: ${err.message || 'Unknown error'}`, 'error');
+                // Optionally re-enable button if invoke fails immediately
+                stopButton.disabled = false;
+            });
+    }
+
 </script>
 </body>
 </html>

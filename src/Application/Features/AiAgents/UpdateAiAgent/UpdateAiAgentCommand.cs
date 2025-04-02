@@ -22,7 +22,6 @@ public sealed record UpdateAiAgentCommand(
     int? MaxTokens = null,
     bool? EnableThinking = null,
     List<string>? StopSequences = null,
-    int? ReasoningEffort = null,
     bool? PromptCaching = null,
     string? ContextLimit = null,
     string? SafetySettings = null,

@@ -42,7 +42,6 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                     command.MaxTokens,
                     command.EnableThinking,
                     command.StopSequences,
-                    command.ReasoningEffort,
                     command.PromptCaching,
                     command.ContextLimit,
                     command.SafetySettings

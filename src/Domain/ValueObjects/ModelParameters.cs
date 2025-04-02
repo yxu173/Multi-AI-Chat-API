@@ -14,7 +14,6 @@ public record ModelParameters : ValueObject
     public int? MaxTokens { get; init; }
     public bool? EnableThinking { get; init; }
     public List<string>? StopSequences { get; init; }
-    public int? ReasoningEffort { get; init; }
     public bool? PromptCaching { get; init; }
     public string? SafetySettings { get; init; }
 
@@ -31,7 +30,6 @@ public record ModelParameters : ValueObject
         int? maxTokens = null,
         bool? enableThinking = null,
         List<string>? stopSequences = null,
-        int? reasoningEffort = null,
         bool? promptCaching = null,
         string? contextLimit = null,
         string? safetySettings = null)
@@ -46,7 +44,6 @@ public record ModelParameters : ValueObject
             MaxTokens = maxTokens,
             EnableThinking = enableThinking,
             StopSequences = stopSequences,
-            ReasoningEffort = reasoningEffort,
             PromptCaching = promptCaching,
             ContextLimit = contextLimit,
             SafetySettings = safetySettings
@@ -78,7 +75,6 @@ public record ModelParameters : ValueObject
         yield return EnableThinking;
         yield return ContextLimit;
         yield return PromptCaching;
-        yield return ReasoningEffort;
         yield return SafetySettings;
         
         if (StopSequences != null)
