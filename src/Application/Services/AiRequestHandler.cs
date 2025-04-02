@@ -499,63 +499,56 @@ public class AiRequestHandler : IAiRequestHandler
 
             foreach (var part in contentParts)
             {
-                switch (part)
+                // Treat both ImagePart and FilePart by uploading via File API
+                if (part is TextPart tp)
                 {
-                    case TextPart tp: geminiParts.Add(new { text = tp.Text }); break;
-                    case ImagePart ip:
-                        if (IsValidGeminiImageType(ip.MimeType, out var mediaType))
-                        {
-                            geminiParts.Add(new { inlineData = new { mimeType = mediaType, data = ip.Base64Data } });
-                        }
-                        else
-                        {
-                            geminiParts.Add(new { text = $"[Image: {ip.FileName ?? ip.MimeType} - Unsupported Type]" });
-                        }
+                    geminiParts.Add(new { text = tp.Text });
+                }
+                else if (part is ImagePart ip || part is FilePart fp)
+                {
+                    // Extract details correctly based on actual type
+                    string fileName = (part is FilePart fileP) ? fileP.FileName : ((ImagePart)part).FileName ?? "image.tmp";
+                    string mimeType = (part is FilePart fileP2) ? fileP2.MimeType : ((ImagePart)part).MimeType;
+                    string base64Data = (part is FilePart fileP3) ? fileP3.Base64Data : ((ImagePart)part).Base64Data;
+                    string partTypeName = part.GetType().Name.Replace("Part", "");
 
-                        break;
-                    case FilePart fp:
-                        if (fileUploader != null)
+                    if (fileUploader != null)
+                    {
+                        try
                         {
-                            try
-                            {
-                                byte[] fileBytes = Convert.FromBase64String(fp.Base64Data);
-                                _logger?.LogInformation("Uploading file {FileName} ({MimeType}) to Gemini File API...",
-                                    fp.FileName, fp.MimeType);
-                                var uploadResult = await fileUploader.UploadFileForAiAsync(fileBytes, fp.MimeType,
-                                    fp.FileName, cancellationToken);
+                            byte[] fileBytes = Convert.FromBase64String(base64Data);
+                            _logger?.LogInformation("Uploading {PartType} {FileName} ({MimeType}) to Gemini File API...",
+                                partTypeName, fileName, mimeType);
+                            var uploadResult = await fileUploader.UploadFileForAiAsync(fileBytes, mimeType, fileName, cancellationToken);
 
-                                if (uploadResult != null)
-                                {
-                                    geminiParts.Add(new
-                                    {
-                                        fileData = new { mimeType = uploadResult.MimeType, fileUri = uploadResult.Uri }
-                                    });
-                                    _logger?.LogInformation("File {FileName} uploaded successfully. URI: {FileUri}",
-                                        fp.FileName, uploadResult.Uri);
-                                }
-                                else
-                                {
-                                    geminiParts.Add(new { text = $"[File Upload Failed: {fp.FileName}]" });
-                                }
-                            }
-                            catch (FormatException ex)
+                            if (uploadResult != null)
                             {
-                                _logger?.LogError(ex, "Invalid Base64 data for file {FileName}", fp.FileName);
-                                geminiParts.Add(new { text = $"[Invalid File Data: {fp.FileName}]" });
+                                geminiParts.Add(new { fileData = new { mimeType = uploadResult.MimeType, fileUri = uploadResult.Uri } });
+                                _logger?.LogInformation("{PartType} {FileName} uploaded successfully. URI: {FileUri}",
+                                    partTypeName, fileName, uploadResult.Uri);
                             }
-                            catch (Exception ex)
+                            else
                             {
-                                _logger?.LogError(ex, "Error during Gemini file upload processing for {FileName}",
-                                    fp.FileName);
-                                geminiParts.Add(new { text = $"[File Processing Error: {fp.FileName}]" });
+                                // Upload failed (error handled in UploadFileForAiAsync), add placeholder
+                                geminiParts.Add(new { text = $"[{partTypeName} Upload Failed: {fileName}]" });
                             }
                         }
-                        else
+                        catch (FormatException ex)
                         {
-                            geminiParts.Add(new { text = $"[Attached File: {fp.FileName} ({fp.MimeType})]" });
+                            _logger?.LogError(ex, "Invalid Base64 data for {PartType} {FileName}", partTypeName, fileName);
+                            geminiParts.Add(new { text = $"[Invalid {partTypeName} Data: {fileName}]" });
                         }
-
-                        break;
+                        catch (Exception ex)
+                        {
+                            _logger?.LogError(ex, "Error during Gemini file upload processing for {FileName}", fileName);
+                            geminiParts.Add(new { text = $"[{partTypeName} Processing Error: {fileName}]" });
+                        }
+                    }
+                    else
+                    {
+                        // GeminiService not available or doesn't support upload, add placeholder
+                        geminiParts.Add(new { text = $"[Attached {partTypeName}: {fileName} - Uploader N/A]" });
+                    }
                 }
             }
 
