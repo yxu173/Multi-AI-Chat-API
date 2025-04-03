@@ -13,10 +13,9 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _pluginRegistry = new Dictionary<Guid, PluginInfoDto>();
         
-        RegisterPlugin(new Guid("74a08c15-7cc7-436f-8734-25d65a9702d6"), typeof(WebSearchPlugin), "Web Search");
+        RegisterPlugin(new Guid("0d2987a6-e3ac-4de8-bd4e-95ede2892e9b"), typeof(WebSearchPlugin), "google_search");
         RegisterPlugin(new Guid("6A2ADF8A-9B2F-4F9D-8F31-B29A9F1C1760"), typeof(PerplexityPlugin), "Perplexity AI");
-        RegisterPlugin(new Guid("B4BDAF1C-7E6A-4B7D-8F31-B29A9F1C1760"), typeof(JinaWebPlugin), "Jina Web");
-        RegisterPlugin(new Guid("B4BDAF1C-7E6A-4B7D-8F31-B29A9F1C1760"), typeof(WebPageReader), "Web Page Reader");
+        RegisterPlugin(new Guid("f2726b0b-3759-4088-9bbe-4d094adc9f06"), typeof(JinaWebPlugin), "jina_web_reader");
     }
 
     private void RegisterPlugin(Guid id, Type pluginType, string name)

@@ -11,7 +11,7 @@ public class JinaWebPlugin : IChatPlugin
     private readonly string _apiKey;
     private readonly int _maxRetries;
 
-    public string Name => "Jina Web Search";
+    public string Name => "jina_web_reader";
     public string Description => "Retrieve web content from URLs using Jina AI";
 
     public JinaWebPlugin(HttpClient httpClient, string apiKey, int maxRetries = 3)
@@ -40,7 +40,7 @@ public class JinaWebPlugin : IChatPlugin
 
             string url = urlMatch.Groups[1].Value;
 
-            var jinaRequestUrl = "/";
+            const string jinaRequestUrl = "https://r.jina.ai/";
 
             int retries = 0;
             bool success = false;

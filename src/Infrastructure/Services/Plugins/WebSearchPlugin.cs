@@ -8,7 +8,7 @@ public class WebSearchPlugin : IChatPlugin
     private readonly string _apiKey;
     private readonly string _cx;
 
-    public string Name => "Google Search";
+    public string Name => "google_search";
     public string Description => "Search the web using Google for real-time information";
 
     public WebSearchPlugin(HttpClient httpClient, string apiKey, string cx)
@@ -21,7 +21,8 @@ public class WebSearchPlugin : IChatPlugin
     public bool CanHandle(string userMessage)
     {
         return userMessage.StartsWith("/google", StringComparison.OrdinalIgnoreCase) ||
-               userMessage.StartsWith("/search", StringComparison.OrdinalIgnoreCase);
+               userMessage.StartsWith("/search", StringComparison.OrdinalIgnoreCase) ||
+               userMessage.StartsWith("/web", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
@@ -29,7 +30,8 @@ public class WebSearchPlugin : IChatPlugin
         try
         {
             var query = userMessage.Replace("/google", "").Replace("/search", "").Trim();
-            var url = $"https://www.googleapis.com/customsearch/v1?key={_apiKey}&cx={_cx}&q={Uri.EscapeDataString(query)}";
+            var url =
+                $"https://www.googleapis.com/customsearch/v1?key={_apiKey}&cx={_cx}&q={Uri.EscapeDataString(query)}";
             var response = await _httpClient.GetAsync(url, cancellationToken);
             response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -57,6 +59,7 @@ public class WebSearchPlugin : IChatPlugin
             result.AppendLine($"   {item.Snippet ?? "No description available"}");
             result.AppendLine();
         }
+
         return result.ToString();
     }
 }

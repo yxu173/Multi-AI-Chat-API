@@ -57,7 +57,7 @@ public static class DependencyInjection
         services.AddHttpClient();
 
 
-        var webSearchConfig = configuration.GetSection("AI:Plugins:WebSearch");
+        var webSearchConfig = configuration.GetSection("Plugins:WebSearch");
         services.AddScoped<WebSearchPlugin>(sp =>
             new WebSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
@@ -76,16 +76,19 @@ public static class DependencyInjection
             )
         );
 
-        services.AddScoped<IChatPlugin, JinaWebPlugin>(sp =>
+        // Register the concrete type with the factory that provides dependencies
+        services.AddScoped<JinaWebPlugin>(sp =>
             new JinaWebPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                 configuration["Plugins:JinaWeb:ApiKey"] ??
                 throw new InvalidOperationException("Missing JinaWeb API key"),
-                maxRetries: configuration.GetValue<int>("Plugins:JinaWeb:MaxRetries", 3),
-                timeoutSeconds: configuration.GetValue<int>("Plugins:JinaWeb:TimeoutSeconds", 30),
-                includeCached: configuration.GetValue<bool>("Plugins:JinaWeb:IncludeCached", true)
+                maxRetries: configuration.GetValue<int>("Plugins:JinaWeb:MaxRetries", 3)
             )
         );
+        // Register the interface to resolve using the already registered concrete type
+        services.AddScoped<IChatPlugin, JinaWebPlugin>(sp => 
+            sp.GetRequiredService<JinaWebPlugin>()
+        ); 
 
         services.AddScoped<IChatPlugin, WebPageReader>(sp =>
             new WebPageReader(
