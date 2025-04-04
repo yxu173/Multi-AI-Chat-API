@@ -61,9 +61,7 @@ public sealed class Message : BaseAuditableEntity
     
     public void UpdateContent(string newContent)
     {
-        if (string.IsNullOrWhiteSpace(newContent))
-            throw new ArgumentException("Content cannot be empty.", nameof(newContent));
-        Content = newContent;
+        Content = newContent ?? string.Empty;
         LastModifiedAt = DateTime.UtcNow;
     }
 

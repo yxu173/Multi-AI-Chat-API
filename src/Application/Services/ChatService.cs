@@ -64,9 +64,6 @@ public class ChatService
                 fileAttachments: null, cancellationToken);
 
         await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
-        var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, content, cancellationToken);
-        userMessage.UpdateContent(modifiedContent);
-        
         var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
         chatSession.AddMessage(aiMessage);
 
@@ -94,10 +91,10 @@ public class ChatService
         var messageToEdit = chatSession.Messages.FirstOrDefault(m => m.Id == messageId && m.UserId == userId && !m.IsFromAi);
         if (messageToEdit == null) throw new Exception("Message not found or you do not have permission to edit it.");
 
-        var modifiedContent = await _pluginService.ExecutePluginsAsync(chatSessionId, newContent, cancellationToken);
+        var contentToUse = newContent;
         
         var fileAttachments = messageToEdit.FileAttachments?.ToList() ?? new List<FileAttachment>();
-        List<Guid> newFileAttachmentIds = ExtractFileAttachmentIds(modifiedContent);
+        List<Guid> newFileAttachmentIds = ExtractFileAttachmentIds(contentToUse);
         if (newFileAttachmentIds.Any())
         {
             var newFileAttachments = new List<FileAttachment>();
@@ -109,8 +106,8 @@ public class ChatService
             fileAttachments = newFileAttachments;
         }
         
-        await _messageService.UpdateMessageContentAsync(messageToEdit, modifiedContent, fileAttachments, cancellationToken);
-        await _mediator.Publish(new MessageEditedNotification(chatSessionId, messageId, modifiedContent), cancellationToken);
+        await _messageService.UpdateMessageContentAsync(messageToEdit, contentToUse, fileAttachments, cancellationToken);
+        await _mediator.Publish(new MessageEditedNotification(chatSessionId, messageId, contentToUse), cancellationToken);
         
         var subsequentAiMessages = chatSession.Messages
             .Where(m => m.IsFromAi && m.CreatedAt > messageToEdit.CreatedAt)

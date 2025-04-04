@@ -1,6 +1,8 @@
 using System.Text;
 using Application.Abstractions.Interfaces;
 using Newtonsoft.Json;
+using System.Text.Json; // For System.Text.Json.Nodes
+using System.Text.Json.Nodes; // For JsonObject
 
 public class WebSearchPlugin : IChatPlugin
 {
@@ -8,6 +10,7 @@ public class WebSearchPlugin : IChatPlugin
     private readonly string _apiKey;
     private readonly string _cx;
 
+    // Name used for AI Tool/Function definition
     public string Name => "google_search";
     public string Description => "Search the web using Google for real-time information";
 
@@ -18,18 +21,45 @@ public class WebSearchPlugin : IChatPlugin
         _cx = cx ?? throw new ArgumentNullException(nameof(cx));
     }
 
-    public bool CanHandle(string userMessage)
+    // Removed CanHandle method
+
+    public JsonObject GetParametersSchema()
     {
-        return userMessage.StartsWith("/google", StringComparison.OrdinalIgnoreCase) ||
-               userMessage.StartsWith("/search", StringComparison.OrdinalIgnoreCase) ||
-               userMessage.StartsWith("/web", StringComparison.OrdinalIgnoreCase);
+        // Define the schema the AI needs to provide arguments
+        string schemaJson = """
+        {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The search query to execute."
+            }
+          },
+          "required": ["query"]
+        }
+        """;
+        // Parse and return as JsonObject
+        return JsonNode.Parse(schemaJson)!.AsObject();
     }
 
-    public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
+    // Modified ExecuteAsync to accept JsonObject arguments
+    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
+        // Extract the 'query' argument from the JsonObject provided by the AI
+        if (arguments == null || !arguments.TryGetPropertyValue("query", out var queryNode) || queryNode is not JsonValue queryValue || queryValue.GetValueKind() != JsonValueKind.String)
+        {
+            return new PluginResult("", false, "Missing or invalid 'query' argument for Google Search.");
+        }
+
+        string query = queryValue.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+             return new PluginResult("", false, "'query' argument cannot be empty.");
+        }
+
         try
         {
-            var query = userMessage.Replace("/google", "").Replace("/search", "").Trim();
+            // The rest of the execution logic remains largely the same
             var url =
                 $"https://www.googleapis.com/customsearch/v1?key={_apiKey}&cx={_cx}&q={Uri.EscapeDataString(query)}";
             var response = await _httpClient.GetAsync(url, cancellationToken);
@@ -41,6 +71,8 @@ public class WebSearchPlugin : IChatPlugin
         }
         catch (Exception ex)
         {
+            // Log the exception details if possible
+            Console.WriteLine($"Google Search Plugin Error: {ex}");
             return new PluginResult("", false, $"Web search failed: {ex.Message}");
         }
     }
@@ -51,19 +83,19 @@ public class WebSearchPlugin : IChatPlugin
             return "No results found";
 
         var result = new StringBuilder();
-        result.AppendLine("**Google Search Results:**");
-        for (int i = 0; i < Math.Min(5, response.Items.Count); i++)
+        // Keep formatting concise for AI consumption
+        result.AppendLine("Google Search Results:");
+        for (int i = 0; i < Math.Min(5, response.Items.Count); i++) // Limit results
         {
             var item = response.Items[i];
-            result.AppendLine($"{i + 1}. [{item.Title ?? "No title"}]({item.Link ?? "#"})");
-            result.AppendLine($"   {item.Snippet ?? "No description available"}");
-            result.AppendLine();
+            result.AppendLine($"- **{item.Title ?? "No title"}**: {item.Snippet ?? "No description."} ([Link]({item.Link ?? "#"}))");
         }
 
         return result.ToString();
     }
 }
 
+// GoogleSearchResponse and SearchItem remain the same
 public class GoogleSearchResponse
 {
     public List<SearchItem> Items { get; set; } = new List<SearchItem>();
@@ -71,7 +103,7 @@ public class GoogleSearchResponse
 
 public class SearchItem
 {
-    public string Title { get; set; }
-    public string Link { get; set; }
-    public string Snippet { get; set; }
+    public string Title { get; set; } = string.Empty; // Initialize to avoid nulls
+    public string Link { get; set; } = string.Empty;
+    public string Snippet { get; set; } = string.Empty;
 }

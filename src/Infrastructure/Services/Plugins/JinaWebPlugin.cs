@@ -2,6 +2,8 @@ using System.Text;
 using Application.Abstractions.Interfaces;
 using Newtonsoft.Json;
 using System.Net.Http.Headers;
+using System.Text.Json.Nodes; // For JsonObject
+using System.Text.Json; // For JsonValue, JsonValueKind
 
 namespace Infrastructure.Services.Plugins;
 
@@ -11,36 +13,53 @@ public class JinaWebPlugin : IChatPlugin
     private readonly string _apiKey;
     private readonly int _maxRetries;
 
-    public string Name => "jina_web_reader";
-    public string Description => "Retrieve web content from URLs using Jina AI";
+    // Tool name for AI
+    public string Name => "read_webpage";
+    public string Description => "Retrieve and summarize web content from a specific URL using Jina AI Reader.";
 
     public JinaWebPlugin(HttpClient httpClient, string apiKey, int maxRetries = 3)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
+        _apiKey = string.IsNullOrEmpty(apiKey) ? throw new ArgumentNullException(nameof(apiKey), "Jina API Key cannot be empty") : apiKey;
         _maxRetries = maxRetries;
     }
 
-    public bool CanHandle(string userMessage)
+    public JsonObject GetParametersSchema()
     {
-        return userMessage.StartsWith("/jina", StringComparison.OrdinalIgnoreCase) ||
-               userMessage.StartsWith("/web", StringComparison.OrdinalIgnoreCase);
+        string schemaJson = """
+        {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "description": "The full URL (including http:// or https://) of the webpage to read."
+            }
+          },
+          "required": ["url"]
+        }
+        """;
+        return JsonNode.Parse(schemaJson)!.AsObject();
     }
 
-    public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
+    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
+      
+        if (arguments == null || !arguments.TryGetPropertyValue("url", out var urlNode) || urlNode is not JsonValue urlValue || urlValue.GetValueKind() != JsonValueKind.String)
+        {
+            return new PluginResult("", false, "Missing or invalid 'url' argument for Read Webpage.");
+        }
+
+        string url = urlValue.GetValue<string>();
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uriResult) || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
+        {
+             return new PluginResult("", false, "'url' argument must be a valid absolute HTTP or HTTPS URL.");
+        }
+
         HttpResponseMessage? response = null;
         try
         {
-            var urlMatch = System.Text.RegularExpressions.Regex.Match(userMessage, @"(https?://\S+)");
-            if (!urlMatch.Success)
-            {
-                return new PluginResult("", false, "No valid URL found in the message. Please include a URL starting with http:// or https://");
-            }
-
-            string url = urlMatch.Groups[1].Value;
-
-            const string jinaRequestUrl = "https://r.jina.ai/";
+            const string jinaRequestUrl = "https://r.jina.ai/"; // Use reader endpoint
 
             int retries = 0;
             bool success = false;
@@ -49,33 +68,34 @@ public class JinaWebPlugin : IChatPlugin
             {
                 try
                 {
-                    var request = new HttpRequestMessage(HttpMethod.Post, jinaRequestUrl);
+                    var request = new HttpRequestMessage(HttpMethod.Get, $"{jinaRequestUrl}{url}");
                     request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-                    
-                    var payload = new { url = url };
-                    var jsonPayload = JsonConvert.SerializeObject(payload);
-                    request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                    if (!string.IsNullOrEmpty(_apiKey))
+                    {
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+                    }
 
                     response?.Dispose();
                     response = await _httpClient.SendAsync(request, cancellationToken);
-                    
+
                     if (response.IsSuccessStatusCode)
                     {
-                         success = true;
+                        success = true;
                     }
-                    else if ((int)response.StatusCode >= 500 || response.StatusCode == System.Net.HttpStatusCode.RequestTimeout || response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) 
-                    { 
+                    else if ((int)response.StatusCode >= 500 || response.StatusCode == System.Net.HttpStatusCode.RequestTimeout || response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    {
                          retries++;
-                         await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, retries)), cancellationToken); 
+                         if (retries < _maxRetries) await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, retries)), cancellationToken);
                     }
                     else
                     {
-                         break; 
+                         break;
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                    Console.WriteLine("Jina Web request cancelled during retry loop.");
                     return new PluginResult("", false, "Jina Web request cancelled.");
                 }
                 catch (Exception ex) when (retries < _maxRetries - 1)
@@ -85,100 +105,43 @@ public class JinaWebPlugin : IChatPlugin
                     await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, retries)), cancellationToken);
                 }
             }
-            
+
             if (cancellationToken.IsCancellationRequested)
             {
+                Console.WriteLine("Jina Web request cancelled after retry loop.");
                 return new PluginResult("", false, "Jina Web request cancelled.");
             }
 
             if (!success || response == null)
             {
                 var errorDetail = response != null ? $"Status code: {response.StatusCode}" : "No response received.";
-                if (response != null) {
-                     try { errorDetail += " Body: " + await response.Content.ReadAsStringAsync(CancellationToken.None); }
-                     catch { errorDetail += " (Could not read error body)"; }
-                }
-                return new PluginResult("", false, $"Failed to retrieve content from Jina after {retries + 1} attempt(s). {errorDetail}");
+                string errorBody = "";
+                 if (response?.Content != null) {
+                     try { errorBody = " Body: " + await response.Content.ReadAsStringAsync(CancellationToken.None); }
+                     catch { errorBody = " (Could not read error body)"; }
+                 }
+                Console.WriteLine($"Jina request failed after {retries} retries. {errorDetail}{errorBody}");
+                return new PluginResult("", false, $"Failed to retrieve content from Jina after {retries} attempt(s). {errorDetail}");
             }
-            
-            response.EnsureSuccessStatusCode(); 
-            
+
             var contentString = await response.Content.ReadAsStringAsync(cancellationToken);
-            
-            var jinaResponse = JsonConvert.DeserializeObject<JinaApiResponse>(contentString);
-            
-            if (jinaResponse == null || jinaResponse.Data == null)
+
+            if (string.IsNullOrWhiteSpace(contentString))
             {
-                return new PluginResult("", false, $"Failed to parse response from Jina AI or response data is missing. Raw: {contentString}");
+                 return new PluginResult("", false, $"Jina AI returned empty content for the URL.");
             }
-            
-            var result = FormatJinaResult(jinaResponse.Data, url);
-            return new PluginResult(result, true);
+
+            var formattedResult = $"Content from {url}:\n\n{contentString.Trim()}";
+            return new PluginResult(formattedResult, true);
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"Jina Web request failed unexpectedly: {ex}");
             return new PluginResult("", false, $"Jina Web request failed unexpectedly: {ex.GetType().Name} - {ex.Message}");
         }
         finally
         {
-             response?.Dispose();
+            response?.Dispose();
         }
     }
-    
-    private string FormatJinaResult(JinaData responseData, string originalUrl)
-    {
-        var result = new StringBuilder();
-        
-        result.AppendLine($"## {responseData.Title ?? "No Title Provided"}");
-        result.AppendLine($"**Source:** {responseData.Url ?? originalUrl}");
-        
-        if (!string.IsNullOrEmpty(responseData.Content))
-        {
-             result.AppendLine();
-             result.AppendLine("### Content:");
-             result.AppendLine(responseData.Content);
-        }
-        else
-        {
-             result.AppendLine("\n*No content returned by Jina.*");
-        }
-
-        if (!string.IsNullOrEmpty(responseData.Warning))
-        {
-            result.AppendLine();
-            result.AppendLine($"**Warning:** {responseData.Warning}");
-        }
-        
-        return result.ToString();
-    }
-}
-
-public class JinaApiResponse
-{
-    [JsonProperty("code")]
-    public int Code { get; set; }
-
-    [JsonProperty("status")]
-    public int Status { get; set; }
-
-    [JsonProperty("data")]
-    public JinaData? Data { get; set; }
-}
-
-public class JinaData
-{
-    [JsonProperty("title")]
-    public string? Title { get; set; }
-
-    [JsonProperty("description")]
-    public string? Description { get; set; }
-
-    [JsonProperty("url")]
-    public string? Url { get; set; }
-
-    [JsonProperty("content")]
-    public string? Content { get; set; }
-
-    [JsonProperty("warning")]
-    public string? Warning { get; set; }
 }

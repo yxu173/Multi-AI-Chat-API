@@ -2,106 +2,138 @@ using System.Text;
 using Application.Abstractions.Interfaces;
 using Newtonsoft.Json;
 using System.Net.Http.Headers;
+using System.Text.Json.Nodes; // For JsonObject
+using System.Text.Json; // Re-added for JsonValue, JsonSerializer, etc.
 
 public class PerplexityPlugin : IChatPlugin
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
 
-    public string Name => "Perplexity AI";
-    public string Description => "Advanced research assistant using the Perplexity API";
+    // Tool name for AI
+    public string Name => "perplexity_search";
+    public string Description => "Advanced research assistant using the Perplexity Sonar API. Ideal for complex questions requiring detailed, sourced answers.";
 
     public PerplexityPlugin(HttpClient httpClient, string apiKey)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _httpClient.BaseAddress = new Uri("https://api.perplexity.ai/"); // Set BaseAddress here
         _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
     }
 
-    public bool CanHandle(string userMessage)
+    public JsonObject GetParametersSchema()
     {
-        return userMessage.StartsWith("/pplx", StringComparison.OrdinalIgnoreCase);
+        string schemaJson = """
+        {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The query or prompt for Perplexity AI."
+            }
+          },
+          "required": ["query"]
+        }
+        """;
+        return JsonNode.Parse(schemaJson)!.AsObject();
     }
 
-    public async Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default)
+    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
+        // Note: Using System.Text.Json types here for argument parsing
+        if (arguments == null || !arguments.TryGetPropertyValue("query", out var queryNode) || queryNode is not JsonValue queryValue || queryValue.GetValueKind() != JsonValueKind.String)
+        {
+            return new PluginResult("", false, "Missing or invalid 'query' argument for Perplexity Search.");
+        }
+        string query = queryValue.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return new PluginResult("", false, "'query' argument cannot be empty.");
+        }
+
         try
         {
-            var cleanMessage = userMessage.Replace("/pplx", "").Trim();
+            var requestPayload = new
+            {
+                model = "sonar-medium-online", // Use online model
+                messages = new[] {
+                    new { role = "system", content = "Be precise and concise. Provide sources if available." },
+                    new { role = "user", content = query }
+                },
+                stream = false // Explicitly non-streaming
+            };
+
             var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
             {
                 Headers = {
                     { "Authorization", $"Bearer {_apiKey}" },
                     { "Accept", "application/json" }
                 },
-                Content = new StringContent(
-                    JsonConvert.SerializeObject(new
-                    {
-                        model = "sonar-pro",
-                        messages = new[] {
-                            new { role = "system", content = "Be precise and concise." },
-                            new { role = "user", content = cleanMessage }
-                        },
-                        stream = true
-                    }),
-                    Encoding.UTF8,
-                    "application/json")
+                // Use EXPLICIT System.Text.Json for request serialization
+                Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(requestPayload), Encoding.UTF8, "application/json") // Qualified
             };
 
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                throw new HttpRequestException($"Perplexity API request failed with status code {response.StatusCode}. Response: {errorBody}", null, response.StatusCode);
+                Console.WriteLine($"Perplexity API Error: {response.StatusCode} - {errorBody}");
+                return new PluginResult("", false, $"Perplexity API request failed with status {response.StatusCode}. Details: {errorBody}");
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var reader = new StreamReader(stream);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-            var resultBuilder = new StringBuilder();
-            while (!reader.EndOfStream)
+            // Use Newtonsoft.Json for deserialization to align with response classes
+            var perplexityResponse = JsonConvert.DeserializeObject<PerplexityResponse>(responseBody);
+
+            if (perplexityResponse?.Choices == null || perplexityResponse.Choices.Count == 0 || perplexityResponse.Choices[0].Message == null || string.IsNullOrEmpty(perplexityResponse.Choices[0].Message.Content))
             {
-                var line = await reader.ReadLineAsync(cancellationToken);
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                if (line.StartsWith("data: "))
-                {
-                    var json = line[6..];
-                    if (json.Equals("[DONE]", StringComparison.OrdinalIgnoreCase)) break;
-                    
-                    try
-                    {
-                        var responseData = JsonConvert.DeserializeObject<PerplexityResponse>(json);
-                        if (responseData?.Choices != null && responseData.Choices.Count > 0 && responseData.Choices[0].Message != null)
-                        {
-                           resultBuilder.Append(responseData.Choices[0].Message.Content);
-                        }
-                    }
-                    catch(JsonException jsonEx)
-                    {
-                       Console.WriteLine($"Error parsing Perplexity stream chunk: {jsonEx.Message}. Chunk: {json}"); 
-                    }
-                }
+                Console.WriteLine($"Perplexity response missing content. Raw: {responseBody}");
+                return new PluginResult("", false, "Perplexity AI did not return a valid response content.");
             }
-            return new PluginResult(resultBuilder.ToString(), true);
+
+            return new PluginResult(perplexityResponse.Choices[0].Message.Content.Trim(), true); // Trim result
+        }
+        // Fully qualify Newtonsoft.Json.JsonException
+        catch (Newtonsoft.Json.JsonException jsonEx)
+        {
+            Console.WriteLine($"Error parsing Perplexity response: {jsonEx}");
+            return new PluginResult("", false, $"Error processing Perplexity response: {jsonEx.Message}");
+        }
+        catch (HttpRequestException httpEx)
+        {
+            Console.WriteLine($"Perplexity HTTP Error: {httpEx}");
+            return new PluginResult("", false, $"Network error during Perplexity request: {httpEx.Message}");
         }
         catch (Exception ex)
         {
-            return new PluginResult("", false, $"Perplexity request failed: {ex.Message}");
+            Console.WriteLine($"Perplexity Plugin Error: {ex}");
+            return new PluginResult("", false, $"Perplexity request failed unexpectedly: {ex.Message}");
         }
     }
 }
 
+// Updated response classes to include potential 'role' and initialize properties
 public class PerplexityResponse
 {
+    [JsonProperty("choices")]
     public List<Choice> Choices { get; set; } = new List<Choice>();
+    // Add 'usage', 'id', 'model', etc. if needed from non-streaming response
 }
 
 public class Choice
 {
-    public Messages Message { get; set; }
+    [JsonProperty("message")]
+    public MessageContent Message { get; set; } = new MessageContent();
+    [JsonProperty("finish_reason")]
+    public string? FinishReason { get; set; } // Example of another potential field
 }
 
-public class Messages
+public class MessageContent // Renamed from Messages
 {
-    public string Content { get; set; }
+    [JsonProperty("role")]
+    public string Role { get; set; } = string.Empty;
+    [JsonProperty("content")]
+    public string Content { get; set; } = string.Empty;
 }

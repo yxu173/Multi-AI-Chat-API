@@ -7,6 +7,8 @@ using Domain.Enums;
 using Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Text.Json.Nodes; // Needed for JsonObject in tool schemas
+using Domain.Repositories; // Added for IChatSessionPluginRepository
 
 namespace Application.Services;
 
@@ -39,14 +41,25 @@ public class AiRequestHandler : IAiRequestHandler
 {
     private readonly ILogger<AiRequestHandler>? _logger;
     private readonly IAiModelServiceFactory _serviceFactory;
+    private readonly IPluginExecutorFactory _pluginExecutorFactory;
+    private readonly IChatSessionPluginRepository _chatSessionPluginRepository; // Added dependency
 
     private static readonly Regex MultimodalTagRegex =
         new Regex(@"<(image|file)-base64:(?:([^:]*?):)?([^;]*?);base64,([^>]*?)>",
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
-    public AiRequestHandler(IAiModelServiceFactory serviceFactory, ILogger<AiRequestHandler>? logger = null)
+    public AiRequestHandler(
+        IAiModelServiceFactory serviceFactory,
+        IPluginExecutorFactory pluginExecutorFactory,
+        IChatSessionPluginRepository chatSessionPluginRepository, // Added parameter
+        ILogger<AiRequestHandler>? logger = null)
     {
         _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
+        _pluginExecutorFactory =
+            pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
+        _chatSessionPluginRepository = chatSessionPluginRepository ??
+                                       throw new ArgumentNullException(
+                                           nameof(chatSessionPluginRepository)); // Store dependency
         _logger = logger;
     }
 
@@ -59,14 +72,37 @@ public class AiRequestHandler : IAiRequestHandler
         ArgumentNullException.ThrowIfNull(context.History);
 
         var modelType = context.SpecificModel.ModelType;
+        var chatId = context.ChatSession.Id;
+
+        bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini;
+        List<object>? toolDefinitions = null;
+
+        if (modelMightSupportTools)
+        {
+            // Fetch active plugins for THIS chat session
+            var activePlugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatId, cancellationToken);
+            var activePluginIds = activePlugins.Select(p => p.PluginId).ToList();
+
+            if (activePluginIds.Any())
+            {
+                _logger?.LogInformation("Found {Count} active plugins for ChatSession {ChatId}", activePluginIds.Count,
+                    chatId);
+                // Pass the active IDs to the helper
+                toolDefinitions = GetToolDefinitionsForPayload(modelType, activePluginIds);
+            }
+            else
+            {
+                _logger?.LogInformation("No active plugins found for ChatSession {ChatId}", chatId);
+            }
+        }
 
         try
         {
             var payload = modelType switch
             {
-                ModelType.OpenAi => await PrepareOpenAiPayloadAsync(context, cancellationToken),
-                ModelType.Anthropic => await PrepareAnthropicPayloadAsync(context, cancellationToken),
-                ModelType.Gemini => await PrepareGeminiPayloadAsync(context, cancellationToken),
+                ModelType.OpenAi => await PrepareOpenAiPayloadAsync(context, toolDefinitions, cancellationToken),
+                ModelType.Anthropic => await PrepareAnthropicPayloadAsync(context, toolDefinitions, cancellationToken),
+                ModelType.Gemini => await PrepareGeminiPayloadAsync(context, toolDefinitions, cancellationToken),
                 ModelType.DeepSeek => await PrepareDeepSeekPayloadAsync(context, cancellationToken),
                 _ => throw new NotSupportedException(
                     $"Model type {modelType} is not supported for request preparation."),
@@ -80,16 +116,15 @@ public class AiRequestHandler : IAiRequestHandler
         }
     }
 
-
     private async Task<AiRequestPayload> PrepareOpenAiPayloadAsync(AiRequestContext context,
-        CancellationToken cancellationToken)
+        List<object>? toolDefinitions, CancellationToken cancellationToken)
     {
-        var payload = PrepareOpenAiPayload(context);
+        var payload = PrepareOpenAiPayload(context, toolDefinitions);
         await Task.CompletedTask;
         return payload;
     }
 
-    private AiRequestPayload PrepareOpenAiPayload(AiRequestContext context)
+    private AiRequestPayload PrepareOpenAiPayload(AiRequestContext context, List<object>? toolDefinitions)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -103,58 +138,82 @@ public class AiRequestHandler : IAiRequestHandler
         var processedMessages = ProcessMessagesForOpenAI(context.History, context);
         requestObj["messages"] = processedMessages;
 
+        if (toolDefinitions?.Any() == true && IsParameterSupported("tools", model.ModelType))
+        {
+            _logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
+                toolDefinitions.Count, model.ModelCode);
+            requestObj["tools"] = toolDefinitions;
+            if (IsParameterSupported("tool_choice", model.ModelType))
+            {
+                requestObj["tool_choice"] = "auto";
+            }
+        }
+
         AddOpenAiSpecificParameters(requestObj, context);
 
         return new AiRequestPayload(requestObj);
     }
 
-    private async Task<AiRequestPayload> PrepareAnthropicPayloadAsync(AiRequestContext context,
-        CancellationToken cancellationToken)
+   private async Task<AiRequestPayload> PrepareAnthropicPayloadAsync(
+    AiRequestContext context,
+    List<object>? toolDefinitions,
+    CancellationToken cancellationToken)
+{
+    var requestObj = new Dictionary<string, object>();
+    var model = context.SpecificModel;
+
+    requestObj["model"] = model.ModelCode;
+    requestObj["stream"] = true;
+
+    var parameters = GetMergedParameters(context);
+    ApplyParametersToRequest(requestObj, parameters, model.ModelType);
+    var (systemPrompt, processedMessages) = ProcessMessagesForAnthropic(context.History, context);
+    if (!string.IsNullOrWhiteSpace(systemPrompt))
     {
-        var requestObj = new Dictionary<string, object>();
-        var model = context.SpecificModel;
-
-        requestObj["model"] = model.ModelCode;
-        requestObj["stream"] = true;
-
-        var parameters = GetMergedParameters(context);
-        ApplyParametersToRequest(requestObj, parameters, model.ModelType);
-        var (systemPrompt, processedMessages) = ProcessMessagesForAnthropic(context.History, context);
-        if (!string.IsNullOrWhiteSpace(systemPrompt))
-        {
-            requestObj["system"] = systemPrompt;
-        }
-
-        requestObj["messages"] = processedMessages;
-
-        AddAnthropicSpecificParameters(requestObj, context);
-
-        bool useEffectiveThinking = context.RequestSpecificThinking ?? model.SupportsThinking;
-        if (useEffectiveThinking && !requestObj.ContainsKey("thinking"))
-        {
-            const int defaultThinkingBudget = 1024;
-            requestObj["temperature"] = 1;
-            requestObj.Remove("top_k");
-            requestObj.Remove("top_p");
-            requestObj["thinking"] = new { type = "enabled", budget_tokens = defaultThinkingBudget };
-            _logger?.LogDebug("Enabled Anthropic 'thinking' parameter with budget {Budget} (Effective: {UseThinking})",
-                defaultThinkingBudget, useEffectiveThinking);
-        }
-
-        if (!requestObj.ContainsKey("max_tokens"))
-        {
-            const int defaultMaxTokens = 4096;
-            requestObj["max_tokens"] = defaultMaxTokens;
-            _logger?.LogWarning(
-                "Anthropic request payload was missing 'max_tokens'. Added default value: {DefaultMaxTokens}",
-                defaultMaxTokens);
-        }
-
-        await Task.CompletedTask; // Placeholder
-        return new AiRequestPayload(requestObj);
+        requestObj["system"] = systemPrompt;
     }
 
-    private async Task<AiRequestPayload> PrepareGeminiPayloadAsync(AiRequestContext context,
+    requestObj["messages"] = processedMessages;
+
+    // Add tool definitions if available
+    if (toolDefinitions?.Any() == true && IsParameterSupported("tools", model.ModelType))
+    {
+        requestObj["tools"] = toolDefinitions;
+        if (IsParameterSupported("tool_choice", model.ModelType))
+        {
+            // Set tool_choice as an object instead of a string
+            requestObj["tool_choice"] = new { type = "auto" };
+        }
+    }
+
+    AddAnthropicSpecificParameters(requestObj, context);
+
+    // Additional logic for thinking parameter and max_tokens (unchanged)
+    bool useEffectiveThinking = context.RequestSpecificThinking ?? model.SupportsThinking;
+    if (useEffectiveThinking && !requestObj.ContainsKey("thinking"))
+    {
+        const int defaultThinkingBudget = 1024;
+        requestObj["temperature"] = 1;
+        requestObj.Remove("top_k");
+        requestObj.Remove("top_p");
+        requestObj["thinking"] = new { type = "enabled", budget_tokens = defaultThinkingBudget };
+        _logger?.LogDebug("Enabled Anthropic 'thinking' parameter with budget {Budget} (Effective: {UseThinking})",
+            defaultThinkingBudget, useEffectiveThinking);
+    }
+
+    if (!requestObj.ContainsKey("max_tokens"))
+    {
+        const int defaultMaxTokens = 4096;
+        requestObj["max_tokens"] = defaultMaxTokens;
+        _logger?.LogWarning("Anthropic request payload was missing 'max_tokens'. Added default value: {DefaultMaxTokens}", defaultMaxTokens);
+    }
+
+    return new AiRequestPayload(requestObj);
+}
+
+    private async Task<AiRequestPayload> PrepareGeminiPayloadAsync(
+        AiRequestContext context,
+        List<object>? toolDefinitions,
         CancellationToken cancellationToken)
     {
         var requestObj = new Dictionary<string, object>();
@@ -170,6 +229,12 @@ public class AiRequestHandler : IAiRequestHandler
         requestObj["generationConfig"] = generationConfig;
         requestObj["safetySettings"] = safetySettings;
 
+        // Add tool definitions if available
+        if (toolDefinitions?.Any() == true && IsParameterSupported("tools", context.SpecificModel.ModelType))
+        {
+            requestObj["tools"] = new[] { new { functionDeclarations = toolDefinitions } };
+        }
+
         return new AiRequestPayload(requestObj);
     }
 
@@ -184,7 +249,6 @@ public class AiRequestHandler : IAiRequestHandler
 
         var parameters = GetMergedParameters(context);
         ApplyParametersToRequest(requestObj, parameters, model.ModelType);
-
 
         var processedMessages = await ProcessMessagesForDeepSeekAsync(context.History, context, cancellationToken);
         requestObj["messages"] = processedMessages;
@@ -257,7 +321,6 @@ public class AiRequestHandler : IAiRequestHandler
             }
         }
     }
-
 
     private List<object> ProcessMessagesForOpenAI(List<MessageDto> history, AiRequestContext context)
     {
@@ -506,8 +569,9 @@ public class AiRequestHandler : IAiRequestHandler
                 }
                 else if (part is ImagePart ip || part is FilePart fp)
                 {
-                    // Extract details correctly based on actual type
-                    string fileName = (part is FilePart fileP) ? fileP.FileName : ((ImagePart)part).FileName ?? "image.tmp";
+                    string fileName = (part is FilePart fileP)
+                        ? fileP.FileName
+                        : ((ImagePart)part).FileName ?? "image.tmp";
                     string mimeType = (part is FilePart fileP2) ? fileP2.MimeType : ((ImagePart)part).MimeType;
                     string base64Data = (part is FilePart fileP3) ? fileP3.Base64Data : ((ImagePart)part).Base64Data;
                     string partTypeName = part.GetType().Name.Replace("Part", "");
@@ -517,30 +581,37 @@ public class AiRequestHandler : IAiRequestHandler
                         try
                         {
                             byte[] fileBytes = Convert.FromBase64String(base64Data);
-                            _logger?.LogInformation("Uploading {PartType} {FileName} ({MimeType}) to Gemini File API...",
+                            _logger?.LogInformation(
+                                "Uploading {PartType} {FileName} ({MimeType}) to Gemini File API...",
                                 partTypeName, fileName, mimeType);
-                            var uploadResult = await fileUploader.UploadFileForAiAsync(fileBytes, mimeType, fileName, cancellationToken);
+                            var uploadResult =
+                                await fileUploader.UploadFileForAiAsync(fileBytes, mimeType, fileName,
+                                    cancellationToken);
 
                             if (uploadResult != null)
                             {
-                                geminiParts.Add(new { fileData = new { mimeType = uploadResult.MimeType, fileUri = uploadResult.Uri } });
+                                geminiParts.Add(new
+                                {
+                                    fileData = new { mimeType = uploadResult.MimeType, fileUri = uploadResult.Uri }
+                                });
                                 _logger?.LogInformation("{PartType} {FileName} uploaded successfully. URI: {FileUri}",
                                     partTypeName, fileName, uploadResult.Uri);
                             }
                             else
                             {
-                                // Upload failed (error handled in UploadFileForAiAsync), add placeholder
                                 geminiParts.Add(new { text = $"[{partTypeName} Upload Failed: {fileName}]" });
                             }
                         }
                         catch (FormatException ex)
                         {
-                            _logger?.LogError(ex, "Invalid Base64 data for {PartType} {FileName}", partTypeName, fileName);
+                            _logger?.LogError(ex, "Invalid Base64 data for {PartType} {FileName}", partTypeName,
+                                fileName);
                             geminiParts.Add(new { text = $"[Invalid {partTypeName} Data: {fileName}]" });
                         }
                         catch (Exception ex)
                         {
-                            _logger?.LogError(ex, "Error during Gemini file upload processing for {FileName}", fileName);
+                            _logger?.LogError(ex, "Error during Gemini file upload processing for {FileName}",
+                                fileName);
                             geminiParts.Add(new { text = $"[{partTypeName} Processing Error: {fileName}]" });
                         }
                     }
@@ -631,14 +702,12 @@ public class AiRequestHandler : IAiRequestHandler
         return processedMessages;
     }
 
-
     private void AddOpenAiSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
         if (useEffectiveThinking)
         {
             bool isReasoningSupportedForModel = false;
-
 
             if (isReasoningSupportedForModel &&
                 IsParameterSupported("reasoning_effort", context.SpecificModel.ModelType))
@@ -688,7 +757,6 @@ public class AiRequestHandler : IAiRequestHandler
         };
     }
 
-
     private void AddDeepSeekSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
@@ -709,7 +777,6 @@ public class AiRequestHandler : IAiRequestHandler
             }
         }
     }
-
 
     private List<ContentPart> ParseMultimodalContent(string messageContent)
     {
@@ -822,7 +889,6 @@ public class AiRequestHandler : IAiRequestHandler
         }
     }
 
-
     private string GetProviderParameterName(string standardName, ModelType modelType)
     {
         if (modelType == ModelType.Gemini)
@@ -873,7 +939,8 @@ public class AiRequestHandler : IAiRequestHandler
                 return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
                     "temperature", "topP", "topK", "maxOutputTokens", "stopSequences", "candidateCount",
-                    "response_mime_type", "response_schema" // safetySettings is separate top-level
+                    "response_mime_type", "response_schema",
+                    "tools"
                 }.Contains(providerParamName);
 
             case ModelType.DeepSeek:
@@ -881,7 +948,7 @@ public class AiRequestHandler : IAiRequestHandler
                 {
                     "temperature", "top_p", "max_tokens", "stop", "frequency_penalty", "presence_penalty",
                     "logit_bias", "logprobs", "top_logprobs", "stream", "model", "messages", "n", "seed",
-                    "response_format", "tools", "tool_choice",
+                    "response_format",
                     "enable_cot", "enable_reasoning", "reasoning_mode"
                 }.Contains(providerParamName);
 
@@ -890,7 +957,6 @@ public class AiRequestHandler : IAiRequestHandler
                 return false;
         }
     }
-
 
     private List<(string Role, string Content)> MergeConsecutiveRoles(List<(string Role, string Content)> messages)
     {
@@ -927,33 +993,19 @@ public class AiRequestHandler : IAiRequestHandler
     {
         if (messages == null || !messages.Any()) return;
 
-        // 1. Ensure starts with user role
         string firstRole = GetRoleFromDynamicMessage(messages[0]);
         if (firstRole != userRole)
         {
-            // Need to insert a user message. Content format depends on provider.
-            object userMessageContent;
-            if (modelRole == "model")
-            {
-                // Gemini uses 'parts' array
-                userMessageContent = new List<object> { new { text = "" } }; // Minimal empty text part
-            }
-            else
-            {
-                // Anthropic expects string or content array
-                userMessageContent = ""; // Empty string content
-            }
-
-            messages.Insert(0, new { role = userRole, content = userMessageContent });
-            _logger?.LogWarning($"Inserted leading '{userRole}' message to ensure alternating roles.");
-            firstRole = userRole; // Update first role after insertion
+            _logger?.LogError(
+                "History for {ModelRole} provider does not start with a {UserRole} message. First role: {FirstRole}",
+                modelRole, userRole, firstRole);
+            
         }
 
-        // 2. Remove consecutive roles by building a new list
         var cleanedMessages = new List<object>();
         if (messages.Count > 0)
         {
-            cleanedMessages.Add(messages[0]); // Add the first message
+            cleanedMessages.Add(messages[0]); 
             for (int i = 1; i < messages.Count; i++)
             {
                 string previousRole = GetRoleFromDynamicMessage(cleanedMessages.Last());
@@ -965,9 +1017,32 @@ public class AiRequestHandler : IAiRequestHandler
                 }
                 else
                 {
-                    _logger?.LogError(
-                        $"Found and skipping consecutive '{currentRole}' role at index {i} during role alternation cleanup. Original Message: {{OriginalMessage}}",
-                        TrySerialize(messages[i])); // Log the skipped message for debugging
+                     _logger?.LogWarning("Found consecutive '{CurrentRole}' roles at index {Index}.", currentRole, i);
+
+                    if (modelRole == "assistant" && currentRole == userRole)
+                    {
+                        _logger?.LogWarning(
+                            "Inserting placeholder '{ModelRole}' message to fix consecutive '{UserRole}' roles for Anthropic.",
+                            modelRole, userRole);
+
+                        cleanedMessages.Add(new { role = modelRole, content = "..." });
+                        cleanedMessages
+                            .Add(messages[i]); 
+                    }
+                    else if (modelRole == "model" && currentRole == modelRole)
+                    {
+                        // Gemini: model -> model
+                        _logger?.LogWarning("Merging consecutive '{ModelRole}' roles for Gemini.", modelRole);
+                        // TODO: Implement content merging for Gemini consecutive model roles if needed
+                        _logger?.LogError("Consecutive '{ModelRole}' role merging not implemented. Skipping message.",
+                            modelRole);
+                    }
+                    else
+                    {
+                        _logger?.LogError(
+                            "Skipping consecutive '{CurrentRole}' role at index {Index}. Original Message: {OriginalMessage}",
+                            currentRole, i, TrySerialize(messages[i]));
+                    }
                 }
             }
         }
@@ -1006,9 +1081,7 @@ public class AiRequestHandler : IAiRequestHandler
         {
             if (_logger != null)
             {
-                // Pre-calculate the type name string
                 string typeName = message?.GetType().Name ?? "null";
-                // Explicitly call the static extension method
                 LoggerExtensions.LogWarning(_logger, ex,
                     "Could not determine role from dynamic message object of type {Type}", typeName);
             }
@@ -1017,12 +1090,10 @@ public class AiRequestHandler : IAiRequestHandler
         return string.Empty;
     }
 
-    // Helper to safely serialize dynamic/object for logging
     private string TrySerialize(object obj)
     {
         try
         {
-            // Use options that handle potential reference loops if necessary
             return JsonSerializer.Serialize(obj,
                 new JsonSerializerOptions
                 {
@@ -1078,5 +1149,107 @@ public class AiRequestHandler : IAiRequestHandler
             "application/msword",
         };
         return supported.Contains(normalizedMediaType);
+    }
+
+    private List<object>? GetToolDefinitionsForPayload(ModelType modelType, List<Guid> activePluginIds)
+    {
+        if (activePluginIds == null || !activePluginIds.Any())
+        {
+            return null;
+        }
+
+        var allDefinitions = _pluginExecutorFactory.GetAllPluginDefinitions().ToList();
+        if (!allDefinitions.Any())
+        {
+            _logger?.LogDebug("No plugin definitions found in the factory.");
+            return null;
+        }
+
+        var activeDefinitions = allDefinitions
+            .Where(def => activePluginIds.Contains(def.Id))
+            .ToList();
+
+        if (!activeDefinitions.Any())
+        {
+            _logger?.LogWarning("No matching definitions found in factory for active plugin IDs: {ActiveIds}",
+                string.Join(", ", activePluginIds));
+            return null;
+        }
+
+        _logger?.LogInformation("Found {DefinitionCount} active plugin definitions to format for {ModelType}.",
+            activeDefinitions.Count, modelType);
+        var formattedDefinitions = new List<object>();
+
+        foreach (var def in activeDefinitions)
+        {
+            if (def.ParametersSchema == null)
+            {
+                _logger?.LogWarning(
+                    "Skipping tool definition for {ToolName} ({ToolId}) due to missing parameter schema.", def.Name,
+                    def.Id);
+                continue;
+            }
+
+            try
+            {
+                // Adapt for specific provider formats
+                switch (modelType)
+                {
+                    case ModelType.OpenAi:
+                        formattedDefinitions.Add(new
+                        {
+                            type = "function",
+                            function = new
+                            {
+                                name = def.Name,
+                                description = def.Description,
+                                parameters = def.ParametersSchema
+                            }
+                        });
+                        break;
+
+                    case ModelType.Anthropic:
+                        formattedDefinitions.Add(new
+                        {
+                            name = def.Name,
+                            description = def.Description,
+                            input_schema = def.ParametersSchema
+                        });
+                        break;
+
+                    case ModelType.Gemini:
+                        formattedDefinitions.Add(new
+                        {
+                            name = def.Name,
+                            description = def.Description,
+                            parameters = def.ParametersSchema
+                        });
+                        break;
+
+                    default:
+                        _logger?.LogWarning(
+                            "Tool definition requested for provider {ModelType} which may not support the standard format. Skipping tool: {ToolName}",
+                            modelType, def.Name);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex,
+                    "Error formatting tool definition for {ToolName} ({ToolId}) for provider {ModelType}", def.Name,
+                    def.Id, modelType);
+            }
+        }
+
+        if (!formattedDefinitions.Any())
+        {
+            _logger?.LogWarning("No tool definitions could be formatted successfully for {ModelType}.", modelType);
+            return null;
+        }
+
+        _logger?.LogInformation("Successfully formatted {FormattedCount} tool definitions for {ModelType}.",
+            formattedDefinitions.Count, modelType);
+
+        return formattedDefinitions;
     }
 }

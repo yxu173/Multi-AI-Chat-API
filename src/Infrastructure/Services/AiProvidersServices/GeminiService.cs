@@ -153,26 +153,24 @@ public class GeminiService : BaseAiService, IAiFileUploader
 
         try
         {
+            bool cancelled = false; // Flag to check if loop exited due to cancellation
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
                                .WithCancellation(cancellationToken))
             {
-                 if (cancellationToken.IsCancellationRequested) break;
+                 if (cancellationToken.IsCancellationRequested) 
+                 {
+                    cancelled = true; // Mark as cancelled
+                    break;
+                 }
 
-                bool isCompletion = false;
-                try
-                {
-                    using var doc = JsonDocument.Parse(jsonChunk);
-                    if (doc.RootElement.TryGetProperty("usageMetadata", out _))
-                    {
-                        isCompletion = true; 
-                    }
-                }
-                catch(JsonException ex) 
-                { 
-                    Console.WriteLine($"Gemini stream JSON parsing error: {ex.Message}. Chunk: {jsonChunk}");
-                }
-
-                yield return new AiRawStreamChunk(jsonChunk, isCompletion);
+                // Yield the chunk, completion is always false *during* the loop
+                yield return new AiRawStreamChunk(jsonChunk, false);
+            }
+            
+            // If the loop completed without being cancelled, signal completion
+            if (!cancelled)
+            {
+                yield return new AiRawStreamChunk(string.Empty, true); // Signal end of stream
             }
         }
         finally

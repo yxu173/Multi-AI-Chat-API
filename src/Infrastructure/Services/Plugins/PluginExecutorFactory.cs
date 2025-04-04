@@ -1,26 +1,104 @@
 using Application.Abstractions.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Infrastructure.Services.Plugins;
 
 public class PluginExecutorFactory : IPluginExecutorFactory
 {
     private readonly IServiceProvider _serviceProvider;
-    private readonly IDictionary<Guid, PluginInfoDto> _pluginRegistry;
+    private readonly IDictionary<Guid, PluginRegistration> _pluginRegistry;
 
     public PluginExecutorFactory(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
-        _pluginRegistry = new Dictionary<Guid, PluginInfoDto>();
-        
-        RegisterPlugin(new Guid("0d2987a6-e3ac-4de8-bd4e-95ede2892e9b"), typeof(WebSearchPlugin), "google_search");
-        RegisterPlugin(new Guid("6A2ADF8A-9B2F-4F9D-8F31-B29A9F1C1760"), typeof(PerplexityPlugin), "Perplexity AI");
-        RegisterPlugin(new Guid("f2726b0b-3759-4088-9bbe-4d094adc9f06"), typeof(JinaWebPlugin), "jina_web_reader");
+        _pluginRegistry = new Dictionary<Guid, PluginRegistration>();
+
+        string searchQuerySchema = """
+        {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The search query to execute."
+            }
+          },
+          "required": ["query"]
+        }
+        """;
+
+        string urlSchema = """
+        {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "The URL of the webpage to read."
+            }
+          },
+          "required": ["url"]
+        }
+        """;
+
+        string perplexityQuerySchema = """
+        {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The query or prompt for Perplexity AI."
+            }
+          },
+          "required": ["query"]
+        }
+        """;
+
+        RegisterPlugin(
+            id: new Guid("9e976144-088d-4605-8a5c-42cfb21db3a1"),
+            pluginType: typeof(WebSearchPlugin),
+            name: "google_search",
+            description: "Search the web using Google for real-time information.",
+            parametersSchemaJson: searchQuerySchema
+        );
+
+        RegisterPlugin(
+            id: new Guid("6A2ADF8A-9B2F-4F9D-8F31-B29A9F1C1760"),
+            pluginType: typeof(PerplexityPlugin),
+            name: "perplexity_search",
+            description: "Advanced research assistant using the Perplexity Sonar API.",
+            parametersSchemaJson: perplexityQuerySchema
+        );
+
+        RegisterPlugin(
+            id: new Guid("c4f9349a-7fd7-4daa-bc50-b702ff34b8c3"),
+            pluginType: typeof(JinaWebPlugin),
+            name: "read_webpage",
+            description: "Retrieve and summarize web content from a specific URL using Jina AI.",
+            parametersSchemaJson: urlSchema
+        );
     }
 
-    private void RegisterPlugin(Guid id, Type pluginType, string name)
+    private void RegisterPlugin(Guid id, Type pluginType, string name, string description, string parametersSchemaJson)
     {
-        _pluginRegistry[id] = new PluginInfoDto { Id = id, Type = pluginType, Name = name };
+        JsonObject? schemaObject = null;
+        try
+        {
+            schemaObject = JsonSerializer.Deserialize<JsonObject>(parametersSchemaJson);
+        }
+        catch (JsonException ex)
+        {
+            Console.WriteLine($"Error parsing schema for plugin {name} ({id}): {ex.Message}");
+        }
+
+        _pluginRegistry[id] = new PluginRegistration
+        {
+            Id = id,
+            Type = pluginType,
+            Name = name,
+            Description = description,
+            ParametersSchema = schemaObject
+        };
     }
 
     public IChatPlugin GetPlugin(Guid pluginId)
@@ -32,10 +110,22 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         return (IChatPlugin)_serviceProvider.GetRequiredService(pluginInfo.Type);
     }
 
-    public class PluginInfoDto
+    public IEnumerable<PluginDefinition> GetAllPluginDefinitions()
+    {
+        return _pluginRegistry.Values.Select(reg => new PluginDefinition(
+            reg.Id,
+            reg.Name,
+            reg.Description,
+            reg.ParametersSchema
+        )).ToList();
+    }
+
+    private class PluginRegistration
     {
         public Guid Id { get; set; }
-        public Type Type { get; set; }
-        public string Name { get; set; }
+        public Type Type { get; set; } = null!;
+        public string Name { get; set; } = null!;
+        public string Description { get; set; } = null!;
+        public JsonObject? ParametersSchema { get; set; }
     }
 }

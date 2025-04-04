@@ -1,11 +1,13 @@
+using System.Text.Json.Nodes;
+
 namespace Application.Abstractions.Interfaces;
 
 public interface IChatPlugin
 {
     string Name { get; }
     string Description { get; }
-    bool CanHandle(string userMessage);
-    Task<PluginResult> ExecuteAsync(string userMessage, CancellationToken cancellationToken = default);
+    JsonObject GetParametersSchema();
+    Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default);
 }
 
 public class PluginResult

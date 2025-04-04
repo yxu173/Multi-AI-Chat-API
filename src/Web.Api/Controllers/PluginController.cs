@@ -13,7 +13,8 @@ public class PluginController : BaseController
     [HttpPost("create")]
     public async Task<IResult> Create([FromBody] CreatePluginRequest request)
     {
-        var command = new CreatePluginCommand(request.Name, request.Description, request.PluginType);
+        var command = new CreatePluginCommand(request.Name, request.Description, request.PluginType,
+            request.ParametersSchema);
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }

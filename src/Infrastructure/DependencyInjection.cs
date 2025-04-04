@@ -90,15 +90,6 @@ public static class DependencyInjection
             sp.GetRequiredService<JinaWebPlugin>()
         ); 
 
-        services.AddScoped<IChatPlugin, WebPageReader>(sp =>
-            new WebPageReader(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                configuration["Plugins:WebPageReader:ApiKey"] ??
-                throw new InvalidOperationException("Missing WebPageReader API key")
-            )
-        );
-
-
         services.AddSingleton<IConnectionMultiplexer>(sp =>
         {
             var redisConfig =
