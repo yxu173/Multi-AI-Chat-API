@@ -10,48 +10,37 @@ using Microsoft.Extensions.Logging;
 
 namespace Application.Services;
 
-//public record MessageDto(string Content, bool IsFromAi, Guid MessageId);
 
 public class ChatService
 {
     private readonly ChatSessionService _chatSessionService;
     private readonly MessageService _messageService;
-    private readonly PluginService _pluginService;
     private readonly MessageStreamer _messageStreamer;
-    private readonly ParallelAiProcessingService _parallelAiProcessingService;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IMediator _mediator;
     private readonly IAiAgentRepository _aiAgentRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly IApplicationDbContext _dbContext;
-    private readonly ILogger<ChatService> _logger;
 
     public ChatService(
         ChatSessionService chatSessionService,
         MessageService messageService,
-        PluginService pluginService,
         MessageStreamer messageStreamer,
-        ParallelAiProcessingService parallelAiProcessingService,
         IAiModelServiceFactory aiModelServiceFactory,
         IMediator mediator,
         IAiAgentRepository aiAgentRepository,
         IFileAttachmentRepository fileAttachmentRepository,
-        IApplicationDbContext dbContext,
-        ILogger<ChatService> logger)
+        IApplicationDbContext dbContext)
     {
         _chatSessionService = chatSessionService ?? throw new ArgumentNullException(nameof(chatSessionService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
-        _pluginService = pluginService ?? throw new ArgumentNullException(nameof(pluginService));
         _messageStreamer = messageStreamer ?? throw new ArgumentNullException(nameof(messageStreamer));
-        _parallelAiProcessingService = parallelAiProcessingService ??
-                                       throw new ArgumentNullException(nameof(parallelAiProcessingService));
         _aiModelServiceFactory =
             aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _aiAgentRepository = aiAgentRepository ?? throw new ArgumentNullException(nameof(aiAgentRepository));
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content,
@@ -183,13 +172,5 @@ public class ChatService
         }
         
         return fileIds;
-    }
-
-    public async Task SendUserMessageWithParallelProcessingAsync(Guid chatSessionId, Guid userId, string content,
-        IEnumerable<Guid> modelIds, IEnumerable<FileAttachment>? fileAttachments = null,
-        CancellationToken cancellationToken = default)
-    {
-        _logger.LogWarning($"{nameof(SendUserMessageWithParallelProcessingAsync)} requires refactoring to align with new AI interaction pattern.");
-        throw new NotImplementedException($"{nameof(SendUserMessageWithParallelProcessingAsync)} needs refactoring.");
     }
 }
