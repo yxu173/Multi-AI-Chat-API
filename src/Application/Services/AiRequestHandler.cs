@@ -7,8 +7,7 @@ using Domain.Enums;
 using Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using System.Text.Json.Nodes; // Needed for JsonObject in tool schemas
-using Domain.Repositories; // Added for IChatSessionPluginRepository
+using Domain.Repositories;
 
 namespace Application.Services;
 
@@ -42,7 +41,7 @@ public class AiRequestHandler : IAiRequestHandler
     private readonly ILogger<AiRequestHandler>? _logger;
     private readonly IAiModelServiceFactory _serviceFactory;
     private readonly IPluginExecutorFactory _pluginExecutorFactory;
-    private readonly IChatSessionPluginRepository _chatSessionPluginRepository; // Added dependency
+    private readonly IChatSessionPluginRepository _chatSessionPluginRepository; 
 
     private static readonly Regex MultimodalTagRegex =
         new Regex(@"<(image|file)-base64:(?:([^:]*?):)?([^;]*?);base64,([^>]*?)>",
@@ -51,7 +50,7 @@ public class AiRequestHandler : IAiRequestHandler
     public AiRequestHandler(
         IAiModelServiceFactory serviceFactory,
         IPluginExecutorFactory pluginExecutorFactory,
-        IChatSessionPluginRepository chatSessionPluginRepository, // Added parameter
+        IChatSessionPluginRepository chatSessionPluginRepository, 
         ILogger<AiRequestHandler>? logger = null)
     {
         _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
@@ -59,7 +58,7 @@ public class AiRequestHandler : IAiRequestHandler
             pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
         _chatSessionPluginRepository = chatSessionPluginRepository ??
                                        throw new ArgumentNullException(
-                                           nameof(chatSessionPluginRepository)); // Store dependency
+                                           nameof(chatSessionPluginRepository)); 
         _logger = logger;
     }
 
@@ -74,12 +73,11 @@ public class AiRequestHandler : IAiRequestHandler
         var modelType = context.SpecificModel.ModelType;
         var chatId = context.ChatSession.Id;
 
-        bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini;
+        bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini or ModelType.DeepSeek;
         List<object>? toolDefinitions = null;
 
         if (modelMightSupportTools)
         {
-            // Fetch active plugins for THIS chat session
             var activePlugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatId, cancellationToken);
             var activePluginIds = activePlugins.Select(p => p.PluginId).ToList();
 
@@ -87,7 +85,6 @@ public class AiRequestHandler : IAiRequestHandler
             {
                 _logger?.LogInformation("Found {Count} active plugins for ChatSession {ChatId}", activePluginIds.Count,
                     chatId);
-                // Pass the active IDs to the helper
                 toolDefinitions = GetToolDefinitionsForPayload(modelType, activePluginIds);
             }
             else
@@ -175,20 +172,17 @@ public class AiRequestHandler : IAiRequestHandler
 
     requestObj["messages"] = processedMessages;
 
-    // Add tool definitions if available
     if (toolDefinitions?.Any() == true && IsParameterSupported("tools", model.ModelType))
     {
         requestObj["tools"] = toolDefinitions;
         if (IsParameterSupported("tool_choice", model.ModelType))
         {
-            // Set tool_choice as an object instead of a string
             requestObj["tool_choice"] = new { type = "auto" };
         }
     }
 
     AddAnthropicSpecificParameters(requestObj, context);
 
-    // Additional logic for thinking parameter and max_tokens (unchanged)
     bool useEffectiveThinking = context.RequestSpecificThinking ?? model.SupportsThinking;
     if (useEffectiveThinking && !requestObj.ContainsKey("thinking"))
     {
@@ -229,7 +223,6 @@ public class AiRequestHandler : IAiRequestHandler
         requestObj["generationConfig"] = generationConfig;
         requestObj["safetySettings"] = safetySettings;
 
-        // Add tool definitions if available
         if (toolDefinitions?.Any() == true && IsParameterSupported("tools", context.SpecificModel.ModelType))
         {
             requestObj["tools"] = new[] { new { functionDeclarations = toolDefinitions } };
@@ -365,24 +358,21 @@ public class AiRequestHandler : IAiRequestHandler
                                 type = "image_url",
                                 image_url = new { url = $"data:{imagePart.MimeType};base64,{imagePart.Base64Data}" }
                             }); break;
-                        case FilePart filePart: // Add as text placeholder
+                        case FilePart filePart:
                             openAiContentItems.Add(
                                 new { type = "text", text = $"[Attached File: {filePart.FileName}]" });
                             break;
                     }
                 }
 
-                // Determine final content format (string or array)
                 if (openAiContentItems.Any())
                 {
-                    // Check if it's purely text after parsing
                     if (openAiContentItems.All(item =>
                             item.GetType().GetProperty("type")?.GetValue(item)?.ToString() == "text"))
                     {
                         string combinedText = string.Join("\n",
                             openAiContentItems.Select(item =>
                                 item.GetType().GetProperty("text")?.GetValue(item)?.ToString() ?? "")).Trim();
-                        // Only add if combined text is not empty
                         if (!string.IsNullOrEmpty(combinedText))
                         {
                             processedMessages.Add(new { role = "user", content = combinedText });
@@ -390,7 +380,6 @@ public class AiRequestHandler : IAiRequestHandler
                     }
                     else
                     {
-                        // Contains images or was originally multi-part, send as array
                         processedMessages.Add(new { role = "user", content = openAiContentItems.ToArray() });
                     }
                 }
@@ -481,10 +470,8 @@ public class AiRequestHandler : IAiRequestHandler
             }
             else if (contentParts.Count == 1 && contentParts[0] is TextPart singleTextPart)
             {
-                // Single text part message
                 otherMessages.Add(new { role = anthropicRole, content = singleTextPart.Text });
             }
-            // Ignore if contentParts is empty (shouldn't happen with current ParseMultimodalContent logic)
         }
 
         EnsureAlternatingRoles(otherMessages, "user", "assistant");
@@ -562,7 +549,6 @@ public class AiRequestHandler : IAiRequestHandler
 
             foreach (var part in contentParts)
             {
-                // Treat both ImagePart and FilePart by uploading via File API
                 if (part is TextPart tp)
                 {
                     geminiParts.Add(new { text = tp.Text });
