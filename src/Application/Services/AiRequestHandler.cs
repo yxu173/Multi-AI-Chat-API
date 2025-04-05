@@ -359,8 +359,15 @@ public class AiRequestHandler : IAiRequestHandler
                                 image_url = new { url = $"data:{imagePart.MimeType};base64,{imagePart.Base64Data}" }
                             }); break;
                         case FilePart filePart:
-                            openAiContentItems.Add(
-                                new { type = "text", text = $"[Attached File: {filePart.FileName}]" });
+                            openAiContentItems.Add(new
+                            {
+                                type = "file",
+                                file = new 
+                                {
+                                    filename = filePart.FileName, 
+                                    file_data = $"data:{filePart.MimeType};base64,{filePart.Base64Data}" 
+                                }
+                            });
                             break;
                     }
                 }
