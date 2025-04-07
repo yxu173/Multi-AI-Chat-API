@@ -7,5 +7,7 @@ public enum ModelType
     DeepSeek,
     Gemini,
     Imagen3,
-    Custom
+    Custom,
+    Unknown,
+    AimlFlux
 }

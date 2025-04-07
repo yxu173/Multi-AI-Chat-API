@@ -9,7 +9,6 @@ public sealed record DetailedAiModelDto(
     string ModelCode,
     double InputTokenPricePer1M,
     double OutputTokenPricePer1M,
-    int? MaxInputTokens,
     int? MaxOutputTokens,
     bool SupportsThinking,
     bool SupportsVision,

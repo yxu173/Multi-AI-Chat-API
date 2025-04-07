@@ -35,7 +35,6 @@ public sealed class GetAiModelByIdQueryHandler : IQueryHandler<GetAiModelByIdQue
             aiModel.ModelCode,
             aiModel.InputTokenPricePer1M,
             aiModel.OutputTokenPricePer1M,
-            aiModel.MaxInputTokens,
             aiModel.MaxOutputTokens,
             aiModel.SupportsThinking,
             aiModel.SupportsVision,

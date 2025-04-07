@@ -30,7 +30,7 @@ public class AiModelConfiguration : IEntityTypeConfiguration<AiModel>
             .IsRequired()
             .HasMaxLength(100);
 
-        builder.Property(am => am.MaxInputTokens);
+    //    builder.Property(am => am.MaxInputTokens);
 
         builder.Property(am => am.MaxOutputTokens);
 

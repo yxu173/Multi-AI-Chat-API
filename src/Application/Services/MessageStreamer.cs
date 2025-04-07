@@ -104,8 +104,9 @@ public class MessageStreamer
 
         int totalInputTokens = 0;
         int totalOutputTokens = 0;
-        StringBuilder finalAiResponseContent = new StringBuilder();
-        MessageDto? aiToolCallRequestMessage = null;
+        string finalAiResponseContent = string.Empty;
+        StringBuilder? finalAiResponseContentBuilder = null;
+        MessageDto? aiMessageToolCallRequestMessage = null;
         List<MessageDto> toolResultMessages = new List<MessageDto>();
         List<MessageDto> originalHistory = new List<MessageDto>(requestContext.History);
 
@@ -115,184 +116,212 @@ public class MessageStreamer
 
         try
         {
-            while (turn < maxTurns && !aiResponseCompleted)
+            if (modelType == ModelType.AimlFlux)
             {
-                turn++;
-                _logger.LogInformation("Starting AI interaction turn {Turn} for Message {MessageId}", turn, aiMessage.Id);
+                _logger.LogInformation("Using simplified response path for single-response model {ModelType}", modelType);
 
-                var historyForThisTurn = new List<MessageDto>(originalHistory);
-                if (aiToolCallRequestMessage != null)
+                var requestPayload = await _aiRequestHandler.PrepareRequestPayloadAsync(requestContext, linkedToken);
+                string? markdownResult = null;
+                bool completedSuccessfully = false;
+
+                await foreach (var chunk in aiService.StreamResponseAsync(requestPayload, linkedToken))
                 {
-                    historyForThisTurn.Add(aiToolCallRequestMessage);
-                    historyForThisTurn.AddRange(toolResultMessages);
-                    _logger.LogDebug("Added previous turn's tool request and {ResultCount} results to history for Turn {Turn}", toolResultMessages.Count, turn);
-                }
+                    if (linkedToken.IsCancellationRequested) break;
 
-                var currentRequestContext = requestContext with { History = historyForThisTurn };
-                var requestPayload = await _aiRequestHandler.PrepareRequestPayloadAsync(currentRequestContext, linkedToken);
-
-                _logger.LogInformation("Initiating AI stream request (Turn {Turn}) for message {MessageId}", turn, aiMessage.Id);
-                var rawStream = aiService.StreamResponseAsync(requestPayload, linkedToken);
-
-                toolResultMessages.Clear();
-                aiToolCallRequestMessage = null;
-
-                var streamResult = await ProcessAiStreamAsync(
-                    rawStream, 
-                    modelType, 
-                    aiModel.SupportsThinking,
-                    aiMessage, 
-                    chatSessionId, 
-                    (textChunk) => finalAiResponseContent.Append(textChunk),
-                    linkedToken);
-
-                totalInputTokens += streamResult.InputTokens;
-                totalOutputTokens += streamResult.OutputTokens;
-
-                if (linkedToken.IsCancellationRequested) break;
-
-                if (streamResult.ToolCalls?.Any() == true)
-                {
-                    _logger.LogInformation("AI requested {ToolCallCount} tool calls (Turn {Turn})", streamResult.ToolCalls.Count, turn);
-
-                    object aiMessagePayload;
-                    bool isAiMessageRole = false;
-
-                    if (modelType == ModelType.Anthropic)
+                    if (!string.IsNullOrEmpty(chunk.RawContent))
                     {
-                        var contentBlocks = streamResult.ToolCalls.Select(tc => new {
-                            type = "tool_use",
-                            id = tc.Id,
-                            name = tc.Name,
-                            input = JsonSerializer.Deserialize<JsonElement>(tc.Arguments)
-                        }).ToList<object>();
-
-                        aiMessagePayload = new {
-                            role = "assistant",
-                            content = contentBlocks
-                        };
+                        markdownResult = chunk.RawContent; 
+                        _logger.LogInformation("[AimlFlux Path] Received content, Length: {Length}", markdownResult.Length);
                     }
-                    else if (modelType == ModelType.Gemini)
+                    
+                    if (chunk.IsCompletion)
                     {
-                        var functionCallParts = streamResult.ToolCalls.Select(tc => new {
-                            functionCall = new {
-                                name = tc.Name,
-                                args = JsonSerializer.Deserialize<JsonElement>(tc.Arguments)
-                            }
-                        }).ToList<object>();
-
-                        aiMessagePayload = new {
-                            role = "model",
-                            parts = functionCallParts
-                        };
+                         completedSuccessfully = !string.IsNullOrEmpty(markdownResult);
+                         _logger.LogInformation("[AimlFlux Path] Completion chunk received. Success: {Success}", completedSuccessfully);
+                         break;
                     }
                     else
                     {
-                        var openAiToolCalls = streamResult.ToolCalls.Select(tc => new {
-                            id = tc.Id,
-                            type = "function",
-                            function = new { name = tc.Name, arguments = tc.Arguments }
-                        }).ToList<object>();
-
-                        aiMessagePayload = new {
-                            role = "assistant",
-                            content = (string?)null,
-                            tool_calls = openAiToolCalls
-                        };
-                    }
-
-                    string aiMessageContent = JsonSerializer.Serialize(aiMessagePayload,
-                        new JsonSerializerOptions { WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
-
-                    aiToolCallRequestMessage = new MessageDto(
-                        aiMessageContent,
-                        true,
-                        Guid.NewGuid());
-
-                    _logger.LogDebug("Captured AI tool call request message for next turn.");
-
-                    foreach (var toolCall in streamResult.ToolCalls)
-                    {
-                        var pluginId = FindPluginIdByName(toolCall.Name);
-                        MessageDto? toolResultMessage = null;
-
-                        if (!pluginId.HasValue)
-                        {
-                            _logger.LogError("Could not find plugin matching tool name: {ToolName}", toolCall.Name);
-                            var errorResult = new PluginResult("", false, $"Plugin '{toolCall.Name}' not found.");
-                            toolResultMessage = FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, errorResult, aiMessage);
-                        }
-                        else
-                        {
-                            JsonObject? argumentsObject = null;
-                            try
-                            {
-                                argumentsObject = JsonSerializer.Deserialize<JsonObject>(toolCall.Arguments);
-                            }
-                            catch (JsonException ex)
-                            {
-                                _logger?.LogError(ex, "Failed to parse arguments for tool {ToolName} (ID: {ToolCallId}). Arguments: {Arguments}", toolCall.Name, toolCall.Id, toolCall.Arguments);
-                                var errorResult = new PluginResult("", false, $"Invalid arguments provided for tool '{toolCall.Name}'.");
-                                toolResultMessage = FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, errorResult, aiMessage);
-                            }
-
-                            if (argumentsObject != null)
-                            {
-                                _logger?.LogInformation("Executing plugin {PluginName} (ID: {PluginId}) for tool call {ToolCallId}", toolCall.Name, pluginId.Value, toolCall.Id);
-                                var pluginResult = await _pluginService.ExecutePluginByIdAsync(pluginId.Value, argumentsObject, linkedToken);
-                                toolResultMessage = FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, pluginResult, aiMessage);
-                            }
-                        }
-
-                        if (toolResultMessage != null)
-                        {
-                            toolResultMessages.Add(toolResultMessage);
-                        }
+                         _logger.LogWarning("[AimlFlux Path] Received non-completion chunk for message {MessageId}. Content Length: {Length}", aiMessage.Id, chunk.RawContent?.Length ?? 0);
                     }
                 }
-                else if (streamResult.IsComplete)
+
+                if (linkedToken.IsCancellationRequested)
                 {
-                    _logger.LogInformation("AI stream completed without tool calls (Turn {Turn})", turn);
-                    aiResponseCompleted = true;
+                    aiMessage.AppendContent($"\n[Cancelled]");
+                    aiMessage.InterruptMessage();
+                }
+                else if (completedSuccessfully && markdownResult != null)
+                {
+                    finalAiResponseContent = markdownResult;
+                    aiMessage.UpdateContent(finalAiResponseContent);
+                    aiMessage.CompleteMessage();
+                    await _mediator.Publish(new MessageChunkReceivedNotification(chatSessionId, aiMessage.Id, finalAiResponseContent), linkedToken);
                 }
                 else
                 {
-                    _logger.LogWarning("AI stream finished unexpectedly without completion or tool call (Turn {Turn})", turn);
-                    aiResponseCompleted = true;
+                    aiMessage.AppendContent($"\n[Failed to get valid image response]");
+                    aiMessage.FailMessage();
+                    _logger.LogWarning("AIMLAPI response processing failed or resulted in empty/invalid content for message {MessageId}", aiMessage.Id);
                 }
             }
-
-            _logger.LogInformation("AI interaction loop finished for Message {MessageId}. AI Response Completed: {IsCompleted}", aiMessage.Id, aiResponseCompleted);
-
-            if (finalAiResponseContent.Length > 0)
+            else 
             {
-                aiMessage.UpdateContent(finalAiResponseContent.ToString());
-                _logger.LogInformation("Final AI message content updated (Length: {Length})", finalAiResponseContent.Length);
-            }
-            else if (!aiResponseCompleted && !linkedToken.IsCancellationRequested) {
-                aiMessage.AppendContent("\n[AI response incomplete or ended unexpectedly]");
-                _logger.LogWarning("AI response seems incomplete for message {MessageId}", aiMessage.Id);
-            }
+                _logger.LogInformation("Using standard streaming response path for model {ModelType}", modelType);
+                finalAiResponseContentBuilder = new StringBuilder();
+                
+                while (turn < maxTurns && !aiResponseCompleted && !linkedToken.IsCancellationRequested)
+                {
+                    turn++;
+                    _logger.LogInformation("Starting AI interaction turn {Turn} for Message {MessageId}", turn, aiMessage.Id);
 
-            if (!linkedToken.IsCancellationRequested) {
-                if(aiResponseCompleted && aiMessage.Status != MessageStatus.Interrupted) {
-                aiMessage.CompleteMessage();
-                } else if (!aiResponseCompleted) {
+                    var historyForThisTurn = new List<MessageDto>(originalHistory);
+                    if (aiMessageToolCallRequestMessage != null)
+                    {
+                        historyForThisTurn.Add(aiMessageToolCallRequestMessage);
+                        historyForThisTurn.AddRange(toolResultMessages);
+                         _logger.LogDebug("Added previous turn's tool request and {ResultCount} results to history for Turn {Turn}", toolResultMessages.Count, turn);
+                    }
+
+                    var currentRequestContext = requestContext with { History = historyForThisTurn };
+                    var requestPayload = await _aiRequestHandler.PrepareRequestPayloadAsync(currentRequestContext, linkedToken);
+
+                    _logger.LogInformation("Initiating AI stream request (Turn {Turn}) for message {MessageId}", turn, aiMessage.Id);
+                    var rawStream = aiService.StreamResponseAsync(requestPayload, linkedToken);
+
+                    toolResultMessages.Clear();
+                    aiMessageToolCallRequestMessage = null;
+
+                    var streamResult = await ProcessAiStreamAsync(
+                        rawStream, 
+                        modelType, 
+                        aiModel.SupportsThinking,
+                        aiMessage, 
+                        chatSessionId, 
+                        (textChunk) => finalAiResponseContentBuilder.Append(textChunk),
+                        linkedToken);
+
+                    totalInputTokens += streamResult.InputTokens;
+                    totalOutputTokens += streamResult.OutputTokens;
+
+                    if (linkedToken.IsCancellationRequested) break;
+
+                    if (streamResult.ToolCalls?.Any() == true)
+                    {
+                        _logger.LogInformation("AI requested {ToolCallCount} tool calls (Turn {Turn})", streamResult.ToolCalls.Count, turn);
+                        
+                        object aiMessagePayload;
+
+                        if (modelType == ModelType.Anthropic) {
+                            var contentBlocks = streamResult.ToolCalls.Select(tc => new {
+                                type = "tool_use", id = tc.Id, name = tc.Name, input = JsonSerializer.Deserialize<JsonElement>(tc.Arguments)
+                            }).ToList<object>();
+                            aiMessagePayload = new { role = "assistant", content = contentBlocks };
+                        } else if (modelType == ModelType.Gemini) {
+                            var functionCallParts = streamResult.ToolCalls.Select(tc => new {
+                                functionCall = new { name = tc.Name, args = JsonSerializer.Deserialize<JsonElement>(tc.Arguments) }
+                            }).ToList<object>();
+                             aiMessagePayload = new { role = "model", parts = functionCallParts };
+                        } else {
+                             var openAiToolCalls = streamResult.ToolCalls.Select(tc => new {
+                                id = tc.Id, type = "function", function = new { name = tc.Name, arguments = tc.Arguments }
+                            }).ToList<object>();
+                             aiMessagePayload = new { role = "assistant", content = (string?)null, tool_calls = openAiToolCalls };
+                        }
+                        string aiMessageContent = JsonSerializer.Serialize(aiMessagePayload, new JsonSerializerOptions { WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
+                        aiMessageToolCallRequestMessage = new MessageDto(aiMessageContent, true, Guid.NewGuid());
+                         _logger.LogDebug("Captured AI tool call request message for next turn.");
+
+                        foreach (var toolCall in streamResult.ToolCalls)
+                        {
+                             var pluginId = FindPluginIdByName(toolCall.Name);
+                             MessageDto? toolResultMessage = null;
+
+                             if (!pluginId.HasValue) {
+                                _logger.LogError("Could not find plugin matching tool name: {ToolName}", toolCall.Name);
+                                var errorResult = new PluginResult("", false, $"Plugin '{toolCall.Name}' not found.");
+                                toolResultMessage = FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, errorResult, aiMessage);
+                             } else {
+                                JsonObject? argumentsObject = null;
+                                try {
+                                    argumentsObject = JsonSerializer.Deserialize<JsonObject>(toolCall.Arguments);
+                                } catch (JsonException ex) {
+                                    _logger?.LogError(ex, "Failed to parse arguments for tool {ToolName} (ID: {ToolCallId}). Arguments: {Arguments}", toolCall.Name, toolCall.Id, toolCall.Arguments);
+                                    var errorResult = new PluginResult("", false, $"Invalid arguments provided for tool '{toolCall.Name}'.");
+                                    toolResultMessage = FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, errorResult, aiMessage);
+                                }
+
+                                if (argumentsObject != null) {
+                                    _logger?.LogInformation("Executing plugin {PluginName} (ID: {PluginId}) for tool call {ToolCallId}", toolCall.Name, pluginId.Value, toolCall.Id);
+                                    var pluginResult = await _pluginService.ExecutePluginByIdAsync(pluginId.Value, argumentsObject, linkedToken);
+                                    toolResultMessage = FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, pluginResult, aiMessage);
+                                }
+                            }
+                             if (toolResultMessage != null) {
+                                toolResultMessages.Add(toolResultMessage);
+                            }
+                        }
+                    }
+                    else if (streamResult.IsComplete)
+                    {
+                        _logger.LogInformation("AI stream completed without tool calls (Turn {Turn})", turn);
+                        aiResponseCompleted = true;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("AI stream finished unexpectedly without completion or tool call (Turn {Turn})", turn);
+                        aiResponseCompleted = true;
+                    }
+                }
+
+                _logger.LogInformation("AI interaction loop finished for Message {MessageId}. AI Response Completed: {IsCompleted}", aiMessage.Id, aiResponseCompleted);
+
+                finalAiResponseContent = finalAiResponseContentBuilder?.ToString() ?? ""; 
+
+                if (!string.IsNullOrEmpty(finalAiResponseContent))
+                {
+                    aiMessage.UpdateContent(finalAiResponseContent); 
+                    _logger.LogInformation("Final AI message content updated (Length: {Length})", finalAiResponseContent.Length);
+                }
+                else if (!aiResponseCompleted && !linkedToken.IsCancellationRequested) {
+                    aiMessage.AppendContent("\n[AI response incomplete or ended unexpectedly]");
+                    _logger.LogWarning("AI response seems incomplete for message {MessageId} after loop.", aiMessage.Id);
+                }
+                 
+                if (!linkedToken.IsCancellationRequested) {
+                    if (aiResponseCompleted && aiMessage.Status != MessageStatus.Interrupted) {
+                        aiMessage.CompleteMessage();
+                    } else if (!aiResponseCompleted) {
+                        aiMessage.InterruptMessage();
+                    }
+                } else {
                     aiMessage.InterruptMessage();
                 }
-            } else {
-                aiMessage.InterruptMessage();
             }
 
             var finalUpdateToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
-            await _messageRepository.UpdateAsync(aiMessage, finalUpdateToken);
-            
-            if (!linkedToken.IsCancellationRequested && aiMessage.Status == MessageStatus.Completed)
+            if (aiMessage.Status == MessageStatus.Streaming) {
+                 if(linkedToken.IsCancellationRequested) {
+                    aiMessage.InterruptMessage();
+                 } else {
+                     _logger.LogWarning("Message {MessageId} status was still Streaming before final save. Setting to Interrupted.", aiMessage.Id);
+                     aiMessage.InterruptMessage();
+                 }
+             }
+            await _messageRepository.UpdateAsync(aiMessage, finalUpdateToken); 
+            _logger.LogInformation("Saved final state for message {MessageId} with status {Status}", aiMessage.Id, aiMessage.Status);
+
+            if (aiMessage.Status == MessageStatus.Completed)
             {
                  await _mediator.Publish(new ResponseCompletedNotification(chatSessionId, aiMessage.Id), finalUpdateToken);
             }
-            else if (aiMessage.Status == MessageStatus.Interrupted)
+            else if (aiMessage.Status == MessageStatus.Interrupted && !cancellationToken.IsCancellationRequested) 
             {
+                await _mediator.Publish(new ResponseStoppedNotification(chatSessionId, aiMessage.Id), finalUpdateToken);
+            }
+             else if (aiMessage.Status == MessageStatus.Failed)
+            {
+                 await _mediator.Publish(new ResponseStoppedNotification(chatSessionId, aiMessage.Id), finalUpdateToken);
             }
             
             await FinalizeTokenUsage(chatSessionId, aiModel, totalInputTokens, totalOutputTokens, finalUpdateToken);
@@ -316,9 +345,9 @@ public class MessageStreamer
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during AI response streaming for chat session {ChatSessionId}.", chatSessionId);
-            if (aiMessage.Status != MessageStatus.Completed && aiMessage.Status != MessageStatus.Interrupted) {
+            if (aiMessage.Status != MessageStatus.Completed && aiMessage.Status != MessageStatus.Interrupted && aiMessage.Status != MessageStatus.Failed) {
                  aiMessage.AppendContent($"\n[Error: {ex.Message}]");
-                 aiMessage.InterruptMessage(); 
+                 aiMessage.FailMessage();
                  await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
             }
             await _mediator.Publish(new ResponseStoppedNotification(chatSessionId, aiMessage.Id), CancellationToken.None);
@@ -326,8 +355,9 @@ public class MessageStreamer
         finally
         { 
             _streamingOperationManager.StopStreaming(aiMessage.Id);
+            linkedCts.Dispose(); 
             cts.Dispose();
-            _logger.LogInformation("Streaming operation finished or cleaned up for chat session {ChatSessionId}", chatSessionId);
+            _logger.LogInformation("Streaming operation finished or cleaned up for message {MessageId}", aiMessage.Id);
         }
     }
 
@@ -489,6 +519,8 @@ public class MessageStreamer
                     return ParseGeminiChunk(rawJson);
                 case ModelType.DeepSeek:
                     return ParseDeepSeekChunk_Basic(rawJson);
+                case ModelType.AimlFlux:
+                    return ParseAimlApiChunk(rawJson);
                 default:
                      _logger.LogWarning("Parsing not implemented for model type {ModelType}", modelType);
                     return new ParsedChunkInfo();
@@ -966,6 +998,14 @@ public class MessageStreamer
             OutputTokens: outputTokens,
             FinishReason: finishReason
         );
+    }
+
+    private ParsedChunkInfo ParseAimlApiChunk(string rawContent)
+    {
+        _logger?.LogInformation("[StreamDebug] Parsing AimlFlux chunk. RawContent Length: {Length}", rawContent?.Length ?? 0);
+        var result = new ParsedChunkInfo(TextDelta: rawContent);
+        _logger?.LogInformation("[StreamDebug] Parsed AimlFlux chunk result. TextDelta Length: {Length}", result.TextDelta?.Length ?? 0);
+        return result;
     }
 
     private Guid? FindPluginIdByName(string toolName)

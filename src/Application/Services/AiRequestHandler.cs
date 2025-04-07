@@ -18,7 +18,12 @@ public record AiRequestContext(
     AiAgent? AiAgent,
     UserAiModelSettings? UserSettings,
     AiModel SpecificModel,
-    bool? RequestSpecificThinking = null
+    bool? RequestSpecificThinking = null,
+    string? ImageSize = null,
+    int? NumImages = null,
+    string? OutputFormat = null,
+    bool? EnableSafetyChecker = null,
+    string? SafetyTolerance = null
 );
 
 public interface IAiRequestHandler
@@ -101,6 +106,7 @@ public class AiRequestHandler : IAiRequestHandler
                 ModelType.Anthropic => await PrepareAnthropicPayloadAsync(context, toolDefinitions, cancellationToken),
                 ModelType.Gemini => await PrepareGeminiPayloadAsync(context, toolDefinitions, cancellationToken),
                 ModelType.DeepSeek => await PrepareDeepSeekPayloadAsync(context, cancellationToken),
+                ModelType.AimlFlux => PrepareAimlApiPayload(context),
                 _ => throw new NotSupportedException(
                     $"Model type {modelType} is not supported for request preparation."),
             };
@@ -1244,5 +1250,42 @@ public class AiRequestHandler : IAiRequestHandler
             formattedDefinitions.Count, modelType);
 
         return formattedDefinitions;
+    }
+
+    private AiRequestPayload PrepareAimlApiPayload(AiRequestContext context)
+    {
+        _logger?.LogInformation("Preparing payload for AIMLAPI Flux model {ModelCode}", context.SpecificModel.ModelCode);
+
+        var requestObj = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+
+        requestObj["model"] = model.ModelCode; // e.g., "flux-pro/v1.1"
+
+        // Extract the latest user prompt
+        var latestUserMessage = context.History
+            .LastOrDefault(m => !m.IsFromAi && !string.IsNullOrWhiteSpace(m.Content));
+
+        if (latestUserMessage == null || string.IsNullOrWhiteSpace(latestUserMessage.Content))
+        {
+            _logger?.LogError("Cannot prepare AIMLAPI request: No valid user prompt found in history for ChatSession {ChatSessionId}", context.ChatSession.Id);
+            throw new InvalidOperationException("Cannot generate image without a user prompt.");
+        }
+        requestObj["prompt"] = latestUserMessage.Content.Trim();
+
+        // --- Use parameters from context, falling back to defaults ---
+        requestObj["image_size"] = context.ImageSize ?? "landscape_16_9"; 
+        requestObj["num_images"] = context.NumImages ?? 1;
+        requestObj["output_format"] = context.OutputFormat ?? "jpeg"; 
+        requestObj["enable_safety_checker"] = context.EnableSafetyChecker ?? true;
+        requestObj["safety_tolerance"] = context.SafetyTolerance ?? "2";
+
+        // Optionally add seed if provided in context (AIMLAPI supports it)
+        // if (context.Seed.HasValue) requestObj["seed"] = context.Seed.Value;
+
+        _logger?.LogDebug("AIMLAPI Payload: Model={Model}, Prompt='{Prompt}', Size={ImageSize}, Num={NumImages}, Format={Format}, Safety={Safety}, Tolerance={Tolerance}", 
+            requestObj["model"], requestObj["prompt"], requestObj["image_size"], requestObj["num_images"], 
+            requestObj["output_format"], requestObj["enable_safety_checker"], requestObj["safety_tolerance"]);
+
+        return new AiRequestPayload(requestObj);
     }
 }

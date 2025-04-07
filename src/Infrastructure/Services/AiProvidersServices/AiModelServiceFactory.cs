@@ -6,6 +6,7 @@ using Infrastructure.Services.AiProvidersServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System.Net.Http;
 
 public class AiModelServiceFactory : IAiModelServiceFactory
@@ -43,6 +44,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             ModelType.Anthropic => new AnthropicService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.DeepSeek => new DeepSeekService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.Gemini => new GeminiService(httpClientFactory, apiKey, aiModel.ModelCode),
+            ModelType.AimlFlux => new AimlApiService(httpClientFactory, apiKey, aiModel.ModelCode, _serviceProvider.GetService<ILogger<AimlApiService>>()),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
     }

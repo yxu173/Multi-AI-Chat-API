@@ -43,8 +43,16 @@ public class ChatService
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     }
 
-    public async Task SendUserMessageAsync(Guid chatSessionId, Guid userId, string content,
+    public async Task SendUserMessageAsync(
+        Guid chatSessionId, 
+        Guid userId, 
+        string content, 
         bool enableThinking = false,
+        string? imageSize = null,
+        int? numImages = null,
+        string? outputFormat = null,
+        bool? enableSafetyChecker = null,
+        string? safetyTolerance = null,
         CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
@@ -67,13 +75,27 @@ public class ChatService
             AiAgent: aiAgent, 
             UserSettings: userSettings,
             SpecificModel: chatSession.AiModel,
-            RequestSpecificThinking : enableThinking
+            RequestSpecificThinking : enableThinking,
+            ImageSize: imageSize,
+            NumImages: numImages,
+            OutputFormat: outputFormat,
+            EnableSafetyChecker: enableSafetyChecker,
+            SafetyTolerance: safetyTolerance
         );
 
         await _messageStreamer.StreamResponseAsync(requestContext, aiMessage, aiService, cancellationToken);
     }
 
-    public async Task EditUserMessageAsync(Guid chatSessionId, Guid userId, Guid messageId, string newContent,
+    public async Task EditUserMessageAsync(
+        Guid chatSessionId, 
+        Guid userId, 
+        Guid messageId, 
+        string newContent,
+        string? imageSize = null,
+        int? numImages = null,
+        string? outputFormat = null,
+        bool? enableSafetyChecker = null,
+        string? safetyTolerance = null,
         CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
@@ -121,7 +143,12 @@ public class ChatService
             History: history,
             AiAgent: aiAgent,
             UserSettings: userSettings,
-            SpecificModel: chatSession.AiModel
+            SpecificModel: chatSession.AiModel,
+            ImageSize: imageSize,
+            NumImages: numImages,
+            OutputFormat: outputFormat,
+            EnableSafetyChecker: enableSafetyChecker,
+            SafetyTolerance: safetyTolerance
         );
 
         await _messageStreamer.StreamResponseAsync(requestContext, aiMessage, aiService, cancellationToken);

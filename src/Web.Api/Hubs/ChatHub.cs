@@ -110,7 +110,16 @@ public class ChatHub : Hub
     /// <summary>
     /// Sends a text message to the AI
     /// </summary>
-    public async Task SendMessage(string chatSessionId, string content, bool enableThinking = false)
+    public async Task SendMessage(
+        string chatSessionId, 
+        string content, 
+        bool enableThinking = false,
+        string? imageSize = null,
+        int? numImages = null,
+        string? outputFormat = null,
+        bool? enableSafetyChecker = null,
+        string? safetyTolerance = null
+        )
     {
         try
         {
@@ -121,7 +130,17 @@ public class ChatHub : Hub
             }
 
             var userId = Guid.Parse(Context.UserIdentifier);
-            await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, content, enableThinking, cancellationToken: default);
+            await _chatService.SendUserMessageAsync(
+                Guid.Parse(chatSessionId), 
+                userId, 
+                content, 
+                enableThinking, 
+                imageSize, 
+                numImages, 
+                outputFormat, 
+                enableSafetyChecker, 
+                safetyTolerance, 
+                cancellationToken: default);
         }
         catch (Exception ex)
         {
@@ -133,7 +152,17 @@ public class ChatHub : Hub
     /// <summary>
     /// Sends a message with file attachments to the AI
     /// </summary>
-    public async Task SendMessageWithAttachments(string chatSessionId, string content, List<Guid> fileAttachmentIds, bool enableThinking = false)
+    public async Task SendMessageWithAttachments(
+        string chatSessionId, 
+        string content, 
+        List<Guid> fileAttachmentIds, 
+        bool enableThinking = false,
+        string? imageSize = null,
+        int? numImages = null,
+        string? outputFormat = null,
+        bool? enableSafetyChecker = null,
+        string? safetyTolerance = null
+        )
     {
         var userId = Guid.Parse(Context.UserIdentifier);
 
@@ -146,7 +175,17 @@ public class ChatHub : Hub
                 processedContent = await ProcessFileAttachmentsAsync(processedContent, fileAttachmentIds);
             }
 
-            await _chatService.SendUserMessageAsync(Guid.Parse(chatSessionId), userId, processedContent, enableThinking, cancellationToken: default);
+            await _chatService.SendUserMessageAsync(
+                Guid.Parse(chatSessionId), 
+                userId, 
+                processedContent, 
+                enableThinking, 
+                imageSize, 
+                numImages, 
+                outputFormat, 
+                enableSafetyChecker, 
+                safetyTolerance, 
+                cancellationToken: default);
         }
         catch (Exception ex)
         {
