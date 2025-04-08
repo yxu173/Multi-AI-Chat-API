@@ -80,9 +80,9 @@ public static class DependencyInjection
         services.AddScoped<JinaWebPlugin>(sp =>
             new JinaWebPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                configuration["Plugins:JinaWeb:ApiKey"] ??
-                throw new InvalidOperationException("Missing JinaWeb API key"),
-                maxRetries: configuration.GetValue<int>("Plugins:JinaWeb:MaxRetries", 3)
+                configuration["PluginSettings:Jina:ApiKey"] ??
+                throw new InvalidOperationException("Missing Jina API key"),
+                maxRetries: configuration.GetValue<int>("Plugins:Jina:MaxRetries", 3)
             )
         );
         // Register the interface to resolve using the already registered concrete type

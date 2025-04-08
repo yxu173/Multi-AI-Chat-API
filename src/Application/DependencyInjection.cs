@@ -4,6 +4,7 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using System.IO;
+using Application.Services.Streaming;
 
 namespace Application;
 
@@ -19,6 +20,17 @@ public static class DependencyInjection
         {
             Directory.CreateDirectory(uploadsBasePath);
         }
+
+
+
+        services.AddScoped<StreamProcessor>();
+        services.AddScoped<ToolCallHandler>();
+        services.AddScoped<TokenUsageTracker>();
+        services.AddScoped<IStreamChunkParser, OpenAiStreamChunkParser>();
+        services.AddScoped<IStreamChunkParser, AnthropicStreamChunkParser>();
+        services.AddScoped<IStreamChunkParser, GeminiStreamChunkParser>();
+      services.AddScoped<IStreamChunkParser, DeepseekStreamChunkParser>();
+        services.AddScoped<IStreamChunkParser, AimlStreamChunkParser>();
 
         services.AddScoped<ChatService>();
         services.AddScoped<ChatSessionService>();
