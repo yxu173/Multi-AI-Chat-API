@@ -130,7 +130,7 @@ public class GeminiStreamChunkParser : IStreamChunkParser
                 }
             }
 
-            if (containsFunctionCall && string.IsNullOrEmpty(finishReason))
+            if (containsFunctionCall)
             {
                 finishReason = "tool_calls";
                 _logger?.LogInformation("Setting finish reason to 'tool_calls' due to function call presence");
