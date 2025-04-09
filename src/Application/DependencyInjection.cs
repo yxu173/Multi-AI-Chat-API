@@ -4,7 +4,9 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using System.IO;
+using Application.Services.PayloadBuilders;
 using Application.Services.Streaming;
+using Application.Services.Helpers;
 
 namespace Application;
 
@@ -12,7 +14,6 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services, IConfiguration configuration)
     {
-        // Configure uploads directory
         var uploadsBasePath = configuration["FilesStorage:BasePath"]
                               ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 
@@ -22,15 +23,24 @@ public static class DependencyInjection
         }
 
 
-
         services.AddScoped<StreamProcessor>();
         services.AddScoped<ToolCallHandler>();
         services.AddScoped<TokenUsageTracker>();
         services.AddScoped<IStreamChunkParser, OpenAiStreamChunkParser>();
         services.AddScoped<IStreamChunkParser, AnthropicStreamChunkParser>();
         services.AddScoped<IStreamChunkParser, GeminiStreamChunkParser>();
-      services.AddScoped<IStreamChunkParser, DeepseekStreamChunkParser>();
+        services.AddScoped<IStreamChunkParser, DeepseekStreamChunkParser>();
         services.AddScoped<IStreamChunkParser, AimlStreamChunkParser>();
+
+        services.AddScoped<MultimodalContentParser>();
+
+        services.AddScoped<IOpenAiPayloadBuilder, OpenAiPayloadBuilder>();
+        services.AddScoped<IAnthropicPayloadBuilder, AnthropicPayloadBuilder>();
+        services.AddScoped<IGeminiPayloadBuilder, GeminiPayloadBuilder>();
+        services.AddScoped<IDeepSeekPayloadBuilder, DeepSeekPayloadBuilder>();
+        services.AddScoped<IAimlFluxPayloadBuilder, AimlFluxPayloadBuilder>();
+        services.AddScoped<IPayloadBuilderFactory, PayloadBuilderFactory>();
+
 
         services.AddScoped<ChatService>();
         services.AddScoped<ChatSessionService>();

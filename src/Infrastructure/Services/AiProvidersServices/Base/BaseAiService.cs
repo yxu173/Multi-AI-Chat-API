@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Runtime.CompilerServices;
 using Application.Abstractions.Interfaces;
+using Application.Services;
 
 namespace Infrastructure.Services.AiProvidersServices.Base;
 

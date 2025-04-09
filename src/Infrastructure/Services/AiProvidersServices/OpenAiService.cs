@@ -4,6 +4,7 @@ using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Infrastructure.Services.AiProvidersServices.Base;
 using System.IO;
+using Application.Services;
 
 public class OpenAiService : BaseAiService
 {
