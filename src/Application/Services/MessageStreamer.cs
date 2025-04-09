@@ -75,9 +75,10 @@ public class MessageStreamer
 
         try
         {
-            if (modelType == ModelType.AimlFlux)
+            // Group handling for non-streaming image models
+            if (modelType == ModelType.AimlFlux || modelType == ModelType.Imagen)
             {
-                await HandleAimlFluxResponse(requestContext, aiMessage, aiService, linkedToken);
+                await HandleSingleChunkImageResponse(requestContext, aiMessage, aiService, modelType, linkedToken);
             }
             else
             {
@@ -114,13 +115,15 @@ public class MessageStreamer
         }
     }
 
-    private async Task HandleAimlFluxResponse(
+    // Renamed from HandleAimlFluxResponse to handle multiple single-chunk image providers
+    private async Task HandleSingleChunkImageResponse(
         AiRequestContext requestContext,
         Message aiMessage,
         IAiModelService aiService,
+        ModelType modelType, // Added modelType parameter for logging
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Using simplified response path for single-response model {ModelType}", ModelType.AimlFlux);
+        _logger.LogInformation("Using single-chunk response path for model {ModelType}", modelType);
 
         var requestPayload = await _aiRequestHandler.PrepareRequestPayloadAsync(requestContext, cancellationToken);
         string? markdownResult = null;
@@ -133,18 +136,18 @@ public class MessageStreamer
             if (!string.IsNullOrEmpty(chunk.RawContent))
             {
                 markdownResult = chunk.RawContent;
-                _logger.LogInformation("[AimlFlux Path] Received content, Length: {Length}", markdownResult.Length);
+                _logger.LogInformation("[{ModelType} Path] Received content, Length: {Length}", modelType, markdownResult.Length);
             }
 
             if (chunk.IsCompletion)
             {
                 completedSuccessfully = !string.IsNullOrEmpty(markdownResult);
-                _logger.LogInformation("[AimlFlux Path] Completion chunk received. Success: {Success}", completedSuccessfully);
+                _logger.LogInformation("[{ModelType} Path] Completion chunk received. Success: {Success}", modelType, completedSuccessfully);
                 break;
             }
             else
             {
-                _logger.LogWarning("[AimlFlux Path] Received non-completion chunk for message {MessageId}. Content Length: {Length}", aiMessage.Id, chunk.RawContent?.Length ?? 0);
+                _logger.LogWarning("[{ModelType} Path] Received non-completion chunk for message {MessageId}. Content Length: {Length}", modelType, aiMessage.Id, chunk.RawContent?.Length ?? 0);
             }
         }
 
@@ -161,9 +164,9 @@ public class MessageStreamer
         }
         else
         {
-            aiMessage.AppendContent($"\n[Failed to get valid image response]");
+            aiMessage.AppendContent($"\n[Failed to get valid image response from {modelType}]");
             aiMessage.FailMessage();
-            _logger.LogWarning("AIMLAPI response processing failed or resulted in empty/invalid content for message {MessageId}", aiMessage.Id);
+            _logger.LogWarning("{ModelType} response processing failed or resulted in empty/invalid content for message {MessageId}", modelType, aiMessage.Id);
         }
     }
 

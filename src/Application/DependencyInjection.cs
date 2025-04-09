@@ -40,6 +40,9 @@ public static class DependencyInjection
         services.AddScoped<IDeepSeekPayloadBuilder, DeepSeekPayloadBuilder>();
         services.AddScoped<IAimlFluxPayloadBuilder, AimlFluxPayloadBuilder>();
         services.AddScoped<IPayloadBuilderFactory, PayloadBuilderFactory>();
+        services.AddTransient<ImagenPayloadBuilder>(); 
+
+        services.AddScoped<IPayloadBuilder, ImagenPayloadBuilder>();
 
 
         services.AddScoped<ChatService>();

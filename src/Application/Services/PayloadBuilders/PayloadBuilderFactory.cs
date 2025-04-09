@@ -39,4 +39,9 @@ public class PayloadBuilderFactory : IPayloadBuilderFactory
     {
         return _serviceProvider.GetRequiredService<IAimlFluxPayloadBuilder>();
     }
+
+    public IPayloadBuilder CreateImagenBuilder()
+    {
+        return _serviceProvider.GetRequiredService<ImagenPayloadBuilder>();
+    }
 } 

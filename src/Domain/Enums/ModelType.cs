@@ -9,5 +9,6 @@ public enum ModelType
     Imagen3,
     Custom,
     Unknown,
-    AimlFlux
+    AimlFlux,
+    Imagen
 }

@@ -22,7 +22,7 @@ public abstract class BaseAiService : IAiModelService
     /// <summary>
     /// API key for the AI provider
     /// </summary>
-    protected readonly string ApiKey;
+    protected readonly string? ApiKey;
     
     /// <summary>
     /// Model identifier code (used for endpoint path, etc.)
@@ -38,7 +38,7 @@ public abstract class BaseAiService : IAiModelService
     /// </summary>
     protected BaseAiService(
         IHttpClientFactory httpClientFactory,
-        string apiKey,
+        string? apiKey,
         string modelCode,
         string baseUrl)
     {

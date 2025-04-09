@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Net.Http;
+using Application.Services;
 
 public class AiModelServiceFactory : IAiModelServiceFactory
 {
@@ -38,15 +39,31 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         
+        var openAiLogger = _serviceProvider.GetService<ILogger<OpenAiService>>();
+        var anthropicLogger = _serviceProvider.GetService<ILogger<AnthropicService>>();
+        var deepSeekLogger = _serviceProvider.GetService<ILogger<DeepSeekService>>();
+        var geminiLogger = _serviceProvider.GetService<ILogger<GeminiService>>();
+        var aimlLogger = _serviceProvider.GetService<ILogger<AimlApiService>>();
+        var imagenLogger = _serviceProvider.GetService<ILogger<ImagenService>>();
+        
         return aiModel.ModelType switch
         {
             ModelType.OpenAi => new OpenAiService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.Anthropic => new AnthropicService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.DeepSeek => new DeepSeekService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.Gemini => new GeminiService(httpClientFactory, apiKey, aiModel.ModelCode),
-            ModelType.AimlFlux => new AimlApiService(httpClientFactory, apiKey, aiModel.ModelCode, _serviceProvider.GetService<ILogger<AimlApiService>>()),
+            ModelType.AimlFlux => new AimlApiService(httpClientFactory, apiKey, aiModel.ModelCode, aimlLogger),
+            ModelType.Imagen => CreateImagenService(httpClientFactory, apiKey, aiModel.ModelCode, imagenLogger),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
+    }
+
+    private ImagenService CreateImagenService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode, ILogger<ImagenService>? logger)
+    {
+        var projectId = _configuration["AI:Imagen:ProjectId"] ?? throw new InvalidOperationException("Imagen ProjectId not configured.");
+        var region = _configuration["AI:Imagen:Region"] ?? throw new InvalidOperationException("Imagen Region not configured.");
+        
+        return new ImagenService(httpClientFactory, projectId, region, modelCode, logger);
     }
 
     private async Task<string> GetApiKeyAsync(Guid userId, Guid providerId, string? customApiKey)

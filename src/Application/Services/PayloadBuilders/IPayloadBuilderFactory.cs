@@ -9,4 +9,5 @@ public interface IPayloadBuilderFactory
     IGeminiPayloadBuilder CreateGeminiBuilder();
     IDeepSeekPayloadBuilder CreateDeepSeekBuilder();
     IAimlFluxPayloadBuilder CreateAimlFluxBuilder();
+    IPayloadBuilder CreateImagenBuilder();
 } 
