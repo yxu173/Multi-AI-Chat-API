@@ -51,7 +51,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
     {
         var processedMessages = new List<object>();
         bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
-        string? systemMessage = context.AiAgent?.SystemInstructions ?? context.UserSettings?.SystemMessage;
+        string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ?? context.UserSettings?.ModelParameters.SystemInstructions;
 
         if (!string.IsNullOrWhiteSpace(systemMessage))
         {

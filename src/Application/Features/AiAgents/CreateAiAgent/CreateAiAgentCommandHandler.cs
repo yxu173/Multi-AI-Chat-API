@@ -35,6 +35,8 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
             if (request.AssignCustomModelParameters)
             {
                 modelParameters = ModelParameters.Create(
+                    request.SystemInstructions,
+                    request.AiModelId,
                     temperature: request.Temperature,
                     presencePenalty: request.PresencePenalty,
                     frequencyPenalty: request.FrequencyPenalty,
@@ -53,8 +55,6 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                 request.UserId,
                 request.Name,
                 request.Description,
-                request.AiModelId,
-                request.SystemInstructions,
                 request.IconUrl,
                 request.Categories,
                 request.AssignCustomModelParameters,

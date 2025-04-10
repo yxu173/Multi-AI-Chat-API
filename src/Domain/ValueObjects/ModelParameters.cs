@@ -5,16 +5,17 @@ namespace Domain.ValueObjects;
 
 public record ModelParameters : ValueObject
 {
-    public string? ContextLimit { get; init; }
-    public double? Temperature { get; init; }
-    public double? PresencePenalty { get; init; }
-    public double? FrequencyPenalty { get; init; }
-    public double? TopP { get; init; }
-    public int? TopK { get; init; }
-    public int? MaxTokens { get; init; }
-    public bool? EnableThinking { get; init; }
+    public string SystemInstructions { get; init; }
+    public Guid DefaultModel { get; init; }
+    public string ContextLimit { get; init; }
+    public double Temperature { get; init; }
+    public double PresencePenalty { get; init; }
+    public double FrequencyPenalty { get; init; }
+    public double TopP { get; init; }
+    public int TopK { get; init; }
+    public int MaxTokens { get; init; }
     public List<string>? StopSequences { get; init; }
-    public bool? PromptCaching { get; init; }
+    public bool PromptCaching { get; init; }
     public string? SafetySettings { get; init; }
 
     private ModelParameters()
@@ -22,6 +23,8 @@ public record ModelParameters : ValueObject
     }
 
     public static ModelParameters Create(
+        string systemInstructions = null,
+        Guid defaultModel = default,
         double? temperature = null,
         double? presencePenalty = null,
         double? frequencyPenalty = null,
@@ -36,17 +39,48 @@ public record ModelParameters : ValueObject
     {
         return new ModelParameters
         {
-            Temperature = temperature,
-            PresencePenalty = presencePenalty,
-            FrequencyPenalty = frequencyPenalty,
-            TopP = topP,
-            TopK = topK,
-            MaxTokens = maxTokens,
-            EnableThinking = enableThinking,
-            StopSequences = stopSequences,
-            PromptCaching = promptCaching,
-            ContextLimit = contextLimit,
-            SafetySettings = safetySettings
+            SystemInstructions = systemInstructions ?? "you are a helpful assistant",
+            DefaultModel =  defaultModel,
+            Temperature = temperature ?? 0.7,
+            PresencePenalty = presencePenalty ?? 0.0,
+            FrequencyPenalty = frequencyPenalty ?? 0.0,
+            TopP = topP ?? 1.0,
+            TopK = topK ?? 40,
+            MaxTokens = maxTokens ?? 1000,
+            StopSequences = stopSequences ?? new List<string>(),
+            PromptCaching = promptCaching ?? false,
+            ContextLimit = contextLimit ?? "4096",
+            SafetySettings = safetySettings ?? string.Empty,
+        };
+    }
+    
+    
+    public ModelParameters UpdateModelParameters(
+        Guid? defaultModel = null,
+        string? systemInstructions = null,
+        double? temperature = null,
+        double? presencePenalty = null,
+        double? frequencyPenalty = null,
+        double? topP = null,
+        int? topK = null,
+        int? maxTokens = null,
+        string? contextLimit = null,
+        bool? promptCaching = null,
+        string? safetySettings = null)
+    {
+        return this with
+        {
+            DefaultModel = defaultModel ?? DefaultModel,
+            SystemInstructions = systemInstructions ?? SystemInstructions,
+            Temperature = temperature ?? Temperature,
+            PresencePenalty = presencePenalty ?? PresencePenalty,
+            FrequencyPenalty = frequencyPenalty ?? FrequencyPenalty,
+            TopP = topP ?? TopP,
+            TopK = topK ?? TopK,
+            MaxTokens = maxTokens ?? MaxTokens,
+            ContextLimit = contextLimit ?? ContextLimit,
+            PromptCaching = promptCaching ?? PromptCaching,
+            SafetySettings = safetySettings ?? SafetySettings
         };
     }
     
@@ -72,7 +106,6 @@ public record ModelParameters : ValueObject
         yield return TopP;
         yield return TopK;
         yield return MaxTokens;
-        yield return EnableThinking;
         yield return ContextLimit;
         yield return PromptCaching;
         yield return SafetySettings;

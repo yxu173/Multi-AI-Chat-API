@@ -34,6 +34,8 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
             if (command.AssignCustomModelParameters == true)
             {
                 modelParameters = ModelParameters.Create(
+                    command.SystemInstructions,
+                    command.AiModelId,
                     command.Temperature,
                     command.PresencePenalty,
                     command.FrequencyPenalty,
@@ -51,8 +53,6 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
             agent.Update(
                 command.Name,
                 command.Description,
-                command.AiModelId,
-                command.SystemInstructions,
                 command.IconUrl,
                 command.Categories,
                 command.AssignCustomModelParameters,

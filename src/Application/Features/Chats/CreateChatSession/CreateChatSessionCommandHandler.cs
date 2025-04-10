@@ -29,7 +29,7 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
 
             chatSession = ChatSession.Create(
                 userId: request.UserId,
-                aiModelId: aiAgent.AiModelId,
+                aiModelId: aiAgent.ModelParameter.DefaultModel,
                 folderId: request.FolderId,
                 customApiKey: request.CustomApiKey,
                 aiAgent: request.AiAgentId,

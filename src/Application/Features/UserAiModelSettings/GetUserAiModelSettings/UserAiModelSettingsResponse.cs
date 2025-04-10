@@ -4,7 +4,7 @@ public sealed record UserAiModelSettingsResponse(
     Guid Id,
     Guid UserId,
     string SystemMessage,
-    int? ContextLimit,
+    string? ContextLimit,
     double? Temperature,
     double? TopP,
     int? TopK,

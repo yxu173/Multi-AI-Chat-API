@@ -29,26 +29,22 @@ public abstract class BasePayloadBuilder
         if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
         {
             sourceParams = agent.ModelParameter;
-            if (sourceParams.Temperature.HasValue) parameters["temperature"] = sourceParams.Temperature.Value;
-            if (sourceParams.TopP.HasValue) parameters["top_p"] = sourceParams.TopP.Value;
-            if (sourceParams.TopK.HasValue) parameters["top_k"] = sourceParams.TopK.Value;
-            if (sourceParams.FrequencyPenalty.HasValue)
-                parameters["frequency_penalty"] = sourceParams.FrequencyPenalty.Value;
-            if (sourceParams.PresencePenalty.HasValue)
-                parameters["presence_penalty"] = sourceParams.PresencePenalty.Value;
-            if (sourceParams.MaxTokens.HasValue) parameters["max_tokens"] = sourceParams.MaxTokens.Value;
+            parameters["temperature"] = sourceParams.Temperature;
+            parameters["top_p"] = sourceParams.TopP;
+            parameters["top_k"] = sourceParams.TopK;
+            parameters["frequency_penalty"] = sourceParams.FrequencyPenalty;
+            parameters["presence_penalty"] = sourceParams.PresencePenalty;
+            parameters["max_tokens"] = sourceParams.MaxTokens;
             if (sourceParams.StopSequences?.Any() == true) parameters["stop"] = sourceParams.StopSequences;
         }
         else if (userSettings != null)
         {
-            if (userSettings.Temperature.HasValue) parameters["temperature"] = userSettings.Temperature.Value;
-            if (userSettings.TopP.HasValue) parameters["top_p"] = userSettings.TopP.Value;
-            if (userSettings.TopK.HasValue) parameters["top_k"] = userSettings.TopK.Value;
-            if (userSettings.FrequencyPenalty.HasValue)
-                parameters["frequency_penalty"] = userSettings.FrequencyPenalty.Value;
-            if (userSettings.PresencePenalty.HasValue)
-                parameters["presence_penalty"] = userSettings.PresencePenalty.Value;
-            if (userSettings.StopSequences?.Any() == true) parameters["stop"] = userSettings.StopSequences;
+            parameters["temperature"] = userSettings.ModelParameters.Temperature;
+            parameters["top_p"] = userSettings.ModelParameters.TopP;
+            parameters["top_k"] = userSettings.ModelParameters.TopK;
+            parameters["frequency_penalty"] = userSettings.ModelParameters.FrequencyPenalty;
+            parameters["presence_penalty"] = userSettings.ModelParameters.PresencePenalty;
+            parameters["stop"] = userSettings.ModelParameters.StopSequences;
         }
 
         if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
@@ -59,7 +55,8 @@ public abstract class BasePayloadBuilder
         return parameters;
     }
 
-    protected void ApplyParametersToRequest(Dictionary<string, object> requestObj, Dictionary<string, object> parameters,
+    protected void ApplyParametersToRequest(Dictionary<string, object> requestObj,
+        Dictionary<string, object> parameters,
         ModelType modelType)
     {
         foreach (var kvp in parameters)
@@ -80,7 +77,7 @@ public abstract class BasePayloadBuilder
             }
         }
     }
-    
+
     protected string GetProviderParameterName(string standardName, ModelType modelType)
     {
         if (modelType == ModelType.Gemini)
@@ -99,8 +96,8 @@ public abstract class BasePayloadBuilder
         {
             return standardName switch
             {
-                "stop" => "stop_sequences", 
-                "max_tokens" => "max_tokens", 
+                "stop" => "stop_sequences",
+                "max_tokens" => "max_tokens",
                 _ => standardName
             };
         }
@@ -125,8 +122,7 @@ public abstract class BasePayloadBuilder
                 return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
                     "max_tokens", "temperature", "top_k", "top_p", "stop_sequences", "stream", "system", "messages",
-                    "metadata", "model", "tools", "tool_choice"
-                    , "thinking"
+                    "metadata", "model", "tools", "tool_choice", "thinking"
                 }.Contains(providerParamName);
 
             case ModelType.Gemini:
@@ -137,19 +133,20 @@ public abstract class BasePayloadBuilder
                 }.Contains(providerParamName);
 
             case ModelType.DeepSeek:
-                 return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
                     "temperature", "top_p", "max_tokens", "stop", "frequency_penalty", "presence_penalty",
                     "logit_bias", "logprobs", "top_logprobs", "stream", "model", "messages", "n", "seed",
                     "response_format",
                     "enable_cot", "enable_reasoning", "reasoning_mode"
                 }.Contains(providerParamName);
-            
+
             case ModelType.AimlFlux: // Image generation parameters
-                 return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                 {
-                     "prompt", "image_size", "num_images", "output_format", "enable_safety_checker", "safety_tolerance", "seed" 
-                 }.Contains(providerParamName);
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "prompt", "image_size", "num_images", "output_format", "enable_safety_checker", "safety_tolerance",
+                    "seed"
+                }.Contains(providerParamName);
 
             default:
                 Logger?.LogWarning("Parameter support check requested for unknown ModelType: {ModelType}", modelType);
@@ -171,8 +168,9 @@ public abstract class BasePayloadBuilder
             {
                 if (currentContent.Length > 0 && !string.IsNullOrWhiteSpace(currentContent.ToString()))
                 {
-                    currentContent.AppendLine().AppendLine(); 
+                    currentContent.AppendLine().AppendLine();
                 }
+
                 currentContent.Append(messages[i].Content);
             }
             else
@@ -188,7 +186,7 @@ public abstract class BasePayloadBuilder
         return merged.Where(m => !string.IsNullOrEmpty(m.Content)).ToList();
     }
 
-   protected void EnsureAlternatingRoles(List<object> messages, string userRole, string modelRole)
+    protected void EnsureAlternatingRoles(List<object> messages, string userRole, string modelRole)
     {
         if (messages == null || !messages.Any()) return;
 
@@ -203,7 +201,7 @@ public abstract class BasePayloadBuilder
         var cleanedMessages = new List<object>();
         if (messages.Count > 0)
         {
-            cleanedMessages.Add(messages[0]); 
+            cleanedMessages.Add(messages[0]);
             for (int i = 1; i < messages.Count; i++)
             {
                 string previousRole = GetRoleFromDynamicMessage(cleanedMessages.Last());
@@ -215,32 +213,39 @@ public abstract class BasePayloadBuilder
                 }
                 else
                 {
-                     Logger?.LogWarning("Found consecutive \'{CurrentRole}\' roles at index {Index} for {ModelRole} provider.", currentRole, i, modelRole);
+                    Logger?.LogWarning(
+                        "Found consecutive \'{CurrentRole}\' roles at index {Index} for {ModelRole} provider.",
+                        currentRole, i, modelRole);
 
                     bool handled = false;
-                    if (modelRole == "assistant" && currentRole == userRole) 
+                    if (modelRole == "assistant" && currentRole == userRole)
                     {
-                        Logger?.LogWarning("Injecting placeholder '{ModelRole}' message to fix consecutive '{UserRole}' roles for Anthropic.", modelRole, userRole);
-                        cleanedMessages.Add(new { role = modelRole, content = "..." }); 
+                        Logger?.LogWarning(
+                            "Injecting placeholder '{ModelRole}' message to fix consecutive '{UserRole}' roles for Anthropic.",
+                            modelRole, userRole);
+                        cleanedMessages.Add(new { role = modelRole, content = "..." });
                         cleanedMessages.Add(messages[i]);
                         handled = true;
                     }
-                    else if (modelRole == "model" && currentRole == modelRole) 
+                    else if (modelRole == "model" && currentRole == modelRole)
                     {
-                         Logger?.LogWarning("Attempting to merge consecutive '{ModelRole}' role content for Gemini.", modelRole);
-                         var lastMsg = cleanedMessages.Last();
-                         var currentMsg = messages[i];
-                         // TODO: Implement robust merging of Gemini 'parts' array. For now, log and skip.
-                         Logger?.LogError("Consecutive '{ModelRole}' role merging not fully implemented for Gemini structure. Skipping message at index {Index}.", modelRole, i);
-                         // cleanedMessages.RemoveAt(cleanedMessages.Count - 1); // Remove previous model message
-                         // object mergedMessage = MergeGeminiMessages(lastMsg, currentMsg); // Hypothetical merge function
-                         // cleanedMessages.Add(mergedMessage);
-                         // handled = true;
+                        Logger?.LogWarning("Attempting to merge consecutive '{ModelRole}' role content for Gemini.",
+                            modelRole);
+                        var lastMsg = cleanedMessages.Last();
+                        var currentMsg = messages[i];
+                        // TODO: Implement robust merging of Gemini 'parts' array. For now, log and skip.
+                        Logger?.LogError(
+                            "Consecutive '{ModelRole}' role merging not fully implemented for Gemini structure. Skipping message at index {Index}.",
+                            modelRole, i);
+                        // cleanedMessages.RemoveAt(cleanedMessages.Count - 1); // Remove previous model message
+                        // object mergedMessage = MergeGeminiMessages(lastMsg, currentMsg); // Hypothetical merge function
+                        // cleanedMessages.Add(mergedMessage);
+                        // handled = true;
                     }
 
                     if (!handled)
-                    { 
-                         Logger?.LogError(
+                    {
+                        Logger?.LogError(
                             "Unhandled consecutive '{CurrentRole}' role at index {Index} for {ModelRole}. Skipping message to avoid potential API error. Original Message: {OriginalMessage}",
                             currentRole, i, modelRole, TrySerialize(messages[i]));
                     }
@@ -252,11 +257,12 @@ public abstract class BasePayloadBuilder
         messages.AddRange(cleanedMessages);
     }
 
-     protected string GetRoleFromDynamicMessage(dynamic message)
+    protected string GetRoleFromDynamicMessage(dynamic message)
     {
         try
         {
-            if (message is IDictionary<string, object> dict && dict.TryGetValue("role", out var roleValue) && roleValue is string roleStr)
+            if (message is IDictionary<string, object> dict && dict.TryGetValue("role", out var roleValue) &&
+                roleValue is string roleStr)
             {
                 return roleStr;
             }
@@ -273,29 +279,29 @@ public abstract class BasePayloadBuilder
         }
         catch (Exception ex)
         {
-          //  Logger?.LogWarning(ex, "Could not determine role from dynamic message object of type {Type}. Message: {Message}", message?.GetType().Name ?? "null", TrySerialize(message));
+            //  Logger?.LogWarning(ex, "Could not determine role from dynamic message object of type {Type}. Message: {Message}", message?.GetType().Name ?? "null", TrySerialize(message));
         }
 
-   
-        return string.Empty; 
+
+        return string.Empty;
     }
 
-     protected string TrySerialize(object obj)
+    protected string TrySerialize(object obj)
     {
         try
         {
             return JsonSerializer.Serialize(obj, new JsonSerializerOptions
             {
                 WriteIndented = false,
-                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles
             });
         }
         catch (Exception ex)
-        { 
+        {
             return $"[Serialization Error: {ex.Message}] - Type: {obj?.GetType().Name ?? "null"}";
         }
     }
-    
+
     protected bool IsValidAnthropicImageType(string mimeType, out string normalizedMediaType)
     {
         normalizedMediaType = mimeType.ToLowerInvariant().Trim();
@@ -324,7 +330,7 @@ public abstract class BasePayloadBuilder
         normalizedMediaType = supported.GetValueOrDefault(lowerMime);
         return !string.IsNullOrEmpty(normalizedMediaType);
     }
-    
+
     protected bool IsValidAnthropicDocumentType(string mimeType, out string normalizedMediaType)
     {
         normalizedMediaType = mimeType.ToLowerInvariant().Trim();
@@ -335,8 +341,8 @@ public abstract class BasePayloadBuilder
             "text/csv",
             "text/markdown",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword", 
+            "application/msword",
         };
         return supported.Contains(normalizedMediaType);
     }
-} 
+}

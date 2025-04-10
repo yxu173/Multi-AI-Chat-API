@@ -47,8 +47,8 @@ public class AiAgentRepository : IAiAgentRepository
         
         _context.Entry(agent).Property(a => a.Name).IsModified = true;
         _context.Entry(agent).Property(a => a.Description).IsModified = true;
-        _context.Entry(agent).Property(a => a.SystemInstructions).IsModified = true;
-        _context.Entry(agent).Property(a => a.AiModelId).IsModified = true;
+        _context.Entry(agent).Property(a => a.ModelParameter.SystemInstructions).IsModified = true;
+        _context.Entry(agent).Property(a => a.ModelParameter.DefaultModel).IsModified = true;
         _context.Entry(agent).Property(a => a.IconUrl).IsModified = true;
         _context.Entry(agent).Property(a => a.AssignCustomModelParameters).IsModified = true;
         _context.Entry(agent).Property(a => a.ProfilePictureUrl).IsModified = true;

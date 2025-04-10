@@ -28,16 +28,16 @@ public sealed class
         return new UserAiModelSettingsResponse(
             settings.Id,
             settings.UserId,
-            settings.SystemMessage,
-            settings.ContextLimit,
-            settings.Temperature,
-            settings.TopP,
-            settings.TopK,
-            settings.FrequencyPenalty,
-            settings.PresencePenalty,
-            settings.MaxTokens,
-            settings.SafetySettings,
-            settings.PromptCaching
+            settings.ModelParameters.SystemInstructions,
+            settings.ModelParameters.ContextLimit,
+            settings.ModelParameters.Temperature,
+            settings.ModelParameters.TopP,
+            settings.ModelParameters.TopK,
+            settings.ModelParameters.FrequencyPenalty,
+            settings.ModelParameters.PresencePenalty,
+            settings.ModelParameters.MaxTokens,
+            settings.ModelParameters.SafetySettings,
+            settings.ModelParameters.PromptCaching
         );
     }
 }

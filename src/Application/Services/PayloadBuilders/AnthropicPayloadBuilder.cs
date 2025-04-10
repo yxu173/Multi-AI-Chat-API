@@ -60,8 +60,8 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAnthropicPayloadBuil
 
     private (string? SystemPrompt, List<object> Messages) ProcessMessagesForAnthropic(List<MessageDto> history, AiRequestContext context)
     {
-        string? agentSystemMessage = context.AiAgent?.SystemInstructions;
-        string? userSystemMessage = context.UserSettings?.SystemMessage;
+        string? agentSystemMessage = context.AiAgent?.ModelParameter.SystemInstructions;
+        string? userSystemMessage = context.UserSettings?.ModelParameters.SystemInstructions;
         string? finalSystemPrompt = agentSystemMessage ?? userSystemMessage;
 
 

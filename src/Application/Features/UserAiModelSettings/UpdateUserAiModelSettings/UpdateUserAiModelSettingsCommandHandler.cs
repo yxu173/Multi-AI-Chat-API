@@ -25,12 +25,13 @@ public sealed class UpdateUserAiModelSettingsCommandHandler : ICommandHandler<Up
         }
 
         settings.UpdateSettings(
+            request.AiModelId,
+            request.SystemMessage,
             request.Temperature,
             request.TopP,
             request.TopK,
             request.FrequencyPenalty,
             request.PresencePenalty,
-            request.SystemMessage,
             request.ContextLimit,
             request.MaxTokens,
             request.SafetySettings,

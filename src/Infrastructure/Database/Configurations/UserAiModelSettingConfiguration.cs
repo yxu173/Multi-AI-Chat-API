@@ -1,56 +1,22 @@
-using Domain.Aggregates.Chats;
+using Domain.Aggregates.Users;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using System.Collections.Generic;
-using System.Linq;
-using System.Collections;
 
 namespace Infrastructure.Database.Configurations;
 
-public class AiAgentConfiguration : IEntityTypeConfiguration<AiAgent>
+public sealed class UserAiModelSettingConfiguration : IEntityTypeConfiguration<UserAiModelSettings>
 {
-    public void Configure(EntityTypeBuilder<AiAgent> builder)
+    public void Configure(EntityTypeBuilder<UserAiModelSettings> builder)
     {
-        builder.ToTable("AiAgents");
+        builder.ToTable("UserAiModelSettings");
 
-        builder.HasKey(a => a.Id);
+        builder.HasKey(x => x.Id);
 
-        builder.Property(a => a.UserId)
+        builder.Property(x => x.UserId)
             .IsRequired();
 
-        builder.Property(a => a.Name)
-            .IsRequired()
-            .HasMaxLength(200);
-
-        builder.Property(a => a.Description)
-            .IsRequired()
-            .HasMaxLength(500);
-
-        builder.Property(a => a.IconUrl)
-            .HasMaxLength(500);
-
-        builder.Property(a => a.Categories)
-            .HasConversion(
-                v => string.Join(',', v),
-                v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList()
-            )
-            .HasColumnType("text")
-            .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>>(
-                (c1, c2) => c1 != null && c2 != null && c1.SequenceEqual(c2),
-                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
-                c => c.ToList()
-            ));
-
-        builder.Property(a => a.AssignCustomModelParameters)
-            .IsRequired()
-            .HasDefaultValue(false);
-
-        
-        builder.OwnsOne(a => a.ModelParameter, mp =>
+         builder.OwnsOne(a => a.ModelParameters, mp =>
         {
-            mp.Property<bool>("_hasModelParameters")
-                .HasDefaultValue(true)
-                .HasColumnName("HasModelParameters");
             mp.Property(p => p.SystemInstructions)
                 .HasMaxLength(1000)
                 .HasColumnName("SystemInstructions");
@@ -107,18 +73,10 @@ public class AiAgentConfiguration : IEntityTypeConfiguration<AiAgent>
                 .HasColumnName("SafetySettings");
         });
 
-        builder.Property(a => a.ProfilePictureUrl)
-            .HasMaxLength(500);
-
-        builder.Property(a => a.CreatedAt)
-            .IsRequired();
-
-        builder.Property(a => a.LastModifiedAt);
-
-      
-        builder.HasMany(a => a.AiAgentPlugins)
-            .WithOne(ap => ap.AiAgent)
-            .HasForeignKey(ap => ap.AiAgentId)
+        builder.HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+        
     }
 }
