@@ -159,9 +159,6 @@ namespace Infrastructure.Database.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
 
-                    b.Property<int>("Order")
-                        .HasColumnType("integer");
-
                     b.Property<Guid>("PluginId")
                         .HasColumnType("uuid");
 
@@ -291,9 +288,6 @@ namespace Infrastructure.Database.Migrations
 
                     b.Property<DateTime?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("integer");
 
                     b.Property<Guid>("PluginId")
                         .HasColumnType("uuid");

@@ -18,9 +18,6 @@ public class AiAgentPluginConfiguration : IEntityTypeConfiguration<AiAgentPlugin
         builder.Property(ap => ap.PluginId)
             .IsRequired();
 
-        builder.Property(ap => ap.Order)
-            .IsRequired();
-
         builder.Property(ap => ap.IsActive)
             .IsRequired()
             .HasDefaultValue(true);

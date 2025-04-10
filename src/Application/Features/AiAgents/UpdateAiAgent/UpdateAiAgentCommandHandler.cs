@@ -68,7 +68,6 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                     
                     if (existingPlugin != null)
                     {
-                        existingPlugin.UpdateOrder(plugin.Order);
                         existingPlugin.SetActive(plugin.IsActive);
                     }
                     else

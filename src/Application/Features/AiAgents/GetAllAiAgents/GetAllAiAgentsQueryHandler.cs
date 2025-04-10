@@ -47,7 +47,6 @@ public class GetAllAiAgentsQueryHandler : IQueryHandler<GetAllAiAgentsQuery, Lis
             Plugins: agent.AiAgentPlugins.Select(ap => new AgentPluginResponse(
                 ap.PluginId,
                 pluginLookup.TryGetValue(ap.PluginId, out var name) ? name : "Unknown Plugin",
-                ap.Order,
                 ap.IsActive
             )).ToList()
         )).ToList();

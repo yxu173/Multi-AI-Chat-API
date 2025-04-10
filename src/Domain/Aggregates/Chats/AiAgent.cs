@@ -126,7 +126,7 @@ public sealed class AiAgent : BaseAuditableEntity
     
     public void AddPlugin(Guid pluginId, int order, bool isActive = true)
     {
-        var aiAgentPlugin = AiAgentPlugin.Create(Id, pluginId, order, isActive);
+        var aiAgentPlugin = AiAgentPlugin.Create(Id, pluginId, isActive);
         _aiAgentPlugins.Add(aiAgentPlugin);
     }
 

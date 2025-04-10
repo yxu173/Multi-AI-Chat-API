@@ -73,9 +73,9 @@ public sealed class ChatSession : BaseAuditableEntity
         LastModifiedAt = DateTime.UtcNow;
     }
 
-    public void AddPlugin(Guid pluginId, int order)
+    public void AddPlugin(Guid pluginId)
     {
-        _chatSessionPlugins.Add(ChatSessionPlugin.Create(Id, pluginId, order));
+        _chatSessionPlugins.Add(ChatSessionPlugin.Create(Id, pluginId));
     }
 
     public void MoveToFolder(Guid? folderId)

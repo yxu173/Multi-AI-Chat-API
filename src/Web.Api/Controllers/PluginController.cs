@@ -30,7 +30,7 @@ public class PluginController : BaseController
     [HttpPost("AddChatPlugin")]
     public async Task<IResult> AddChatPlugin([FromBody] AddChatPluginRequest request)
     {
-        var command = new AddPluginToChatCommand(request.ChatId, request.PluginId, request.Order);
+        var command = new AddPluginToChatCommand(request.ChatId, request.PluginId);
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }

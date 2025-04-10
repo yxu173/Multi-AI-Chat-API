@@ -36,7 +36,7 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
                 enableThinking: request.EnableThinking);
             foreach (var plugin in aiAgent.AiAgentPlugins)
             {
-                chatSession.AddPlugin(plugin.PluginId, plugin.Order);
+                chatSession.AddPlugin(plugin.PluginId);
             }
         }
         else if (request.ModelId.HasValue)

@@ -7,7 +7,6 @@ public class ChatSessionPlugin : BaseAuditableEntity
     public Guid ChatSessionId { get; private set; }
     public Guid PluginId { get; private set; }
     public bool IsActive { get; private set; }
-    public int Order { get; private set; }
 
 
     public ChatSession ChatSession { get; private set; }
@@ -17,7 +16,7 @@ public class ChatSessionPlugin : BaseAuditableEntity
     {
     }
 
-    public static ChatSessionPlugin Create(Guid chatSessionId, Guid pluginId, int order, bool isActive = true)
+    public static ChatSessionPlugin Create(Guid chatSessionId, Guid pluginId, bool isActive = true)
     {
         return new ChatSessionPlugin
         {
@@ -25,7 +24,6 @@ public class ChatSessionPlugin : BaseAuditableEntity
             ChatSessionId = chatSessionId,
             PluginId = pluginId,
             IsActive = isActive,
-            Order = order,
             CreatedAt = DateTime.UtcNow
         };
     }

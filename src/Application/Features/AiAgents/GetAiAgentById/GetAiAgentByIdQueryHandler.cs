@@ -33,7 +33,6 @@ public class GetAiAgentByIdQueryHandler : IQueryHandler<GetAiAgentByIdQuery, AiA
             .Select(p => new AgentPluginResponse(
                 p.PluginId,
                 p.Plugin?.Name ?? "Unknown Plugin",
-                p.Order,
                 p.IsActive))
             .ToList();
 

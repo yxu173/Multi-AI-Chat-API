@@ -18,6 +18,5 @@ public record AiAgentResponse(
 public record AgentPluginResponse(
     Guid PluginId,
     string PluginName,
-    int Order,
     bool IsActive
 ); 

@@ -16,7 +16,7 @@ public sealed class AddPluginToChatCommandHandler : ICommandHandler<AddPluginToC
 
     public async Task<Result<Guid>> Handle(AddPluginToChatCommand request, CancellationToken cancellationToken)
     {
-        var chatSessionPlugin = ChatSessionPlugin.Create(request.ChatId, request.PluginId, request.Order);
+        var chatSessionPlugin = ChatSessionPlugin.Create(request.ChatId, request.PluginId);
         await _chatSessionPluginRepository.AddAsync(chatSessionPlugin, cancellationToken);
         return Result.Success(chatSessionPlugin.Id);
     }
