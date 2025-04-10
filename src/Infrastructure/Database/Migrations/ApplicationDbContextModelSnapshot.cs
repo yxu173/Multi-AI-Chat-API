@@ -88,7 +88,11 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("AiModelId");
 
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("FolderId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("ChatSessions", (string)null);
                 });

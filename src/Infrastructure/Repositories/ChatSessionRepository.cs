@@ -32,7 +32,6 @@ public class ChatSessionRepository : IChatSessionRepository
     public async Task<ChatSession> GetByIdWithModelAsync(Guid id)
     {
         var chat = await _context.ChatSessions
-            //.AsNoTracking() // Removed for testing potential identity resolution issues
             .Include(c => c.Messages)
             .ThenInclude(m => m.FileAttachments)
             .Include(c => c.AiModel)
@@ -72,7 +71,11 @@ public class ChatSessionRepository : IChatSessionRepository
 
     public async Task<IReadOnlyList<ChatSession>> GetAllChatsByUserId(Guid userId)
     {
-        return await _context.ChatSessions.AsNoTracking().ToListAsync();
+        return await _context.ChatSessions
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync();
     }
 
     public async Task<IReadOnlyList<ChatSession>> GetChatSearch(Guid userId, string? searchTerm,

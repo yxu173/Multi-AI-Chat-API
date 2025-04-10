@@ -11,6 +11,9 @@ public class ChatSessionConfiguration : IEntityTypeConfiguration<ChatSession>
         builder.ToTable("ChatSessions");
 
         builder.HasKey(cs => cs.Id);
+        
+        builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.CreatedAt);
 
         builder.Property(cs => cs.UserId)
             .IsRequired();
