@@ -154,6 +154,61 @@ public class ChatService
         await _messageStreamer.StreamResponseAsync(requestContext, aiMessage, aiService, cancellationToken);
     }
 
+    public async Task RegenerateAiResponseAsync(
+        Guid chatSessionId,
+        Guid userId,
+        Guid userMessageId,
+        CancellationToken cancellationToken = default)
+    {
+        var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
+
+        var userMessage = chatSession.Messages.FirstOrDefault(m => m.Id == userMessageId && m.UserId == userId && !m.IsFromAi);
+        if (userMessage == null) throw new Exception("Original user message not found or access denied.");
+
+        var aiMessageToDelete = chatSession.Messages
+            .Where(m => m.IsFromAi && m.CreatedAt > userMessage.CreatedAt)
+            .OrderBy(m => m.CreatedAt)
+            .FirstOrDefault();
+
+        if (aiMessageToDelete != null)
+        {
+            chatSession.RemoveMessage(aiMessageToDelete);
+            await _messageService.DeleteMessageAsync(aiMessageToDelete.Id, cancellationToken);
+            await _mediator.Publish(new MessageDeletedNotification(chatSessionId, aiMessageToDelete.Id), cancellationToken);
+        }
+
+        var newAiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
+        chatSession.AddMessage(newAiMessage);
+
+        var (aiService, aiAgent) = await PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
+        var userSettings = await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
+        
+        var history = chatSession.Messages
+            .Where(m => m.Id != newAiMessage.Id && m.CreatedAt <= userMessage.CreatedAt)
+            .OrderBy(m => m.CreatedAt)
+            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id) {
+                 FileAttachments = m.FileAttachments?.ToList()
+            })
+            .ToList();
+
+        var requestContext = new AiRequestContext(
+            UserId: userId,
+            ChatSession: chatSession,
+            History: history,
+            AiAgent: aiAgent,
+            UserSettings: userSettings,
+            SpecificModel: chatSession.AiModel,
+            RequestSpecificThinking: false,
+            ImageSize: null, 
+            NumImages: null,
+            OutputFormat: null,
+            EnableSafetyChecker: null,
+            SafetyTolerance: null
+        );
+
+        await _messageStreamer.StreamResponseAsync(requestContext, newAiMessage, aiService, cancellationToken);
+    }
+
     private async Task<(IAiModelService AiService, AiAgent? AiAgent)> PrepareForAiInteractionAsync(
         Guid userId,
         ChatSession chatSession,

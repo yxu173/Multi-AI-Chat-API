@@ -275,6 +275,23 @@ public class ChatHub : Hub
         }
     }
 
+    /// <summary>
+    /// Regenerates the AI response for a given user message.
+    /// </summary>
+    public async Task RegenerateResponse(string chatSessionId, string userMessageId)
+    {
+        try
+        {
+            var userId = Guid.Parse(Context.UserIdentifier);
+            await _chatService.RegenerateAiResponseAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(userMessageId));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error regenerating response: {ex.Message}");
+            await Clients.Caller.SendAsync("Error", $"Failed to regenerate response: {ex.Message}");
+        }
+    }
+
     #region Private Helper Methods
 
     /// <summary>
