@@ -38,7 +38,7 @@ public class AiAgentController : BaseController
             request.ContextLimit,
             request.SafetySettings,
             request.ProfilePictureUrl,
-            request.Plugins?.Select(p => new PluginInfo(p.PluginId, p.Order, p.IsActive)).ToList()
+            request.Plugins?.Select(p => new PluginInfo(p.PluginId, p.IsActive)).ToList()
         );
 
         var result = await _mediator.Send(command);
@@ -86,7 +86,7 @@ public class AiAgentController : BaseController
             request.ContextLimit,
             request.SafetySettings,
             request.ProfilePictureUrl,
-            request.Plugins?.Select(p => new PluginInfo(p.PluginId, p.Order, p.IsActive)).ToList()
+            request.Plugins?.Select(p => new PluginInfo(p.PluginId, p.IsActive)).ToList()
         );
 
         var result = await _mediator.Send(command);

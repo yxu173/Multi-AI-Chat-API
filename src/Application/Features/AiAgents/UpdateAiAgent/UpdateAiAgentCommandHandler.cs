@@ -72,7 +72,7 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                     }
                     else
                     {
-                        agent.AddPlugin(plugin.PluginId, plugin.Order, plugin.IsActive);
+                        agent.AddPlugin(plugin.PluginId, plugin.IsActive);
                     }
                 }
             }

@@ -26,4 +26,4 @@ public sealed record CreateAiAgentCommand(
     string? ProfilePictureUrl = null,
     List<PluginInfo>? Plugins = null) : ICommand<Guid>;
 
-public record PluginInfo(Guid PluginId, int Order, bool IsActive);
+public record PluginInfo(Guid PluginId, bool IsActive);

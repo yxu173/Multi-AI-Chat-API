@@ -66,7 +66,7 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
             {
                 foreach (var plugin in request.Plugins)
                 {
-                    agent.AddPlugin(plugin.PluginId, plugin.Order, plugin.IsActive);
+                    agent.AddPlugin(plugin.PluginId, plugin.IsActive);
                 }
             }
             
