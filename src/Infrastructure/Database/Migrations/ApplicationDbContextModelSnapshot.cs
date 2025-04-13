@@ -272,7 +272,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ChatFolders", (string)null);
+                    b.ToTable("ChatFolders");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.ChatSessionPlugin", b =>
@@ -302,7 +302,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("PluginId");
 
-                    b.ToTable("ChatSessionPlugins", (string)null);
+                    b.ToTable("ChatSessionPlugins");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.ChatTokenUsage", b =>
@@ -402,6 +402,9 @@ namespace Infrastructure.Database.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("ThinkingContent")
+                        .HasColumnType("text");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
@@ -448,7 +451,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Plugins", (string)null);
+                    b.ToTable("Plugins");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Prompts.PromptTemplate", b =>
@@ -664,7 +667,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserPlugins", (string)null);
+                    b.ToTable("UserPlugins");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -865,7 +868,7 @@ namespace Infrastructure.Database.Migrations
 
                             b1.HasKey("AiAgentId");
 
-                            b1.ToTable("AiAgents", (string)null);
+                            b1.ToTable("AiAgents");
 
                             b1.WithOwner()
                                 .HasForeignKey("AiAgentId");
@@ -1078,7 +1081,7 @@ namespace Infrastructure.Database.Migrations
 
                             b1.HasKey("UserAiModelSettingsId");
 
-                            b1.ToTable("UserAiModelSettings", (string)null);
+                            b1.ToTable("UserAiModelSettings");
 
                             b1.WithOwner()
                                 .HasForeignKey("UserAiModelSettingsId");

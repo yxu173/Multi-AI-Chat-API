@@ -9,7 +9,13 @@ using Domain.Aggregates.Chats;
 
 namespace Application.Services.Streaming;
 
-public record StreamProcessingResult(int InputTokens, int OutputTokens, List<ParsedToolCall>? ToolCalls, bool IsComplete);
+public record StreamProcessingResult(
+    int InputTokens,
+    int OutputTokens,
+    List<ParsedToolCall>? ToolCalls,
+    bool IsComplete,
+    string? ThinkingContent = null);
+
 public record ParsedToolCall(string Id, string Name, string Arguments);
 
 public class StreamProcessor
@@ -49,6 +55,7 @@ public class StreamProcessor
         var toolCallStates = new Dictionary<int, ToolCallState>();
         bool isComplete = false;
         List<ParsedToolCall>? completedToolCalls = null;
+        StringBuilder thinkingContentBuilder = new StringBuilder();
 
         try
         {
@@ -70,13 +77,19 @@ public class StreamProcessor
                 if (!string.IsNullOrEmpty(parsedInfo.TextDelta))
                 {
                     appendFinalContentAction(parsedInfo.TextDelta);
-                    await _mediator.Publish(new MessageChunkReceivedNotification(chatSessionId, aiMessage.Id, parsedInfo.TextDelta), cancellationToken);
+                    await _mediator.Publish(
+                        new MessageChunkReceivedNotification(chatSessionId, aiMessage.Id, parsedInfo.TextDelta),
+                        cancellationToken);
                 }
 
                 // Handle thinking indicators
                 if (supportsThinking && !string.IsNullOrEmpty(parsedInfo.ThinkingDelta))
                 {
-                    await _mediator.Publish(new ThinkingUpdateNotification(chatSessionId, aiMessage.Id, parsedInfo.ThinkingDelta), cancellationToken);
+                    thinkingContentBuilder.Append(parsedInfo.ThinkingDelta);
+
+                    await _mediator.Publish(
+                        new ThinkingUpdateNotification(chatSessionId, aiMessage.Id, parsedInfo.ThinkingDelta),
+                        cancellationToken);
                 }
 
                 // Handle tool calls
@@ -98,8 +111,9 @@ public class StreamProcessor
                 // Check for completion
                 if (!string.IsNullOrEmpty(parsedInfo.FinishReason))
                 {
-                    _logger.LogInformation("Stream indicated completion with reason: {FinishReason}", parsedInfo.FinishReason);
-                    
+                    _logger.LogInformation("Stream indicated completion with reason: {FinishReason}",
+                        parsedInfo.FinishReason);
+
                     if (parsedInfo.FinishReason == "tool_calls" || parsedInfo.FinishReason == "function_call")
                     {
                         completedToolCalls = toolCallStates.Values
@@ -134,7 +148,8 @@ public class StreamProcessor
                 inputTokens,
                 outputTokens,
                 completedToolCalls,
-                isComplete
+                isComplete,
+                thinkingContentBuilder.ToString()
             );
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -156,4 +171,4 @@ internal class ToolCallState
     public string Name { get; set; } = null!;
     public StringBuilder ArgumentBuffer { get; } = new StringBuilder();
     public bool IsComplete { get; set; } = false;
-} 
+}

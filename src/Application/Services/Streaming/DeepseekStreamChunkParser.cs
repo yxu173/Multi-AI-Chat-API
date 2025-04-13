@@ -23,6 +23,7 @@ public class DeepseekStreamChunkParser : IStreamChunkParser
             var root = doc.RootElement;
 
             string? textDelta = null;
+            string? thinkingDelta = null;
             ToolCallChunk? toolCallInfo = null;
             int? inputTokens = null;
             int? outputTokens = null;
@@ -52,6 +53,12 @@ public class DeepseekStreamChunkParser : IStreamChunkParser
                     {
                         textDelta = contentElement.GetString();
                         _logger?.LogInformation("Parsed Deepseek text delta: '{TextDelta}'", textDelta);
+                    }
+
+                    if (delta.TryGetProperty("reasoning_content", out var reasoningElement) && reasoningElement.ValueKind == JsonValueKind.String)
+                    {
+                        thinkingDelta = reasoningElement.GetString();
+                        _logger?.LogInformation("Parsed Deepseek thinking delta: '{ThinkingDelta}'", thinkingDelta);
                     }
 
                     if (delta.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array && toolCalls.GetArrayLength() > 0)
@@ -104,6 +111,7 @@ public class DeepseekStreamChunkParser : IStreamChunkParser
 
             return new ParsedChunkInfo(
                 TextDelta: textDelta,
+                ThinkingDelta: thinkingDelta,
                 ToolCallInfo: toolCallInfo,
                 InputTokens: inputTokens,
                 OutputTokens: outputTokens,

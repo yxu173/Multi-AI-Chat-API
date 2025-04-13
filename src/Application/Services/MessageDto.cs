@@ -9,4 +9,5 @@ public record MessageDto(
     Guid MessageId)
 {
     public List<FileAttachment>? FileAttachments { get; init; }
+    public string? ThinkingContent { get; init; }
 } 

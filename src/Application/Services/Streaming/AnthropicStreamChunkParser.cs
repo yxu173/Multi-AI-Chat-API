@@ -23,6 +23,7 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
             var root = doc.RootElement;
 
             string? textDelta = null;
+            string? thinkingDelta = null;
             ToolCallChunk? toolCallInfo = null;
             int? inputTokens = null;
             int? outputTokens = null;
@@ -113,6 +114,11 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
                                     toolCallInfo = new ToolCallChunk(deltaIndex, ArgumentChunk: argsChunkElement.GetString());
                                     _logger?.LogDebug("Parsed tool argument chunk (input_json_delta): Index={Index}, Length={Length}", deltaIndex, toolCallInfo.ArgumentChunk?.Length ?? 0);
                                 }
+                                else if (deltaType == "thinking_delta" && contentDelta.TryGetProperty("thinking", out var thinkingElement))
+                                {
+                                    thinkingDelta = thinkingElement.GetString();
+                                    _logger?.LogDebug("Parsed thinking_delta: Index={Index}, Text='{ThinkingDelta}'", deltaIndex, thinkingDelta);
+                                }
                             }
                         }
                         else
@@ -184,6 +190,7 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
 
             return new ParsedChunkInfo(
                 TextDelta: textDelta,
+                ThinkingDelta: thinkingDelta,
                 ToolCallInfo: toolCallInfo,
                 InputTokens: inputTokens,
                 OutputTokens: outputTokens,

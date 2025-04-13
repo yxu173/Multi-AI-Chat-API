@@ -15,6 +15,7 @@ public sealed class Message : BaseAuditableEntity
     public MessageStatus Status { get; private set; }
     private readonly List<FileAttachment> _fileAttachments = new();
     public IReadOnlyList<FileAttachment> FileAttachments => _fileAttachments.AsReadOnly();
+    public string? ThinkingContent { get; private set; }
 
     private Message()
     {
@@ -62,6 +63,12 @@ public sealed class Message : BaseAuditableEntity
     public void UpdateContent(string newContent)
     {
         Content = newContent ?? string.Empty;
+        LastModifiedAt = DateTime.UtcNow;
+    }
+
+    public void UpdateThinkingContent(string? thinkingContent)
+    {
+        ThinkingContent = thinkingContent;
         LastModifiedAt = DateTime.UtcNow;
     }
 
