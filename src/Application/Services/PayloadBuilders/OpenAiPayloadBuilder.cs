@@ -14,7 +14,8 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
         ILogger<OpenAiPayloadBuilder> logger)
         : base(logger)
     {
-        _multimodalContentParser = multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
+        _multimodalContentParser =
+            multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
     public AiRequestPayload PreparePayload(AiRequestContext context, List<object>? toolDefinitions)
@@ -51,24 +52,19 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
     {
         var processedMessages = new List<object>();
         bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
-        string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ?? context.UserSettings?.ModelParameters.SystemInstructions;
+        string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ??
+                                context.UserSettings?.ModelParameters.SystemInstructions;
 
         if (!string.IsNullOrWhiteSpace(systemMessage))
         {
             processedMessages.Add(new { role = "system", content = systemMessage.Trim() });
         }
 
-        if (useEffectiveThinking)
-        {
-            processedMessages.Add(new
-            {
-                role = "system",
-                content =
-                    "When solving complex problems, show your step-by-step thinking process marked as '### Thinking:' before the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly."
-            });
-        }
+      
 
-        var mergedHistory = MergeConsecutiveRoles(history.Select(m => (m.IsFromAi ? "assistant" : "user", m.Content?.Trim() ?? "")).ToList());
+        var mergedHistory =
+            MergeConsecutiveRoles(history.Select(m => (m.IsFromAi ? "assistant" : "user", m.Content?.Trim() ?? ""))
+                .ToList());
 
         foreach (var (role, rawContent) in mergedHistory)
         {
@@ -78,7 +74,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
             {
                 var contentParts = _multimodalContentParser.Parse(rawContent);
                 var openAiContentItems = new List<object>();
-                bool hasNonTextContent = false; 
+                bool hasNonTextContent = false;
 
                 foreach (var part in contentParts)
                 {
@@ -93,21 +89,22 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                                 type = "image_url",
                                 image_url = new { url = $"data:{imagePart.MimeType};base64,{imagePart.Base64Data}" }
                             });
-                            hasNonTextContent = true; 
+                            hasNonTextContent = true;
                             break;
                         case FilePart filePart:
                             // Use the user-specified format for files
-                            Logger?.LogInformation("Adding file {FileName} using custom 'file' type structure.", filePart.FileName);
+                            Logger?.LogInformation("Adding file {FileName} using custom 'file' type structure.",
+                                filePart.FileName);
                             openAiContentItems.Add(new
                             {
                                 type = "file",
-                                file = new 
+                                file = new
                                 {
-                                    filename = filePart.FileName, 
-                                    file_data = $"data:{filePart.MimeType};base64,{filePart.Base64Data}" 
+                                    filename = filePart.FileName,
+                                    file_data = $"data:{filePart.MimeType};base64,{filePart.Base64Data}"
                                 }
                             });
-                            hasNonTextContent = true; 
+                            hasNonTextContent = true;
                             break;
                     }
                 }
@@ -121,7 +118,8 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                     else
                     {
                         string combinedText = string.Join("\n",
-                            openAiContentItems.Select(item => item.GetType().GetProperty("text")?.GetValue(item)?.ToString() ?? "")).Trim();
+                            openAiContentItems.Select(item =>
+                                item.GetType().GetProperty("text")?.GetValue(item)?.ToString() ?? "")).Trim();
                         if (!string.IsNullOrEmpty(combinedText))
                         {
                             processedMessages.Add(new { role = "user", content = combinedText });
@@ -129,7 +127,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                     }
                 }
             }
-            else 
+            else
             {
                 processedMessages.Add(new { role = "assistant", content = rawContent });
             }
@@ -143,7 +141,12 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
         bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
         if (useEffectiveThinking)
         {
-            Logger?.LogDebug("OpenAI reasoning is handled via system prompt for model {ModelCode}", context.SpecificModel.ModelCode);
+            requestObj.Remove("max_tokens");
+            requestObj.Remove("temperature");
+            requestObj.Remove("top_p");
+            requestObj["reasoning_effort"] = "medium";
+            Logger?.LogDebug("OpenAI reasoning is handled via system prompt for model {ModelCode}",
+                context.SpecificModel.ModelCode);
         }
 
         if (context.SpecificModel.SupportsVision)
@@ -151,4 +154,4 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
             // Placeholder for potential future vision-specific params
         }
     }
-} 
+}
