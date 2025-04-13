@@ -139,6 +139,9 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAnthropicPayloadBuil
             {
                  const int defaultThinkingBudget = 1024; 
                  requestObj["thinking"] = new { type = "enabled", budget_tokens = defaultThinkingBudget };
+                 requestObj["temperature"] = 1.0;
+                 requestObj.Remove("top_k");
+                 requestObj.Remove("top_p");
                  Logger?.LogDebug("Enabled Anthropic 'thinking' parameter with budget {Budget} (Effective: {UseThinking})", defaultThinkingBudget, useEffectiveThinking);
             }
             else
