@@ -1,4 +1,4 @@
-namespace Application.Features.AiAgents.GetAllAiAgents;
+namespace Application.Features.AiAgents.GetAiAgentById;
 
 public record AiAgentResponse(
     Guid Id,

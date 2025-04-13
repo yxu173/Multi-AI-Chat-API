@@ -45,8 +45,8 @@ public class AiAgentController : BaseController
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("GetAll")]
-    public async Task<IResult> GetAllAgents()
+    [HttpGet("GetAllAgentsByCategories")]
+    public async Task<IResult> GetAllAgentsByCategories()
     {
         var query = new GetAllAiAgentsQuery(UserId);
         var result = await _mediator.Send(query);

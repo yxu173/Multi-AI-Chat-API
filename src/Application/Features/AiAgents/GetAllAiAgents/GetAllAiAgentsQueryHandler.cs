@@ -4,53 +4,51 @@ using Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel;
 using System.Text.Json;
+using Application.Features.AiAgents.GetAiAgentById;
+using Domain.Enums;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Application.Features.AiAgents.GetAllAiAgents;
 
-public class GetAllAiAgentsQueryHandler : IQueryHandler<GetAllAiAgentsQuery, List<AiAgentResponse>>
+public class GetAllAiAgentsQueryHandler : IQueryHandler<GetAllAiAgentsQuery, GetAllAiAgentsGroupedByCategoryResponse>
 {
     private readonly IAiAgentRepository _aiAgentRepository;
-    private readonly IPluginRepository _pluginRepository;
 
-    public GetAllAiAgentsQueryHandler(
-        IAiAgentRepository aiAgentRepository,
-        IPluginRepository pluginRepository)
+    public GetAllAiAgentsQueryHandler(IAiAgentRepository aiAgentRepository)
     {
         _aiAgentRepository = aiAgentRepository;
-        _pluginRepository = pluginRepository;
     }
 
-    public async Task<Result<List<AiAgentResponse>>> Handle(GetAllAiAgentsQuery request, CancellationToken cancellationToken)
+    public async Task<Result<GetAllAiAgentsGroupedByCategoryResponse>> Handle(GetAllAiAgentsQuery request,
+        CancellationToken cancellationToken)
     {
         var agents = await _aiAgentRepository.GetByUserIdAsync(request.UserId, cancellationToken);
-        
+
         if (agents == null || !agents.Any())
         {
-            return Result.Success(new List<AiAgentResponse>());
+            return Result.Success(
+                new GetAllAiAgentsGroupedByCategoryResponse(new Dictionary<string, List<GetAllAiAgentResponse>>()));
         }
 
-        var allPlugins = await _pluginRepository.GetAllAsync();
-        var pluginLookup = allPlugins.ToDictionary(p => p.Id, p => p.Name);
+        var agentsByCategory = new Dictionary<string, List<GetAllAiAgentResponse>>();
 
-        var response = agents.Select(agent => new AiAgentResponse(
-            Id: agent.Id,
-            Name: agent.Name,
-            Description: agent.Description,
-            SystemInstructions: agent.ModelParameter.SystemInstructions,
-            AiModelId: agent.ModelParameter.DefaultModel,
-            AiModelName: agent.AiModel?.Name ?? "Unknown Model",
-            IconUrl: agent.IconUrl,
-            Categories: agent.Categories.Select(c => c.ToString()).ToList(),
-            AssignCustomModelParameters: agent.AssignCustomModelParameters,
-            ModelParameters: agent.ModelParameter != null ? agent.ModelParameter.ToJson() : null,
-            ProfilePictureUrl: agent.ProfilePictureUrl,
-            Plugins: agent.AiAgentPlugins.Select(ap => new AgentPluginResponse(
-                ap.PluginId,
-                pluginLookup.TryGetValue(ap.PluginId, out var name) ? name : "Unknown Plugin",
-                ap.IsActive
-            )).ToList()
-        )).ToList();
+        foreach (var category in Enum.GetValues<AgentCategories>())
+        {
+            var categoryName = category.ToString();
+            var agentsInCategory = agents
+                .Where(agent => agent.Categories != null && agent.Categories.Contains(category))
+                .Select(agent => new GetAllAiAgentResponse(
+                    Id: agent.Id,
+                    Name: agent.Name,
+                    Description: agent.Description,
+                    ProfilePictureUrl: agent.ProfilePictureUrl
+                )).ToList();
 
+            agentsByCategory.Add(categoryName, agentsInCategory);
+        }
+
+        var response = new GetAllAiAgentsGroupedByCategoryResponse(agentsByCategory);
         return Result.Success(response);
     }
-} 
+}
