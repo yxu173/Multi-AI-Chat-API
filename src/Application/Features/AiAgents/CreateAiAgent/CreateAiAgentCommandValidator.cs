@@ -17,7 +17,7 @@ public class CreateAiAgentCommandValidator : AbstractValidator<CreateAiAgentComm
             .MaximumLength(500).WithMessage("Description cannot exceed 500 characters.");
 
        
-        RuleFor(command => command.AiModelId)
+        RuleFor(command => command.DefaultModel)
             .NotEmpty().WithMessage("AI Model ID is required.");
 
         RuleFor(command => command.Categories)

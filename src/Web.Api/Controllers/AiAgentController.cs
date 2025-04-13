@@ -22,7 +22,7 @@ public class AiAgentController : BaseController
             request.Name,
             request.Description,
             request.SystemInstructions,
-            request.AiModelId,
+            request.DefaultModel,
             request.IconUrl,
             request.Categories,
             request.AssignCustomModelParameters,
@@ -70,7 +70,7 @@ public class AiAgentController : BaseController
             request.Name,
             request.Description,
             request.SystemInstructions,
-            request.AiModelId,
+            request.DefaultModel,
             request.IconUrl,
             request.Categories,
             request.AssignCustomModelParameters,
@@ -91,5 +91,12 @@ public class AiAgentController : BaseController
 
         var result = await _mediator.Send(command);
         return result.Match(val => Results.Ok(val), CustomResults.Problem);
+    }
+
+    [HttpGet("GetAllCategories")]
+    public IActionResult GetAllCategories()
+    {
+        var categories = Enum.GetNames(typeof(Domain.Enums.AgentCategories));
+        return Ok(categories);
     }
 }

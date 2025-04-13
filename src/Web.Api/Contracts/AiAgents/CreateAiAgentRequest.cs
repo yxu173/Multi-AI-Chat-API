@@ -4,7 +4,7 @@ public record CreateAiAgentRequest(
     string Name,
     string Description,
     string? SystemInstructions,
-    Guid AiModelId,
+    Guid DefaultModel,
     string? IconUrl = null,
     List<string>? Categories = null,
     bool AssignCustomModelParameters = false,
@@ -25,6 +25,5 @@ public record CreateAiAgentRequest(
 
 public record PluginRequest(
     Guid PluginId,
-    int Order,
     bool IsActive = true
 );

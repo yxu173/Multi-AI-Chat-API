@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System.Collections.Generic;
 using System.Linq;
 using System.Collections;
+using Domain.Enums;
 
 namespace Infrastructure.Database.Configurations;
 
@@ -31,11 +32,13 @@ public class AiAgentConfiguration : IEntityTypeConfiguration<AiAgent>
 
         builder.Property(a => a.Categories)
             .HasConversion(
-                v => string.Join(',', v),
-                v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList()
+                v => string.Join(',', v.Select(c => c.ToString())),
+                v => v.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => Enum.Parse<AgentCategories>(s))
+                    .ToList()
             )
             .HasColumnType("text")
-            .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>>(
+            .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<AgentCategories>>(
                 (c1, c2) => c1 != null && c2 != null && c1.SequenceEqual(c2),
                 c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
                 c => c.ToList()

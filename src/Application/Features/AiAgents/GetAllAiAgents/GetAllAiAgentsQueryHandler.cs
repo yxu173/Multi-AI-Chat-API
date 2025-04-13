@@ -40,7 +40,7 @@ public class GetAllAiAgentsQueryHandler : IQueryHandler<GetAllAiAgentsQuery, Lis
             AiModelId: agent.ModelParameter.DefaultModel,
             AiModelName: agent.AiModel?.Name ?? "Unknown Model",
             IconUrl: agent.IconUrl,
-            Categories: agent.Categories,
+            Categories: agent.Categories.Select(c => c.ToString()).ToList(),
             AssignCustomModelParameters: agent.AssignCustomModelParameters,
             ModelParameters: agent.ModelParameter != null ? agent.ModelParameter.ToJson() : null,
             ProfilePictureUrl: agent.ProfilePictureUrl,

@@ -6,7 +6,7 @@ namespace Domain.ValueObjects;
 public record ModelParameters : ValueObject
 {
     public string SystemInstructions { get; init; }
-    public Guid DefaultModel { get; init; }
+    public Guid DefaultModel { get; private set; }
     public string ContextLimit { get; init; }
     public double Temperature { get; init; }
     public double PresencePenalty { get; init; }
@@ -23,8 +23,8 @@ public record ModelParameters : ValueObject
     }
 
     public static ModelParameters Create(
-        string systemInstructions = null,
         Guid defaultModel = default,
+        string systemInstructions = null,
         double? temperature = null,
         double? presencePenalty = null,
         double? frequencyPenalty = null,
@@ -40,7 +40,7 @@ public record ModelParameters : ValueObject
         return new ModelParameters
         {
             SystemInstructions = systemInstructions ?? "you are a helpful assistant",
-            DefaultModel =  defaultModel,
+            DefaultModel = defaultModel == default ? new Guid("e29a994d-617f-49b8-8bff-17dcb9a08462") : defaultModel,
             Temperature = temperature ?? 0.7,
             PresencePenalty = presencePenalty ?? 0.0,
             FrequencyPenalty = frequencyPenalty ?? 0.0,

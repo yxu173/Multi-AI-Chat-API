@@ -1,6 +1,7 @@
 using Domain.Common;
 using Domain.ValueObjects;
 using System.Text.Json;
+using Domain.Enums;
 
 namespace Domain.Aggregates.Chats;
 
@@ -11,7 +12,7 @@ public sealed class AiAgent : BaseAuditableEntity
     public string Description { get; private set; }
     public string? IconUrl { get; private set; }
 
-    public List<string> Categories { get; private set; } = new();
+    public List<AgentCategories> Categories { get; private set; } = new();
     public bool AssignCustomModelParameters { get; private set; }
     
     public ModelParameters? ModelParameter { get; private set; }
@@ -21,13 +22,14 @@ public sealed class AiAgent : BaseAuditableEntity
     private readonly List<AiAgentPlugin> _aiAgentPlugins = new();
     public IReadOnlyList<AiAgentPlugin> AiAgentPlugins => _aiAgentPlugins.AsReadOnly();
 
-    public AiModel AiModel { get; private set; } = null!;
+    public Guid AiModelId { get; private set; }
+    public AiModel? AiModel { get; private set; }
 
     private AiAgent()
     {
     }
 
-    public static AiAgent Create(
+  public static AiAgent Create(
         Guid userId,
         string name,
         string description,
@@ -35,7 +37,8 @@ public sealed class AiAgent : BaseAuditableEntity
         List<string>? categories = null,
         bool assignCustomModelParameters = false,
         ModelParameters? modelParameters = null,
-        string? profilePictureUrl = null)
+        string? profilePictureUrl = null,
+        Guid? aiModelId = null)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name cannot be empty.", nameof(name));
@@ -47,7 +50,7 @@ public sealed class AiAgent : BaseAuditableEntity
             Name = name,
             Description = description,
             IconUrl = iconUrl,
-            Categories = categories ?? new List<string>(),
+            Categories = categories?.Select(c => Enum.TryParse<AgentCategories>(c, true, out var cat) ? cat : default).Where(c => c != default).ToList() ?? new List<AgentCategories>(),
             AssignCustomModelParameters = assignCustomModelParameters,
             ProfilePictureUrl = profilePictureUrl,
             ModelParameter = ModelParameters.Create(),
@@ -57,6 +60,11 @@ public sealed class AiAgent : BaseAuditableEntity
         if (assignCustomModelParameters && modelParameters != null)
         {
             agent.ModelParameter = modelParameters;
+        }
+
+        if (aiModelId.HasValue && aiModelId.Value != Guid.Empty)
+        {
+            agent.SetAiModelId(aiModelId.Value);
         }
 
         return agent;
@@ -77,23 +85,24 @@ public sealed class AiAgent : BaseAuditableEntity
         Description = description;
         IconUrl = iconUrl;
 
-        if (categories != null) Categories = categories;
+        if (categories != null) Categories = categories.Select(c => Enum.TryParse<AgentCategories>(c, true, out var cat) ? cat : default).Where(c => c != default).ToList();
         if (assignCustomModelParameters.HasValue) AssignCustomModelParameters = assignCustomModelParameters.Value;
         if (modelParameters != null && AssignCustomModelParameters) ModelParameter = modelParameters;
         if (profilePictureUrl != null) ProfilePictureUrl = profilePictureUrl;
 
         LastModifiedAt = DateTime.UtcNow;
     }
+   
     
-    public void AddCategory(string category)
+    public void AddCategory(string categoryName)
     {
-        if (!string.IsNullOrWhiteSpace(category) && !Categories.Contains(category))
+        if (Enum.TryParse<AgentCategories>(categoryName, true, out var category) && !Categories.Contains(category))
         {
             Categories.Add(category);
         }
     }
 
-    public void RemoveCategory(string category)
+    public void RemoveCategory(AgentCategories category)
     {
         Categories.Remove(category);
     }
@@ -146,5 +155,12 @@ public sealed class AiAgent : BaseAuditableEntity
         {
             plugin.SetActive(isActive);
         }
+    }
+
+    public void SetAiModelId(Guid aiModelId)
+    {
+        // Store just the ID; the actual AiModel should be retrieved from repository when needed
+        AiModelId = aiModelId;
+        // Note: AiModel property will be set by the repository or mapper when loading the full entity
     }
 }

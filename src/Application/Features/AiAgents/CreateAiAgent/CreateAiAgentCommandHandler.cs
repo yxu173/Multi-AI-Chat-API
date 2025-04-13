@@ -21,12 +21,12 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
 
     public async Task<Result<Guid>> Handle(CreateAiAgentCommand request, CancellationToken cancellationToken)
     {
-        var model = await _aiModelRepository.GetByIdAsync(request.AiModelId);
+        var model = await _aiModelRepository.GetByIdAsync(request.DefaultModel);
         if (model == null)
         {
             return Result.Failure<Guid>(Error.NotFound(
                 "AiAgent.ModelNotFound",
-                $"AI Model with ID {request.AiModelId} not found."));
+                $"AI Model with ID {request.DefaultModel} not found."));
         }
 
         try
@@ -34,9 +34,8 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
             ModelParameters? modelParameters = null;
             if (request.AssignCustomModelParameters)
             {
-                modelParameters = ModelParameters.Create(
+                modelParameters = ModelParameters.Create(request.DefaultModel,
                     request.SystemInstructions,
-                    request.AiModelId,
                     temperature: request.Temperature,
                     presencePenalty: request.PresencePenalty,
                     frequencyPenalty: request.FrequencyPenalty,
@@ -46,9 +45,7 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                     enableThinking: request.EnableThinking,
                     stopSequences: request.StopSequences,
                     promptCaching: request.PromptCaching,
-                    contextLimit: request.ContextLimit,
-                    safetySettings: request.SafetySettings
-                );
+                    contextLimit: request.ContextLimit, safetySettings: request.SafetySettings);
             }
             
             var agent = AiAgent.Create(
@@ -59,7 +56,8 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                 request.Categories,
                 request.AssignCustomModelParameters,
                 modelParameters,
-                request.ProfilePictureUrl
+                request.ProfilePictureUrl,
+                request.DefaultModel
             );
 
             if (request.Plugins != null && request.Plugins.Count > 0)

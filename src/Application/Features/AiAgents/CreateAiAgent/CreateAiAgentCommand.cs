@@ -8,7 +8,7 @@ public sealed record CreateAiAgentCommand(
     string Name,
     string Description,
     string SystemInstructions,
-    Guid AiModelId,
+    Guid DefaultModel,
     string? IconUrl,
     List<string>? Categories,
     bool AssignCustomModelParameters,

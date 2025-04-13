@@ -33,9 +33,8 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
             ModelParameters? modelParameters = null;
             if (command.AssignCustomModelParameters == true)
             {
-                modelParameters = ModelParameters.Create(
+                modelParameters = ModelParameters.Create(command.AiModelId,
                     command.SystemInstructions,
-                    command.AiModelId,
                     command.Temperature,
                     command.PresencePenalty,
                     command.FrequencyPenalty,
@@ -45,9 +44,7 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                     command.EnableThinking,
                     command.StopSequences,
                     command.PromptCaching,
-                    command.ContextLimit,
-                    command.SafetySettings
-                );
+                    command.ContextLimit, command.SafetySettings);
             }
 
             agent.Update(

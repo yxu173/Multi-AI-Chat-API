@@ -272,7 +272,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ChatFolders");
+                    b.ToTable("ChatFolders", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.ChatSessionPlugin", b =>
@@ -302,7 +302,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("PluginId");
 
-                    b.ToTable("ChatSessionPlugins");
+                    b.ToTable("ChatSessionPlugins", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.ChatTokenUsage", b =>
@@ -448,7 +448,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Plugins");
+                    b.ToTable("Plugins", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Prompts.PromptTemplate", b =>
@@ -664,7 +664,7 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserPlugins");
+                    b.ToTable("UserPlugins", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -865,7 +865,7 @@ namespace Infrastructure.Database.Migrations
 
                             b1.HasKey("AiAgentId");
 
-                            b1.ToTable("AiAgents");
+                            b1.ToTable("AiAgents", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("AiAgentId");
@@ -1078,7 +1078,7 @@ namespace Infrastructure.Database.Migrations
 
                             b1.HasKey("UserAiModelSettingsId");
 
-                            b1.ToTable("UserAiModelSettings");
+                            b1.ToTable("UserAiModelSettings", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("UserAiModelSettingsId");
