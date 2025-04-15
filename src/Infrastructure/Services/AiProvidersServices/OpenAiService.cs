@@ -18,9 +18,48 @@ public class OpenAiService : BaseAiService
     protected override void ConfigureHttpClient()
     {
         HttpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {ApiKey}");
+        HttpClient.DefaultRequestHeaders.Add("Accept", "text/event-stream");
     }
 
-    protected override string GetEndpointPath() => "chat/completions";
+    protected override string GetEndpointPath() => "responses";
+
+    // Override ReadStreamAsync for Assistants API v2 SSE format
+    protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        string? eventName = null;
+
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (cancellationToken.IsCancellationRequested) break;
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                // Blank line indicates end of event - reset event name
+                eventName = null;
+                continue;
+            }
+
+            if (line.StartsWith("event:"))
+            {
+                eventName = line["event:".Length..].Trim();
+            }
+            else if (line.StartsWith("data:"))
+            {
+                var jsonData = line["data:".Length..].Trim();
+                
+                // We just yield the JSON data part. The parser will handle the event type.
+                // Don't check for [DONE] here, the completion event is handled by the parser.
+                if (!string.IsNullOrEmpty(jsonData))
+                {
+                     yield return jsonData;
+                }
+            }
+            // Ignore other lines (like comments starting with ':')
+        }
+    }
 
     public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
         AiRequestPayload requestPayload, 

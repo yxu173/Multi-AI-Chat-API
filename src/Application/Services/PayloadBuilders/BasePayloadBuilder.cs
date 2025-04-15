@@ -112,10 +112,9 @@ public abstract class BasePayloadBuilder
             case ModelType.OpenAi:
                 return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
-                    "temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens", "stop",
+                    "temperature", "top_p", "max_tokens",
                     "seed", "response_format", "tools", "tool_choice", "logit_bias", "user", "n", "logprobs",
                     "top_logprobs"
-                    // Add "reasoning_effort" if needed/supported in future
                 }.Contains(providerParamName);
 
             case ModelType.Anthropic:

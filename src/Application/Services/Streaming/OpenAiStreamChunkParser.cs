@@ -19,111 +19,114 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
     {
         try
         {
+            _logger?.LogTrace("[OpenAiParser] Received raw data chunk: {RawContent}", rawJson);
+
             using var doc = JsonDocument.Parse(rawJson);
             var root = doc.RootElement;
 
+            if (!root.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
+            {
+                _logger?.LogWarning("OpenAI stream chunk missing or invalid 'type' property: {RawJson}", rawJson);
+                return new ParsedChunkInfo(); 
+            }
+
+            var eventType = typeElement.GetString();
             string? textDelta = null;
             ToolCallChunk? toolCallInfo = null;
             int? inputTokens = null;
             int? outputTokens = null;
             string? finishReason = null;
+            string? errorDetails = null;
 
-            _logger?.LogInformation("[OpenAiDebug] Raw chunk content: {RawContent}", rawJson);
-
-            if (root.TryGetProperty("error", out var errorElement))
+            switch (eventType)
             {
-                _logger?.LogError("OpenAI stream reported error: {ErrorJson}", errorElement.GetRawText());
-                return new ParsedChunkInfo(FinishReason: "error");
-            }
-
-            // Check for [DONE] message which OpenAI sends as a plain string
-            if (rawJson.Trim() == "[DONE]")
-            {
-                _logger?.LogInformation("Received OpenAI [DONE] message");
-                return new ParsedChunkInfo(FinishReason: "stop");
-            }
-
-            if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
-            {
-                var firstChoice = choices[0];
-
-                if (firstChoice.TryGetProperty("finish_reason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String)
-                {
-                    finishReason = reasonElement.GetString();
-                    _logger?.LogInformation("Parsed OpenAI finishReason: {FinishReason}", finishReason);
-                }
-
-                if (firstChoice.TryGetProperty("delta", out var delta))
-                {
-                    if (delta.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String)
+                case "response.output_text.delta":
+                    if (root.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.String)
                     {
-                        textDelta = contentElement.GetString();
-                        _logger?.LogInformation("Parsed OpenAI text delta: '{TextDelta}'", textDelta);
+                        textDelta = deltaElement.GetString();
+                        _logger?.LogTrace("Parsed OpenAI text delta: '{TextDelta}'", textDelta);
+                    }
+                    break;
+
+                case "response.function_call.invoked":
+                    string? toolCallId = null;
+                    string? toolCallName = null;
+                    string? argumentChunk = null;
+                    int toolCallIndex = 0; 
+
+                    if (root.TryGetProperty("call", out var callElement))
+                    {
+                        if (callElement.TryGetProperty("call_id", out var idElement)) toolCallId = idElement.GetString();
+                        if (callElement.TryGetProperty("name", out var nameElement)) toolCallName = nameElement.GetString();
+                        if (callElement.TryGetProperty("arguments", out var argsElement)) argumentChunk = argsElement.GetString();
                     }
 
-                    if (delta.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array && toolCalls.GetArrayLength() > 0)
+                    toolCallInfo = new ToolCallChunk(toolCallIndex, toolCallId, toolCallName, ArgumentChunk: argumentChunk);
+                    _logger?.LogInformation("Parsed OpenAI function call invocation. Id: {Id}, Name: {Name}, Args Length: {Length}", toolCallId, toolCallName, argumentChunk?.Length ?? 0);
+                    break;
+
+                case "response.completed":
+                    _logger?.LogInformation("Received OpenAI completion event.");
+                    if (root.TryGetProperty("response", out var responseElement))
                     {
-                        var firstToolCall = toolCalls[0];
-                        string? toolCallId = null;
-                        string? toolCallName = null;
-                        string? argumentChunk = null;
-                        int toolCallIndex = 0;
-
-                        if (firstToolCall.TryGetProperty("index", out var indexElement) && indexElement.TryGetInt32(out int index))
+                        if (responseElement.TryGetProperty("usage", out var usage))
                         {
-                            toolCallIndex = index;
+                            if (usage.TryGetProperty("input_tokens", out var promptTokens)) inputTokens = promptTokens.GetInt32();
+                            if (usage.TryGetProperty("output_tokens", out var completionTokens)) outputTokens = completionTokens.GetInt32();
+                            _logger?.LogDebug("Parsed OpenAI token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
                         }
 
-                        if (firstToolCall.TryGetProperty("id", out var idElement))
+                        if (responseElement.TryGetProperty("status", out var statusElement) && statusElement.ValueKind == JsonValueKind.String)
                         {
-                            toolCallId = idElement.GetString();
-                        }
-                        if (firstToolCall.TryGetProperty("function", out var function))
-                        {
-                            if (function.TryGetProperty("name", out var nameElement))
+                            var status = statusElement.GetString();
+                            switch (status)
                             {
-                                toolCallName = nameElement.GetString();
+                                case "completed":
+                                    finishReason = "stop"; 
+                                    break;
+                                case "error":
+                                case "failed": 
+                                    finishReason = "error";
+                                    if (responseElement.TryGetProperty("error", out var errorObj))
+                                    {
+                                        errorDetails = errorObj.ToString(); 
+                                        _logger?.LogError("OpenAI completion event reported error: {ErrorJson}", errorDetails);
+                                    }
+                                    break;
+                                case "incomplete":
+                                      finishReason = "length"; 
+                                     _logger?.LogWarning("OpenAI completion event reported incomplete status.");
+                                     break;
+                                default:
+                                    finishReason = status; 
+                                    break;
                             }
-                            if (function.TryGetProperty("arguments", out var argsElement))
-                            {
-                                argumentChunk = argsElement.GetString();
-                            }
-                        }
-
-                        toolCallInfo = new ToolCallChunk(toolCallIndex, toolCallId, toolCallName, ArgumentChunk: argumentChunk);
-
-                        if (!string.IsNullOrEmpty(toolCallId) || !string.IsNullOrEmpty(toolCallName))
-                        {
-                            _logger?.LogInformation("Parsed OpenAI tool call start/info. Index: {Index}, Id: {Id}, Name: {Name}", toolCallIndex, toolCallId, toolCallName);
-                        }
-                        if (!string.IsNullOrEmpty(argumentChunk))
-                        {
-                            _logger?.LogInformation("Parsed OpenAI tool call argument chunk. Index: {Index}, Length: {Length}", toolCallIndex, argumentChunk.Length);
+                            _logger?.LogInformation("Parsed OpenAI finish status: {Status}, mapped to reason: {FinishReason}", status, finishReason);
                         }
                     }
-                }
-            }
+                    break;
 
-            if (root.TryGetProperty("usage", out var usage))
-            {
-                if (usage.TryGetProperty("prompt_tokens", out var promptTokens))
-                {
-                    inputTokens = promptTokens.GetInt32();
-                }
-                if (usage.TryGetProperty("completion_tokens", out var completionTokens))
-                {
-                    outputTokens = completionTokens.GetInt32();
-                }
-                if (inputTokens.HasValue || outputTokens.HasValue)
-                {
-                    _logger?.LogDebug("Parsed OpenAI token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
-                }
-            }
+                case "response.error":
+                    _logger?.LogError("Received OpenAI error event: {ErrorJson}", root.GetRawText());
+                    finishReason = "error";
+                    if (root.TryGetProperty("error", out var errorContent)) {
+                         errorDetails = errorContent.ToString();
+                    }
+                    break;
 
-            // If we have a finish_reason but no text content, this is likely a completion signal
-            if (!string.IsNullOrEmpty(finishReason) && string.IsNullOrEmpty(textDelta) && toolCallInfo == null)
-            {
-                _logger?.LogInformation("Detected completion signal with finish_reason: {FinishReason}", finishReason);
+                case "response.created":
+                case "response.in_progress":
+                case "response.output_item.added":
+                case "response.content_part.added":
+                case "response.output_text.done":
+                case "response.content_part.done":
+                case "response.output_item.done":
+                    _logger?.LogTrace("Received OpenAI meta/structure event: {EventType}", eventType);
+                    break;
+
+                default:
+                    _logger?.LogWarning("Unhandled OpenAI event type: {EventType}", eventType);
+                    break;
             }
 
             return new ParsedChunkInfo(
@@ -132,17 +135,18 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                 InputTokens: inputTokens,
                 OutputTokens: outputTokens,
                 FinishReason: finishReason
+ 
             );
         }
         catch (JsonException jsonEx)
         {
-            _logger.LogError(jsonEx, "Failed to parse OpenAI stream chunk. RawChunk: {RawChunk}", rawJson);
-            return new ParsedChunkInfo();
+            _logger?.LogError(jsonEx, "Failed to parse OpenAI stream chunk JSON. RawChunk: {RawChunk}", rawJson);
+            return new ParsedChunkInfo(FinishReason: "error");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error parsing OpenAI stream chunk. RawChunk: {RawChunk}", rawJson);
-            return new ParsedChunkInfo();
+            _logger?.LogError(ex, "Unexpected error parsing OpenAI stream chunk. RawChunk: {RawChunk}", rawJson);
+            return new ParsedChunkInfo(FinishReason: "error");
         }
     }
-} 
+}
