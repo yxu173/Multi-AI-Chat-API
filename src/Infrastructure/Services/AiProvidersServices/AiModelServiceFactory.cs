@@ -45,6 +45,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var geminiLogger = _serviceProvider.GetService<ILogger<GeminiService>>();
         var aimlLogger = _serviceProvider.GetService<ILogger<AimlApiService>>();
         var imagenLogger = _serviceProvider.GetService<ILogger<ImagenService>>();
+        var grokLogger = _serviceProvider.GetService<ILogger<GrokService>>();
         
         return aiModel.ModelType switch
         {
@@ -52,6 +53,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             ModelType.Anthropic => new AnthropicService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.DeepSeek => new DeepSeekService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.Gemini => new GeminiService(httpClientFactory, apiKey, aiModel.ModelCode),
+            ModelType.Grok => new GrokService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.AimlFlux => new AimlApiService(httpClientFactory, apiKey, aiModel.ModelCode, aimlLogger),
             ModelType.Imagen => CreateImagenService(httpClientFactory, apiKey, aiModel.ModelCode, imagenLogger),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")

@@ -10,4 +10,5 @@ public interface IPayloadBuilderFactory
     IDeepSeekPayloadBuilder CreateDeepSeekBuilder();
     IAimlFluxPayloadBuilder CreateAimlFluxBuilder();
     IPayloadBuilder CreateImagenBuilder();
+    IGrokPayloadBuilder CreateGrokBuilder();
 } 

@@ -10,5 +10,6 @@ public enum ModelType
     Custom,
     Unknown,
     AimlFlux,
-    Imagen
+    Imagen,
+    Grok
 }

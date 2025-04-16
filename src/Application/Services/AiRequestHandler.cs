@@ -92,6 +92,7 @@ public class AiRequestHandler : IAiRequestHandler
                 ModelType.DeepSeek => await _payloadBuilderFactory.CreateDeepSeekBuilder().PreparePayloadAsync(context, toolDefinitions, cancellationToken),
                 ModelType.AimlFlux => _payloadBuilderFactory.CreateAimlFluxBuilder().PreparePayload(context),
                 ModelType.Imagen => _payloadBuilderFactory.CreateImagenBuilder().PreparePayload(context),
+                ModelType.Grok => _payloadBuilderFactory.CreateGrokBuilder().PreparePayload(context, toolDefinitions),
                 _ => throw new NotSupportedException($"Model type {modelType} is not supported for request preparation."),
             };
             return payload;

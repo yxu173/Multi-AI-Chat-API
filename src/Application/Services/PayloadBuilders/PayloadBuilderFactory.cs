@@ -44,4 +44,9 @@ public class PayloadBuilderFactory : IPayloadBuilderFactory
     {
         return _serviceProvider.GetRequiredService<ImagenPayloadBuilder>();
     }
+
+    public IGrokPayloadBuilder CreateGrokBuilder()
+    {
+        return _serviceProvider.GetRequiredService<IGrokPayloadBuilder>();
+    }
 } 
