@@ -15,7 +15,6 @@ namespace Infrastructure.Services.AiProvidersServices;
 public class GrokService : BaseAiService
 {
     private const string BaseUrl = "https://api.x.ai/v1";
-    
     public GrokService(IHttpClientFactory httpClientFactory, string? apiKey, string modelCode)
         : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {

@@ -122,7 +122,18 @@ public abstract class BaseAiService : IAiModelService
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull 
         };
         
-        var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath())
+        // Adjust endpoint path based on BaseAddress path component
+        var endpointPath = GetEndpointPath();
+        if (HttpClient.BaseAddress.AbsolutePath != "/" && endpointPath.StartsWith("/"))
+        {
+            endpointPath = endpointPath.TrimStart('/');
+        }
+        else if (!endpointPath.StartsWith("/") && HttpClient.BaseAddress.AbsolutePath == "/")
+        {
+            endpointPath = "/" + endpointPath;
+        }
+        
+        var request = new HttpRequestMessage(HttpMethod.Post, endpointPath)
         {
             Content = new StringContent(
                 // Serialize the payload object provided by the Application layer
@@ -130,6 +141,13 @@ public abstract class BaseAiService : IAiModelService
                 Encoding.UTF8, 
                 "application/json")
         };
+        
+        // For debugging purposes
+        var payload = JsonSerializer.Serialize(requestPayload.Payload, jsonOptions);
+        if (payload.Length < 1000) // Only log small payloads to avoid flooding logs
+        {
+            Console.WriteLine($"API Request to {endpointPath}: {payload}");
+        }
         
         return request;
     }
