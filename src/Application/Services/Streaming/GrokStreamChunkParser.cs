@@ -7,7 +7,6 @@ namespace Application.Services.Streaming;
 public class GrokStreamChunkParser : IStreamChunkParser
 {
     private readonly ILogger<GrokStreamChunkParser> _logger;
-    private int? _lastCompletionTokens = null;
 
     public GrokStreamChunkParser(ILogger<GrokStreamChunkParser> logger)
     {
@@ -16,108 +15,96 @@ public class GrokStreamChunkParser : IStreamChunkParser
 
     public ModelType SupportedModelType => ModelType.Grok;
 
-    public ParsedChunkInfo ParseChunk(string rawDataLine)
+    public ParsedChunkInfo ParseChunk(string rawJson)
     {
-        if (string.IsNullOrWhiteSpace(rawDataLine) || !rawDataLine.StartsWith("data:"))
+        // Grok uses the 'data: [DONE]' marker *outside* the JSON payload.
+        // The ReadStreamAsync method in the service layer filters this out.
+        // So, we only expect JSON objects here.
+        if (string.IsNullOrWhiteSpace(rawJson) || rawJson == "[DONE]")
         {
-            return new ParsedChunkInfo(); // Ignore empty lines or lines not starting with data:
-        }
-
-        var jsonData = rawDataLine.Substring(5).Trim(); // Remove "data: " prefix
-
-        if (jsonData == "[DONE]")
-        {
-            _logger?.LogInformation("Grok stream finished with [DONE] marker.");
-            // Reset token tracking for next stream
-            var finalOutputTokens = _lastCompletionTokens;
-            _lastCompletionTokens = null;
-            // Return final output tokens if tracked, otherwise null
-            return new ParsedChunkInfo(FinishReason: "stop", OutputTokens: finalOutputTokens);
+            _logger?.LogTrace("[GrokParser] Received empty or DONE marker, indicating end of stream (handled upstream).");
+            // Return empty chunk; stream termination is handled by StreamProcessor
+            return new ParsedChunkInfo(); 
         }
 
         try
         {
-            using var doc = JsonDocument.Parse(jsonData);
+            _logger?.LogTrace("[GrokParser] Received raw data chunk: {RawContent}", rawJson);
+
+            using var doc = JsonDocument.Parse(rawJson);
             var root = doc.RootElement;
 
             string? textDelta = null;
             int? inputTokens = null;
-            int? outputTokensDelta = null; // We'll calculate the delta
-            string? finishReason = null;
+            int? outputTokens = null;
+            string? finishReason = null; // Grok doesn't explicitly send finish_reason in delta chunks AFAIK
+            ToolCallChunk? toolCallInfo = null; // Grok doesn't support tools in the example
 
+            // Extract Text Delta
             if (root.TryGetProperty("choices", out var choicesElement) && choicesElement.ValueKind == JsonValueKind.Array && choicesElement.GetArrayLength() > 0)
             {
                 var firstChoice = choicesElement[0];
-                if (firstChoice.TryGetProperty("delta", out var deltaElement))
+                if (firstChoice.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.Object)
                 {
                     if (deltaElement.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String)
                     {
                         textDelta = contentElement.GetString();
                         _logger?.LogTrace("Parsed Grok text delta: '{TextDelta}'", textDelta);
                     }
-                }
-                 // Grok might also include a finish_reason in the choice, though not shown in basic example
-                 if (firstChoice.TryGetProperty("finish_reason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String)
-                 {
-                     var reason = reasonElement.GetString();
-                     finishReason = reason switch
-                     {
-                         "stop" => "stop",
-                         "length" => "length",
-                         "tool_calls" => "tool_calls", // Hypothetical, based on OpenAI/Anthropic
-                         _ => reason // Pass through unknown reasons
-                     };
-                     _logger?.LogInformation("Parsed Grok finish reason: {Reason} (normalized: {Normalized})", reason, finishReason);
-                 }
-            }
-
-            if (root.TryGetProperty("usage", out var usageElement))
-            {
-                // Input tokens are usually sent once, capture if available
-                if (usageElement.TryGetProperty("prompt_tokens", out var promptTokensElement) && promptTokensElement.TryGetInt32(out var promptVal))
-                {
-                    inputTokens = promptVal;
-                    _logger?.LogDebug("Parsed Grok input (prompt) tokens: {InputTokens}", inputTokens);
-                }
-
-                // Output tokens are cumulative, calculate delta
-                if (usageElement.TryGetProperty("completion_tokens", out var completionTokensElement) && completionTokensElement.TryGetInt32(out var currentCompletionVal))
-                {
-                    if (_lastCompletionTokens.HasValue)
-                    {
-                        outputTokensDelta = Math.Max(0, currentCompletionVal - _lastCompletionTokens.Value); // Ensure non-negative delta
+                    // Check for finish reason in choice (though not standard in Grok examples)
+                    if (firstChoice.TryGetProperty("finish_reason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String)
+                    { 
+                        finishReason = reasonElement.GetString();
+                        _logger?.LogDebug("Parsed Grok finish reason from choice: {FinishReason}", finishReason);
                     }
-                    else
-                    {
-                        outputTokensDelta = currentCompletionVal; // First time seeing it
-                    }
-                    _logger?.LogTrace("Parsed Grok cumulative completion tokens: {CumulativeTokens}, Delta: {DeltaTokens}", currentCompletionVal, outputTokensDelta);
-                    _lastCompletionTokens = currentCompletionVal; // Update last seen value
                 }
             }
 
-            // If a finish reason was found in the choice, reset token tracking
-            if (!string.IsNullOrEmpty(finishReason))
+            // Extract Token Usage (present in each chunk in the example)
+            if (root.TryGetProperty("usage", out var usageElement) && usageElement.ValueKind == JsonValueKind.Object)
             {
-                _lastCompletionTokens = null;
+                if (usageElement.TryGetProperty("prompt_tokens", out var promptTokensElement) && promptTokensElement.TryGetInt32(out var pt))
+                {
+                    inputTokens = pt;
+                }
+                if (usageElement.TryGetProperty("completion_tokens", out var completionTokensElement) && completionTokensElement.TryGetInt32(out var ct))
+                {
+                    outputTokens = ct;
+                }
+                 _logger?.LogTrace("Parsed Grok token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
             }
+
+            // If we received content, it's not the final signal chunk.
+            // If no content and no explicit finish reason, it might be the final chunk before [DONE]
+            // or an empty chunk. The StreamProcessor will handle stream termination.
+            if (finishReason == null && textDelta == null)
+            {
+                 _logger?.LogTrace("Grok chunk has no text delta or explicit finish reason. Might be final data chunk before [DONE].");
+            }
+            
+            // Map Grok's implicit completion (end of stream) to a reason if needed, 
+            // but typically handled by the caller observing the stream end.
+            // Let's rely on the StreamProcessor detecting the end for now.
 
             return new ParsedChunkInfo(
                 TextDelta: textDelta,
+                ToolCallInfo: toolCallInfo, // Null for Grok currently
                 InputTokens: inputTokens,
-                OutputTokens: outputTokensDelta, // Send the calculated delta
-                FinishReason: finishReason
+                OutputTokens: outputTokens,
+                FinishReason: finishReason // Usually null for Grok chunks, completion inferred by stream end
             );
         }
         catch (JsonException jsonEx)
-        {
-            _logger?.LogError(jsonEx, "Failed to parse Grok stream chunk JSON. Raw JSON: {RawJson}", jsonData);
-            return new ParsedChunkInfo(FinishReason: "error"); // Indicate an error
+        {    
+            _logger?.LogError(jsonEx, "Failed to parse Grok stream chunk JSON. RawChunk: {RawChunk}", rawJson);
+            // Signal error to the processor
+            return new ParsedChunkInfo(FinishReason: "error"); 
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Unexpected error parsing Grok stream chunk. Raw JSON: {RawJson}", jsonData);
-            return new ParsedChunkInfo(FinishReason: "error"); // Indicate an error
+            _logger?.LogError(ex, "Unexpected error parsing Grok stream chunk. RawChunk: {RawChunk}", rawJson);
+             // Signal error to the processor
+            return new ParsedChunkInfo(FinishReason: "error");
         }
     }
 } 

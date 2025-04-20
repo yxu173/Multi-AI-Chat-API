@@ -53,9 +53,9 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             ModelType.Anthropic => new AnthropicService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.DeepSeek => new DeepSeekService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.Gemini => new GeminiService(httpClientFactory, apiKey, aiModel.ModelCode),
-            ModelType.Grok => new GrokService(httpClientFactory, apiKey, aiModel.ModelCode),
             ModelType.AimlFlux => new AimlApiService(httpClientFactory, apiKey, aiModel.ModelCode, aimlLogger),
             ModelType.Imagen => CreateImagenService(httpClientFactory, apiKey, aiModel.ModelCode, imagenLogger),
+            ModelType.Grok => new GrokService(httpClientFactory, apiKey, aiModel.ModelCode),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
     }

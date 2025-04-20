@@ -92,7 +92,7 @@ public class AiRequestHandler : IAiRequestHandler
                 ModelType.DeepSeek => await _payloadBuilderFactory.CreateDeepSeekBuilder().PreparePayloadAsync(context, toolDefinitions, cancellationToken),
                 ModelType.AimlFlux => _payloadBuilderFactory.CreateAimlFluxBuilder().PreparePayload(context),
                 ModelType.Imagen => _payloadBuilderFactory.CreateImagenBuilder().PreparePayload(context),
-                ModelType.Grok => _payloadBuilderFactory.CreateGrokBuilder().PreparePayload(context, toolDefinitions),
+                ModelType.Grok => _payloadBuilderFactory.CreateGrokBuilder().PreparePayload(context),
                 _ => throw new NotSupportedException($"Model type {modelType} is not supported for request preparation."),
             };
             return payload;
@@ -173,6 +173,10 @@ public class AiRequestHandler : IAiRequestHandler
                         
                     case ModelType.DeepSeek:
                         _logger?.LogWarning("Tool definition formatting for DeepSeek is not yet defined/supported. Skipping tool: {ToolName}", def.Name);
+                        break;
+
+                    case ModelType.Grok:
+                        // Format for Grok's tool specification
                         break;
 
                     default:

@@ -149,6 +149,9 @@ public abstract class BaseAiService : IAiModelService
             Console.WriteLine($"API Request to {endpointPath}: {payload}");
         }
         
+        // Log the final Request URI before returning
+        Console.WriteLine($"[BaseAiService] Requesting URI: {request.RequestUri}"); 
+        
         return request;
     }
 

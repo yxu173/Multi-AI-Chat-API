@@ -1,29 +1,27 @@
+using System.Runtime.CompilerServices;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Infrastructure.Services.AiProvidersServices.Base;
-using System.Threading.Tasks;
-using System.Threading;
-using System.Collections.Generic;
-using System.Net.Http;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Runtime.CompilerServices;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
 public class GrokService : BaseAiService
 {
-    private const string BaseUrl = "https://api.x.ai/v1";
+    private const string GrokBaseUrl = "https://api.x.ai/v1/";
+
     public GrokService(IHttpClientFactory httpClientFactory, string? apiKey, string modelCode)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
+        : base(httpClientFactory, apiKey, modelCode, GrokBaseUrl)
     {
     }
 
     protected override void ConfigureHttpClient()
     {
+        // Ensure API key is provided
+        if (string.IsNullOrWhiteSpace(ApiKey))
+        {
+            throw new InvalidOperationException("Grok API key is missing.");
+        }
         HttpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {ApiKey}");
-        HttpClient.DefaultRequestHeaders.Add("Accept", "text/event-stream");
     }
 
     protected override string GetEndpointPath() => "chat/completions";
@@ -32,10 +30,13 @@ public class GrokService : BaseAiService
         AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var request = CreateRequest(requestPayload);
         HttpResponseMessage? response = null;
+        
         try
         {
+            var request = CreateRequest(requestPayload);
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+            
             response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
         }
@@ -50,19 +51,21 @@ public class GrokService : BaseAiService
             throw;
         }
 
-        try
+        // Process the stream outside the try/catch to avoid the 'yield return cannot appear in try/catch' error
+        if (response != null)
         {
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                               .WithCancellation(cancellationToken))
+            try
             {
-                if (cancellationToken.IsCancellationRequested) break;
-
-                yield return new AiRawStreamChunk(jsonChunk);
+                await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken))
+                {
+                    if (cancellationToken.IsCancellationRequested) break;
+                    yield return new AiRawStreamChunk(jsonChunk);
+                }
+            }
+            finally
+            {
+                response.Dispose();
             }
         }
-        finally
-        {
-            response?.Dispose();
-        }
     }
-}
+} 
