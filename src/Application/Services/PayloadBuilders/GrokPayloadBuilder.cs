@@ -36,6 +36,9 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
             requestObj["temperature"] = 0;
         }
 
+        // Add reasoning_effort parameter
+        requestObj["reasoning_effort"] = "high";
+
         // Process messages for Grok's format
         var processedMessages = ProcessMessagesForGrokInput(context.History, context.AiAgent, context.UserSettings);
         requestObj["messages"] = processedMessages;

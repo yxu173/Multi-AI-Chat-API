@@ -95,7 +95,7 @@ public class MessageStreamer
             }
 
             var finalUpdateToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
-            await FinalizeMessageState(aiMessage, finalAiResponseContent, aiResponseCompleted, finalUpdateToken);
+            await FinalizeMessageState(aiMessage, aiResponseCompleted, finalUpdateToken);
             await _tokenUsageTracker.FinalizeTokenUsage(chatSessionId, aiModel, totalInputTokens, totalOutputTokens, finalUpdateToken);
         }
         catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
@@ -223,7 +223,7 @@ public class MessageStreamer
             // Capture thinking content if available in the result
             if (!string.IsNullOrEmpty(streamResult.ThinkingContent))
             {
-                 accumulatedThinkingContent = streamResult.ThinkingContent;
+                accumulatedThinkingContent = streamResult.ThinkingContent;
                 _logger.LogDebug("Captured thinking content for message {MessageId} (Length: {Length})", aiMessage.Id, accumulatedThinkingContent.Length);
             }
 
@@ -270,22 +270,22 @@ public class MessageStreamer
             _logger.LogWarning("AI response seems incomplete for message {MessageId} after loop.", aiMessage.Id);
         }
         
-        // Pass thinking content to FinalizeMessageState
+        // Update thinking content in message entity
+        if (!string.IsNullOrEmpty(accumulatedThinkingContent))
+        {
+            aiMessage.UpdateThinkingContent(accumulatedThinkingContent);
+            _logger.LogInformation("Updated thinking content for message {MessageId} (Length: {Length})", 
+                aiMessage.Id, accumulatedThinkingContent.Length);
+        }
+        
+        // Pass finalContent rather than accumulatedThinkingContent
         var finalUpdateToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
-        // Corrected call: Pass accumulatedThinkingContent and cancellation status
-        await FinalizeMessageState(aiMessage, accumulatedThinkingContent, cancellationToken.IsCancellationRequested, finalUpdateToken);
+        await FinalizeMessageState(aiMessage, aiResponseCompleted, finalUpdateToken);
         await _tokenUsageTracker.FinalizeTokenUsage(requestContext.ChatSession.Id, requestContext.SpecificModel, totalInputTokens, totalOutputTokens, finalUpdateToken);
     }
 
-    private async Task FinalizeMessageState(Message aiMessage, string? thinkingContent, bool wasCancelled, CancellationToken cancellationToken)
+    private async Task FinalizeMessageState(Message aiMessage, bool wasCancelled, CancellationToken cancellationToken)
     {
-        // Update thinking content before finalizing status
-        if (!string.IsNullOrEmpty(thinkingContent))
-        {
-            aiMessage.UpdateThinkingContent(thinkingContent);
-             _logger.LogInformation("Updating thinking content for message {MessageId}", aiMessage.Id);
-        }
-        
         if (aiMessage.Status == MessageStatus.Streaming)
         {
             if (wasCancelled)
@@ -294,8 +294,7 @@ public class MessageStreamer
             }
             else
             {
-                _logger.LogWarning("Message {MessageId} status was still Streaming before final save. Setting to Interrupted.", aiMessage.Id);
-                aiMessage.InterruptMessage();
+                aiMessage.CompleteMessage();
             }
         }
 

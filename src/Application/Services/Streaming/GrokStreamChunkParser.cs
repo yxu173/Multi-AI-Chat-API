@@ -17,13 +17,9 @@ public class GrokStreamChunkParser : IStreamChunkParser
 
     public ParsedChunkInfo ParseChunk(string rawJson)
     {
-        // Grok uses the 'data: [DONE]' marker *outside* the JSON payload.
-        // The ReadStreamAsync method in the service layer filters this out.
-        // So, we only expect JSON objects here.
         if (string.IsNullOrWhiteSpace(rawJson) || rawJson == "[DONE]")
         {
             _logger?.LogTrace("[GrokParser] Received empty or DONE marker, indicating end of stream (handled upstream).");
-            // Return empty chunk; stream termination is handled by StreamProcessor
             return new ParsedChunkInfo(); 
         }
 
@@ -35,15 +31,16 @@ public class GrokStreamChunkParser : IStreamChunkParser
             var root = doc.RootElement;
 
             string? textDelta = null;
+            string? thinkingDelta = null;
             int? inputTokens = null;
             int? outputTokens = null;
-            string? finishReason = null; // Grok doesn't explicitly send finish_reason in delta chunks AFAIK
-            ToolCallChunk? toolCallInfo = null; // Grok doesn't support tools in the example
+            string? finishReason = null; 
+            ToolCallChunk? toolCallInfo = null; 
 
-            // Extract Text Delta
             if (root.TryGetProperty("choices", out var choicesElement) && choicesElement.ValueKind == JsonValueKind.Array && choicesElement.GetArrayLength() > 0)
             {
                 var firstChoice = choicesElement[0];
+                
                 if (firstChoice.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.Object)
                 {
                     if (deltaElement.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String)
@@ -51,16 +48,22 @@ public class GrokStreamChunkParser : IStreamChunkParser
                         textDelta = contentElement.GetString();
                         _logger?.LogTrace("Parsed Grok text delta: '{TextDelta}'", textDelta);
                     }
-                    // Check for finish reason in choice (though not standard in Grok examples)
+                    
                     if (firstChoice.TryGetProperty("finish_reason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String)
                     { 
                         finishReason = reasonElement.GetString();
                         _logger?.LogDebug("Parsed Grok finish reason from choice: {FinishReason}", finishReason);
                     }
                 }
+                
+                if (deltaElement.TryGetProperty("reasoning_content", out var reasoningElement) && reasoningElement.ValueKind == JsonValueKind.String)
+                {
+                    thinkingDelta = reasoningElement.GetString();
+                    _logger?.LogTrace("Parsed Grok reasoning content: '{ReasoningContent}'", thinkingDelta);
+                }
             }
 
-            // Extract Token Usage (present in each chunk in the example)
+            // Extract Token Usage
             if (root.TryGetProperty("usage", out var usageElement) && usageElement.ValueKind == JsonValueKind.Object)
             {
                 if (usageElement.TryGetProperty("prompt_tokens", out var promptTokensElement) && promptTokensElement.TryGetInt32(out var pt))
@@ -71,27 +74,30 @@ public class GrokStreamChunkParser : IStreamChunkParser
                 {
                     outputTokens = ct;
                 }
-                 _logger?.LogTrace("Parsed Grok token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
+                
+                // Try to get reasoning tokens as well
+                if (usageElement.TryGetProperty("reasoning_tokens", out var reasoningTokensElement) && reasoningTokensElement.TryGetInt32(out var rt))
+                {
+                    _logger?.LogTrace("Found reasoning tokens: {ReasoningTokens}", rt);
+                    // We could add these tokens to the output tokens if needed
+                }
+                
+                _logger?.LogTrace("Parsed Grok token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
             }
 
             // If we received content, it's not the final signal chunk.
-            // If no content and no explicit finish reason, it might be the final chunk before [DONE]
-            // or an empty chunk. The StreamProcessor will handle stream termination.
-            if (finishReason == null && textDelta == null)
+            if (finishReason == null && textDelta == null && thinkingDelta == null)
             {
-                 _logger?.LogTrace("Grok chunk has no text delta or explicit finish reason. Might be final data chunk before [DONE].");
+                _logger?.LogTrace("Grok chunk has no text delta, reasoning, or explicit finish reason. Might be final data chunk before [DONE].");
             }
-            
-            // Map Grok's implicit completion (end of stream) to a reason if needed, 
-            // but typically handled by the caller observing the stream end.
-            // Let's rely on the StreamProcessor detecting the end for now.
 
             return new ParsedChunkInfo(
                 TextDelta: textDelta,
-                ToolCallInfo: toolCallInfo, // Null for Grok currently
+                ThinkingDelta: thinkingDelta,
+                ToolCallInfo: toolCallInfo,
                 InputTokens: inputTokens,
                 OutputTokens: outputTokens,
-                FinishReason: finishReason // Usually null for Grok chunks, completion inferred by stream end
+                FinishReason: finishReason
             );
         }
         catch (JsonException jsonEx)
@@ -103,7 +109,7 @@ public class GrokStreamChunkParser : IStreamChunkParser
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Unexpected error parsing Grok stream chunk. RawChunk: {RawChunk}", rawJson);
-             // Signal error to the processor
+            // Signal error to the processor
             return new ParsedChunkInfo(FinishReason: "error");
         }
     }
