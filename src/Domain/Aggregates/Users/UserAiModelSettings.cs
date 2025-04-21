@@ -33,7 +33,7 @@ public sealed class UserAiModelSettings : BaseEntity
         int? topK,
         double? frequencyPenalty,
         double? presencePenalty,
-        string? contextLimit,
+        int? contextLimit,
         int? maxTokens,
         string? safetySettings,
         bool? promptCaching)

@@ -6,7 +6,7 @@ public sealed record UpdateUserAiModelSettingsCommand(
     Guid UserId,
     Guid AiModelId,
     string SystemMessage,
-    string? ContextLimit,
+    int? ContextLimit,
     double? Temperature,
     double? TopP,
     int? TopK,

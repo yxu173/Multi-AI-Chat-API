@@ -7,7 +7,7 @@ public record ModelParameters : ValueObject
 {
     public string SystemInstructions { get; init; }
     public Guid DefaultModel { get; private set; }
-    public string ContextLimit { get; init; }
+    public int ContextLimit { get; init; }
     public double Temperature { get; init; }
     public double PresencePenalty { get; init; }
     public double FrequencyPenalty { get; init; }
@@ -34,7 +34,7 @@ public record ModelParameters : ValueObject
         bool? enableThinking = null,
         List<string>? stopSequences = null,
         bool? promptCaching = null,
-        string? contextLimit = null,
+        int? contextLimit = null,
         string? safetySettings = null)
     {
         return new ModelParameters
@@ -49,7 +49,7 @@ public record ModelParameters : ValueObject
             MaxTokens = maxTokens ?? 1000,
             StopSequences = stopSequences ?? new List<string>(),
             PromptCaching = promptCaching ?? false,
-            ContextLimit = contextLimit ?? "4096",
+            ContextLimit = contextLimit ?? 0,
             SafetySettings = safetySettings ?? string.Empty,
         };
     }
@@ -64,7 +64,7 @@ public record ModelParameters : ValueObject
         double? topP = null,
         int? topK = null,
         int? maxTokens = null,
-        string? contextLimit = null,
+        int? contextLimit = null,
         bool? promptCaching = null,
         string? safetySettings = null)
     {

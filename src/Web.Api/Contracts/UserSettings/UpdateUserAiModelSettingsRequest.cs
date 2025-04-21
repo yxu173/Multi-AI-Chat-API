@@ -3,7 +3,7 @@ namespace Web.Api.Contracts.UserSettings;
 public record UpdateUserAiModelSettingsRequest(
     string SystemMessage,
     Guid AiModelId,
-    string? ContextLimit,
+    int? ContextLimit,
     double? Temperature,
     double? TopP,
     int? TopK,

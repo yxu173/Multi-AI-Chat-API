@@ -21,7 +21,7 @@ public sealed record CreateAiAgentCommand(
     bool? EnableThinking = null,
     List<string>? StopSequences = null,
     bool? PromptCaching = null,
-    string? ContextLimit = null,
+    int? ContextLimit = null,
     string? SafetySettings = null,
     string? ProfilePictureUrl = null,
     List<PluginInfo>? Plugins = null) : ICommand<Guid>;
