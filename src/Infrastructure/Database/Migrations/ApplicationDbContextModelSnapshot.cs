@@ -434,14 +434,6 @@ namespace Infrastructure.Database.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("ParametersSchema")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("PluginType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 

@@ -1,6 +1,7 @@
 using Application.Features.Plugins.AddPluginToChat;
 using Application.Features.Plugins.AddUserPlugin;
 using Application.Features.Plugins.CreatePlugin;
+using Application.Features.Plugins.GetAllPlugins;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.Plugins;
 using Web.Api.Extensions;
@@ -13,8 +14,7 @@ public class PluginController : BaseController
     [HttpPost("create")]
     public async Task<IResult> Create([FromBody] CreatePluginRequest request)
     {
-        var command = new CreatePluginCommand(request.Name, request.Description, request.PluginType,
-            request.ParametersSchema);
+        var command = new CreatePluginCommand(request.Name, request.Description, request.IconUrl);
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
@@ -32,6 +32,14 @@ public class PluginController : BaseController
     {
         var command = new AddPluginToChatCommand(request.ChatId, request.PluginId);
         var result = await _mediator.Send(command);
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [HttpGet]
+    public async Task<IResult> GetAllPlugins()
+    {
+        var query = new GetAllPluginsQuery();
+        var result = await _mediator.Send(query);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

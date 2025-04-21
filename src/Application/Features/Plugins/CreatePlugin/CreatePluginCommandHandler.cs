@@ -16,7 +16,7 @@ public sealed class CreatePluginCommandHandler : ICommandHandler<CreatePluginCom
 
     public async Task<Result<Guid>> Handle(CreatePluginCommand request, CancellationToken cancellationToken)
     {
-        var plugin = Plugin.Create(request.Name, request.Description, request.PluginType, request.ParametersSchema);
+        var plugin = Plugin.Create(request.Name, request.Description, request.IconUrl);
         await _pluginRepository.AddAsync(plugin);
         return Result.Success(plugin.Id);
     }
