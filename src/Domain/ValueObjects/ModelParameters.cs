@@ -49,7 +49,7 @@ public record ModelParameters : ValueObject
             MaxTokens = maxTokens ?? 1000,
             StopSequences = stopSequences ?? new List<string>(),
             PromptCaching = promptCaching ?? false,
-            ContextLimit = contextLimit ?? 0,
+            ContextLimit = contextLimit ?? 2, //TODO: Make it 0 for no limit
             SafetySettings = safetySettings ?? string.Empty,
         };
     }

@@ -10,7 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Application.Services;
 
-
 public class ChatService
 {
     private readonly ChatSessionService _chatSessionService;
@@ -39,14 +38,15 @@ public class ChatService
             aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _aiAgentRepository = aiAgentRepository ?? throw new ArgumentNullException(nameof(aiAgentRepository));
-        _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
+        _fileAttachmentRepository = fileAttachmentRepository ??
+                                    throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     }
 
     public async Task SendUserMessageAsync(
-        Guid chatSessionId, 
-        Guid userId, 
-        string content, 
+        Guid chatSessionId,
+        Guid userId,
+        string content,
         bool enableThinking = false,
         string? imageSize = null,
         int? numImages = null,
@@ -57,7 +57,7 @@ public class ChatService
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
         var userMessage =
-            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content, 
+            await _messageService.CreateAndSaveUserMessageAsync(userId, chatSessionId, content,
                 fileAttachments: null, cancellationToken);
 
         await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
@@ -65,17 +65,17 @@ public class ChatService
         chatSession.AddMessage(aiMessage);
 
         var (aiService, aiAgent) = await PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
-        var userSettings = await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
-        var history = PrepareMessageHistory(chatSession, userMessage, aiMessage);
+        var userSettings =
+            await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
 
         var requestContext = new AiRequestContext(
             UserId: userId,
             ChatSession: chatSession,
-            History: history,
-            AiAgent: aiAgent, 
+            History: new List<MessageDto>(),
+            AiAgent: aiAgent,
             UserSettings: userSettings,
             SpecificModel: chatSession.AiModel,
-            RequestSpecificThinking : enableThinking,
+            RequestSpecificThinking: enableThinking,
             ImageSize: imageSize,
             NumImages: numImages,
             OutputFormat: outputFormat,
@@ -83,13 +83,15 @@ public class ChatService
             SafetyTolerance: safetyTolerance
         );
 
+        requestContext = requestContext with { History = PrepareMessageHistory(requestContext, aiMessage) };
+
         await _messageStreamer.StreamResponseAsync(requestContext, aiMessage, aiService, cancellationToken);
     }
 
     public async Task EditUserMessageAsync(
-        Guid chatSessionId, 
-        Guid userId, 
-        Guid messageId, 
+        Guid chatSessionId,
+        Guid userId,
+        Guid messageId,
         string newContent,
         string? imageSize = null,
         int? numImages = null,
@@ -99,11 +101,12 @@ public class ChatService
         CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
-        var messageToEdit = chatSession.Messages.FirstOrDefault(m => m.Id == messageId && m.UserId == userId && !m.IsFromAi);
+        var messageToEdit =
+            chatSession.Messages.FirstOrDefault(m => m.Id == messageId && m.UserId == userId && !m.IsFromAi);
         if (messageToEdit == null) throw new Exception("Message not found or you do not have permission to edit it.");
 
         var contentToUse = newContent;
-        
+
         var fileAttachments = messageToEdit.FileAttachments?.ToList() ?? new List<FileAttachment>();
         List<Guid> newFileAttachmentIds = ExtractFileAttachmentIds(contentToUse);
         if (newFileAttachmentIds.Any())
@@ -114,12 +117,15 @@ public class ChatService
                 var attachment = await _fileAttachmentRepository.GetByIdAsync(fileId, cancellationToken);
                 if (attachment != null) newFileAttachments.Add(attachment);
             }
+
             fileAttachments = newFileAttachments;
         }
-        
-        await _messageService.UpdateMessageContentAsync(messageToEdit, contentToUse, fileAttachments, cancellationToken);
-        await _mediator.Publish(new MessageEditedNotification(chatSessionId, messageId, contentToUse), cancellationToken);
-        
+
+        await _messageService.UpdateMessageContentAsync(messageToEdit, contentToUse, fileAttachments,
+            cancellationToken);
+        await _mediator.Publish(new MessageEditedNotification(chatSessionId, messageId, contentToUse),
+            cancellationToken);
+
         var subsequentAiMessages = chatSession.Messages
             .Where(m => m.IsFromAi && m.CreatedAt > messageToEdit.CreatedAt)
             .OrderBy(m => m.CreatedAt)
@@ -134,13 +140,13 @@ public class ChatService
         chatSession.AddMessage(aiMessage);
 
         var (aiService, aiAgent) = await PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
-        var userSettings = await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
-        var history = PrepareMessageHistory(chatSession, messageToEdit, aiMessage);
+        var userSettings =
+            await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
 
         var requestContext = new AiRequestContext(
             UserId: userId,
             ChatSession: chatSession,
-            History: history,
+            History: new List<MessageDto>(),
             AiAgent: aiAgent,
             UserSettings: userSettings,
             SpecificModel: chatSession.AiModel,
@@ -150,6 +156,8 @@ public class ChatService
             EnableSafetyChecker: enableSafetyChecker,
             SafetyTolerance: safetyTolerance
         );
+
+        requestContext = requestContext with { History = PrepareMessageHistory(requestContext, aiMessage) };
 
         await _messageStreamer.StreamResponseAsync(requestContext, aiMessage, aiService, cancellationToken);
     }
@@ -162,7 +170,8 @@ public class ChatService
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);
 
-        var userMessage = chatSession.Messages.FirstOrDefault(m => m.Id == userMessageId && m.UserId == userId && !m.IsFromAi);
+        var userMessage =
+            chatSession.Messages.FirstOrDefault(m => m.Id == userMessageId && m.UserId == userId && !m.IsFromAi);
         if (userMessage == null) throw new Exception("Original user message not found or access denied.");
 
         var aiMessageToDelete = chatSession.Messages
@@ -174,37 +183,33 @@ public class ChatService
         {
             chatSession.RemoveMessage(aiMessageToDelete);
             await _messageService.DeleteMessageAsync(aiMessageToDelete.Id, cancellationToken);
-            await _mediator.Publish(new MessageDeletedNotification(chatSessionId, aiMessageToDelete.Id), cancellationToken);
+            await _mediator.Publish(new MessageDeletedNotification(chatSessionId, aiMessageToDelete.Id),
+                cancellationToken);
         }
 
         var newAiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
         chatSession.AddMessage(newAiMessage);
 
         var (aiService, aiAgent) = await PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
-        var userSettings = await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
-        
-        var history = chatSession.Messages
-            .Where(m => m.Id != newAiMessage.Id && m.CreatedAt <= userMessage.CreatedAt)
-            .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id) {
-                 FileAttachments = m.FileAttachments?.ToList()
-            })
-            .ToList();
+        var userSettings =
+            await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
 
         var requestContext = new AiRequestContext(
             UserId: userId,
             ChatSession: chatSession,
-            History: history,
+            History: new List<MessageDto>(),
             AiAgent: aiAgent,
             UserSettings: userSettings,
             SpecificModel: chatSession.AiModel,
             RequestSpecificThinking: false,
-            ImageSize: null, 
+            ImageSize: null,
             NumImages: null,
             OutputFormat: null,
             EnableSafetyChecker: null,
             SafetyTolerance: null
         );
+
+        requestContext = requestContext with { History = PrepareMessageHistory(requestContext, newAiMessage) };
 
         await _messageStreamer.StreamResponseAsync(requestContext, newAiMessage, aiService, cancellationToken);
     }
@@ -229,13 +234,40 @@ public class ChatService
         return (aiService, aiAgent);
     }
 
-    private List<MessageDto> PrepareMessageHistory(ChatSession chatSession, Message userMessageTrigger, Message currentAiMessagePlaceholder)
+    private List<MessageDto> PrepareMessageHistory(AiRequestContext context, Message currentAiMessagePlaceholder)
     {
-        return chatSession.Messages
+        var chatSession = context.ChatSession;
+        var aiAgent = context.AiAgent;
+        var userSettings = context.UserSettings;
+
+        int contextLimit = 0;
+        if (aiAgent?.AssignCustomModelParameters == true && aiAgent.ModelParameter != null)
+        {
+            contextLimit = aiAgent.ModelParameter.ContextLimit;
+        }
+        else if (userSettings != null)
+        {
+            contextLimit = userSettings.ModelParameters.ContextLimit;
+        }
+
+        var messagesQuery = chatSession.Messages
             .Where(m => m.Id != currentAiMessagePlaceholder.Id)
-            .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id) { 
-                 FileAttachments = m.FileAttachments?.ToList()
+            .OrderBy(m => m.CreatedAt);
+
+        IEnumerable<Message> limitedMessages;
+        if (contextLimit > 0)
+        {
+            limitedMessages = messagesQuery.TakeLast(contextLimit);
+        }
+        else
+        {
+            limitedMessages = messagesQuery;
+        }
+
+        return limitedMessages
+            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id)
+            {
+                FileAttachments = m.FileAttachments?.ToList()
             })
             .ToList();
     }
@@ -243,8 +275,10 @@ public class ChatService
     private List<Guid> ExtractFileAttachmentIds(string content)
     {
         var fileIds = new List<Guid>();
-        
-        var imageMatches = System.Text.RegularExpressions.Regex.Matches(content, @"<(image|file):[^>]*?/api/file/([0-9a-fA-F-]{36})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        var imageMatches = System.Text.RegularExpressions.Regex.Matches(content,
+            @"<(image|file):[^>]*?/api/file/([0-9a-fA-F-]{36})",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         foreach (System.Text.RegularExpressions.Match match in imageMatches)
         {
             if (Guid.TryParse(match.Groups[2].Value, out Guid fileId))
@@ -252,7 +286,7 @@ public class ChatService
                 fileIds.Add(fileId);
             }
         }
-        
+
         return fileIds;
     }
 }
