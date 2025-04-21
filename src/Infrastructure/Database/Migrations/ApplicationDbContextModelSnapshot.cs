@@ -123,10 +123,6 @@ namespace Infrastructure.Database.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<string>("IconUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<DateTime?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -835,10 +831,6 @@ namespace Infrastructure.Database.Migrations
                                 .HasColumnType("character varying(1000)")
                                 .HasColumnName("SafetySettings");
 
-                            b1.Property<string>("StopSequences")
-                                .HasColumnType("text")
-                                .HasColumnName("StopSequences");
-
                             b1.Property<string>("SystemInstructions")
                                 .IsRequired()
                                 .HasMaxLength(1000)
@@ -1052,10 +1044,6 @@ namespace Infrastructure.Database.Migrations
                                 .HasMaxLength(1000)
                                 .HasColumnType("character varying(1000)")
                                 .HasColumnName("SafetySettings");
-
-                            b1.Property<string>("StopSequences")
-                                .HasColumnType("text")
-                                .HasColumnName("StopSequences");
 
                             b1.Property<string>("SystemInstructions")
                                 .IsRequired()

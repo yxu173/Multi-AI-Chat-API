@@ -14,7 +14,6 @@ public record ModelParameters : ValueObject
     public double TopP { get; init; }
     public int TopK { get; init; }
     public int MaxTokens { get; init; }
-    public List<string>? StopSequences { get; init; }
     public bool PromptCaching { get; init; }
     public string? SafetySettings { get; init; }
 
@@ -32,7 +31,6 @@ public record ModelParameters : ValueObject
         int? topK = null,
         int? maxTokens = null,
         bool? enableThinking = null,
-        List<string>? stopSequences = null,
         bool? promptCaching = null,
         int? contextLimit = null,
         string? safetySettings = null)
@@ -47,7 +45,6 @@ public record ModelParameters : ValueObject
             TopP = topP ?? 1.0,
             TopK = topK ?? 40,
             MaxTokens = maxTokens ?? 1000,
-            StopSequences = stopSequences ?? new List<string>(),
             PromptCaching = promptCaching ?? false,
             ContextLimit = contextLimit ?? 2, //TODO: Make it 0 for no limit
             SafetySettings = safetySettings ?? string.Empty,
@@ -109,13 +106,5 @@ public record ModelParameters : ValueObject
         yield return ContextLimit;
         yield return PromptCaching;
         yield return SafetySettings;
-        
-        if (StopSequences != null)
-        {
-            foreach (var sequence in StopSequences)
-            {
-                yield return sequence;
-            }
-        }
     }
 } 

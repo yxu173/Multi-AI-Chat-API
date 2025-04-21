@@ -35,7 +35,6 @@ public abstract class BasePayloadBuilder
             parameters["frequency_penalty"] = sourceParams.FrequencyPenalty;
             parameters["presence_penalty"] = sourceParams.PresencePenalty;
             parameters["max_tokens"] = sourceParams.MaxTokens;
-            if (sourceParams.StopSequences?.Any() == true) parameters["stop"] = sourceParams.StopSequences;
         }
         else if (userSettings != null)
         {
@@ -44,7 +43,6 @@ public abstract class BasePayloadBuilder
             parameters["top_k"] = userSettings.ModelParameters.TopK;
             parameters["frequency_penalty"] = userSettings.ModelParameters.FrequencyPenalty;
             parameters["presence_penalty"] = userSettings.ModelParameters.PresencePenalty;
-            parameters["stop"] = userSettings.ModelParameters.StopSequences;
         }
 
         if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)

@@ -7,7 +7,6 @@ public record AiAgentResponse(
     string? SystemInstructions,
     Guid AiModelId,
     string AiModelName,
-    string? IconUrl,
     List<string> Categories,
     bool AssignCustomModelParameters,
     string? ModelParameters,

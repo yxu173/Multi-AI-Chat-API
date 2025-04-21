@@ -47,7 +47,6 @@ public class GetAiAgentByIdQueryHandler : IQueryHandler<GetAiAgentByIdQuery, AiA
             agent.ModelParameter.SystemInstructions,
             agent.ModelParameter.DefaultModel,
             agent.AiModel?.Name ?? "Unknown Model",
-            agent.IconUrl,
             agent.Categories.Select(c => c.ToString()).ToList(),
             agent.AssignCustomModelParameters,
             modelParametersJson,

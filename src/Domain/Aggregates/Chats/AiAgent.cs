@@ -10,7 +10,6 @@ public sealed class AiAgent : BaseAuditableEntity
     public Guid UserId { get; private set; }
     public string Name { get; private set; }
     public string Description { get; private set; }
-    public string? IconUrl { get; private set; }
 
     public List<AgentCategories> Categories { get; private set; } = new();
     public bool AssignCustomModelParameters { get; private set; }
@@ -33,7 +32,6 @@ public sealed class AiAgent : BaseAuditableEntity
         Guid userId,
         string name,
         string description,
-        string? iconUrl = null,
         List<string>? categories = null,
         bool assignCustomModelParameters = false,
         ModelParameters? modelParameters = null,
@@ -49,7 +47,6 @@ public sealed class AiAgent : BaseAuditableEntity
             UserId = userId,
             Name = name,
             Description = description,
-            IconUrl = iconUrl,
             Categories = categories?.Select(c => Enum.TryParse<AgentCategories>(c, true, out var cat) ? cat : default).Where(c => c != default).ToList() ?? new List<AgentCategories>(),
             AssignCustomModelParameters = assignCustomModelParameters,
             ProfilePictureUrl = profilePictureUrl,
@@ -73,7 +70,6 @@ public sealed class AiAgent : BaseAuditableEntity
     public void Update(
         string name,
         string description,
-        string? iconUrl = null,
         List<string>? categories = null,
         bool? assignCustomModelParameters = null,
         ModelParameters? modelParameters = null,
@@ -83,7 +79,6 @@ public sealed class AiAgent : BaseAuditableEntity
 
         Name = name;
         Description = description;
-        IconUrl = iconUrl;
 
         if (categories != null) Categories = categories.Select(c => Enum.TryParse<AgentCategories>(c, true, out var cat) ? cat : default).Where(c => c != default).ToList();
         if (assignCustomModelParameters.HasValue) AssignCustomModelParameters = assignCustomModelParameters.Value;

@@ -42,7 +42,6 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                     command.TopK,
                     command.MaxTokens,
                     command.EnableThinking,
-                    command.StopSequences,
                     command.PromptCaching,
                     command.ContextLimit, command.SafetySettings);
             }
@@ -50,7 +49,6 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
             agent.Update(
                 command.Name,
                 command.Description,
-                command.IconUrl,
                 command.Categories,
                 command.AssignCustomModelParameters,
                 modelParameters,

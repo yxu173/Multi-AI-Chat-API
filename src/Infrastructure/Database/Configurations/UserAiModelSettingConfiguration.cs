@@ -50,19 +50,6 @@ public sealed class UserAiModelSettingConfiguration : IEntityTypeConfiguration<U
             mp.Property(p => p.MaxTokens)
                 .HasColumnName("MaxTokens");
 
-            mp.Property(p => p.StopSequences)
-                .HasConversion(
-                    v => v != null ? string.Join(',', v) : null,
-                    v => v != null ? v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() : null
-                )
-                .HasColumnName("StopSequences")
-                .HasColumnType("text")
-                .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>?>(
-                    (c1, c2) => c1 == null && c2 == null || (c1 != null && c2 != null && c1.SequenceEqual(c2)),
-                    c => c == null ? 0 : c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
-                    c => c == null ? null : c.ToList()
-                ));
-
    
 
             mp.Property(p => p.PromptCaching)
