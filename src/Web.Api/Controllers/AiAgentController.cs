@@ -1,4 +1,5 @@
 using Application.Features.AiAgents.CreateAiAgent;
+using Application.Features.AiAgents.DeleteAiAgent;
 using Application.Features.AiAgents.GetAiAgentById;
 using Application.Features.AiAgents.GetAllAiAgents;
 using Application.Features.AiAgents.UpdateAiAgent;
@@ -91,6 +92,14 @@ public class AiAgentController : BaseController
 
         var result = await _mediator.Send(command);
         return result.Match(val => Results.Ok(val), CustomResults.Problem);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IResult> DeleteAiAgent([FromRoute] Guid id)
+    {
+        var command = new DeleteAiAgentCommand(UserId, id);
+        var result = await _mediator.Send(command);
+        return result.Match(Results.Ok, CustomResults.Problem);
     }
 
     [HttpGet("GetAllCategories")]
