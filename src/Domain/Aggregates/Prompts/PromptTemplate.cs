@@ -41,10 +41,11 @@ public class PromptTemplate : BaseEntity
         return new PromptTemplate(userId, title, content, description, tags ?? new List<Tag>());
     }
 
-    public void Update(string title, string content)
+    public void Update(string title, string content,string description)
     {
         Title = title;
         Content = content;
+        Description = description;
     }
 
     public Result AddTag(string name)

@@ -1,6 +1,7 @@
 using Application.Features.Prompts.CreatePrompt;
 using Application.Features.Prompts.DeletePrompt;
 using Application.Features.Prompts.GetAllPromptsByUserId;
+using Application.Features.Prompts.UpdatePrompt;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.Prompts;
@@ -41,6 +42,15 @@ public class PromptController : BaseController
     public async Task<IResult> DeletePrompt([FromRoute] Guid id)
     {
         var command = new DeletePromptCommand(id);
+        var result = await _mediator.Send(command);
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IResult> UpdatePrompt([FromRoute] Guid id, CreatePromptRequest request)
+    {
+        var command = new UpdatePromptCommand(id, UserId, request.Title, request.Description, request.Content,
+            request.Tags);
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }

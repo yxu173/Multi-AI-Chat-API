@@ -26,7 +26,7 @@ public sealed class UpdatePromptCommandHandler : ICommandHandler<UpdatePromptCom
         if (prompt.UserId != request.UserId)
             return Result.Failure<bool>(PromptTemplateErrors.UserIsNotAuthorized);
 
-        prompt.Update(request.Title, request.Content);
+        prompt.Update(request.Title, request.Content,request.Description);
 
         var tags = request.Tags.Select(Tag.Create).ToList();
         prompt.UpdateTags(tags);
