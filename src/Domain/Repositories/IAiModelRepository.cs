@@ -7,6 +7,7 @@ namespace Domain.Repositories;
 public interface IAiModelRepository
 {
     Task<AiModel?> GetByIdAsync(Guid id);
+    Task<string?> GetModelNameById(Guid id);
     Task<IReadOnlyList<AiModel>> GetAllAsync();
     Task<IReadOnlyList<AiModel>> GetByProviderIdAsync(Guid providerId);
     Task<IReadOnlyList<AiModel>> GetByModelTypeAsync(ModelType modelType);

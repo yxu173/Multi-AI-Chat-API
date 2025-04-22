@@ -24,6 +24,14 @@ public class AiModelRepository : IAiModelRepository
             .FirstOrDefaultAsync(m => m.Id == id);
     }
 
+    public async Task<string?> GetModelNameById(Guid id)
+    {
+        return await _dbContext.AiModels
+            .Where(m => m.Id == id)
+            .Select(m => m.Name)
+            .FirstOrDefaultAsync();
+    }
+
     public async Task<IReadOnlyList<AiModel>> GetAllAsync()
     {
         return await _dbContext.AiModels

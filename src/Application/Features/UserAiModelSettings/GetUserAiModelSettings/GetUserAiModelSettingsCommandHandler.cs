@@ -8,10 +8,12 @@ public sealed class
     GetUserAiModelSettingsCommandHandler : ICommandHandler<GetUserAiModelSettingsCommand, UserAiModelSettingsResponse>
 {
     private readonly IUserAiModelSettingsRepository _userAiModelSettingsRepository;
+    private readonly IAiModelRepository _aiModelRepository;
 
-    public GetUserAiModelSettingsCommandHandler(IUserAiModelSettingsRepository userAiModelSettingsRepository)
+    public GetUserAiModelSettingsCommandHandler(IUserAiModelSettingsRepository userAiModelSettingsRepository, IAiModelRepository aiModelRepository)
     {
         _userAiModelSettingsRepository = userAiModelSettingsRepository;
+        _aiModelRepository = aiModelRepository;
     }
 
     public async Task<Result<UserAiModelSettingsResponse>> Handle(GetUserAiModelSettingsCommand request,
@@ -25,9 +27,12 @@ public sealed class
                 $"User AI Model Settings for user with ID {request.UserId} not found."));
         }
 
+        var modelName = await _aiModelRepository.GetModelNameById(settings.ModelParameters.DefaultModel);
+
         return new UserAiModelSettingsResponse(
             settings.Id,
             settings.UserId,
+            modelName,
             settings.ModelParameters.SystemInstructions,
             settings.ModelParameters.ContextLimit,
             settings.ModelParameters.Temperature,
