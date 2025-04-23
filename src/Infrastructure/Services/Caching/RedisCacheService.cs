@@ -2,20 +2,14 @@ using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using MessagePack;
 
 namespace Infrastructure.Services.Caching;
 
-/// <summary>
-/// Redis-based cache service implementation with enhanced features
-/// </summary>
 public class RedisCacheService : ICacheService
 {
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisCacheService>? _logger;
-    private readonly MessagePackSerializerOptions _messagePackOptions;
+    private readonly JsonSerializerOptions _jsonOptions;
     private readonly IDatabase _db;
     private const int MaxRetries = 3;
     private const int RetryDelayMs = 100;
@@ -24,7 +18,12 @@ public class RedisCacheService : ICacheService
     {
         _redis = redis ?? throw new ArgumentNullException(nameof(redis));
         _logger = logger;
-        _messagePackOptions = MessagePackSerializerOptions.Standard;
+        _jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = false,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        };
         _db = redis.GetDatabase();
     }
 
@@ -41,7 +40,7 @@ public class RedisCacheService : ICacheService
                     return default;
                 }
                 
-                return MessagePackSerializer.Deserialize<T>(value, _messagePackOptions);
+                return JsonSerializer.Deserialize<T>(value!, _jsonOptions);
             }
             catch (Exception ex)
             {
@@ -59,7 +58,7 @@ public class RedisCacheService : ICacheService
         {
             try
             {
-                var serialized = MessagePackSerializer.Serialize(value, _messagePackOptions);
+                var serialized = JsonSerializer.Serialize(value, _jsonOptions);
                 
                 return await _db.StringSetAsync(key, serialized, expiry);
             }
@@ -105,11 +104,9 @@ public class RedisCacheService : ICacheService
         TimeSpan expiry,
         CancellationToken ct = default)
     {
-        // 1) Try read
         var existing = await GetAsync<T>(key, ct);
         if (existing is not null) return existing;
 
-        // 2) Compute and cache
         var fresh = await factory();
         if (fresh is not null)
             await SetAsync(key, fresh, expiry, ct);
@@ -163,7 +160,7 @@ public class RedisCacheService : ICacheService
 
         foreach (var kvp in keyValuePairs)
         {
-            var serialized = MessagePackSerializer.Serialize(kvp.Value, _messagePackOptions);
+            var serialized = JsonSerializer.Serialize(kvp.Value, _jsonOptions);
             tasks.Add(Task.Run(() => batch.StringSetAsync(kvp.Key, serialized, expiry).GetAwaiter().GetResult()));
         }
 

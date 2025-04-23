@@ -53,7 +53,6 @@ public static class DependencyInjection
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
 
-        // Register OpenAI client services for HTTP
         services.AddHttpClient();
 
 
@@ -76,7 +75,6 @@ public static class DependencyInjection
             )
         );
 
-        // Register the concrete type with the factory that provides dependencies
         services.AddScoped<JinaWebPlugin>(sp =>
             new JinaWebPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
@@ -85,11 +83,11 @@ public static class DependencyInjection
                 maxRetries: configuration.GetValue<int>("Plugins:Jina:MaxRetries", 3)
             )
         );
-        // Register the interface to resolve using the already registered concrete type
         services.AddScoped<IChatPlugin, JinaWebPlugin>(sp => 
             sp.GetRequiredService<JinaWebPlugin>()
-        ); 
+        );
 
+        services.AddDistributedMemoryCache();
         services.AddSingleton<IConnectionMultiplexer>(sp =>
         {
             var redisConfig =
