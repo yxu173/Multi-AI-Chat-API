@@ -12,4 +12,12 @@ public interface ICacheService
 
 
     Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
+
+    Task<T> GetOrSetAsync<T>(
+        string key,
+        Func<Task<T>> factory,
+        TimeSpan expiry,
+        CancellationToken ct = default);
+
+    Task EvictByPatternAsync(string pattern, CancellationToken ct = default);
 }
