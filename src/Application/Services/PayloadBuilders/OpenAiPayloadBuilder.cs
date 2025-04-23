@@ -2,6 +2,7 @@ using Application.Services.Helpers;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+
 // Added for Dictionary
 
 // Added for LINQ methods like Any
@@ -27,7 +28,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
         var model = context.SpecificModel;
 
         requestObj["model"] = model.ModelCode;
-        requestObj["stream"] = true; 
+        requestObj["stream"] = true;
 
         var parameter = GetMergedParameters(context);
         ApplyParametersToRequest(requestObj, parameter, model.ModelType);
@@ -61,7 +62,9 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                         }
                         catch (Exception ex)
                         {
-                            Logger?.LogWarning(ex, "Failed to deserialize JsonElement tool definition: {ToolDefinition}", jsonElement.GetRawText());
+                            Logger?.LogWarning(ex,
+                                "Failed to deserialize JsonElement tool definition: {ToolDefinition}",
+                                jsonElement.GetRawText());
                         }
                     }
                 }
@@ -75,12 +78,14 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                             formattedTools.Add(toolDict);
                             continue;
                         }
+
                         var functionObj = new Dictionary<string, object>();
                         foreach (var kvp in toolDict)
                         {
-                            if (kvp.Key == "type") continue; 
+                            if (kvp.Key == "type") continue;
                             functionObj[kvp.Key] = kvp.Value;
                         }
+
                         var formattedTool = new Dictionary<string, object>
                         {
                             { "type", "function" },
@@ -89,6 +94,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                         formattedTools.Add(formattedTool);
                         continue;
                     }
+
                     if (toolDict.TryGetValue("name", out var name) && name is string)
                     {
                         var functionObj = new Dictionary<string, object>
@@ -99,14 +105,17 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                         {
                             functionObj.Add("description", description);
                         }
+
                         if (toolDict.TryGetValue("parameters", out var parameters))
                         {
                             functionObj.Add("parameters", parameters);
                         }
+
                         if (toolDict.TryGetValue("strict", out var strict))
                         {
                             functionObj.Add("strict", strict);
                         }
+
                         var formattedTool = new Dictionary<string, object>
                         {
                             { "type", "function" },
@@ -116,20 +125,24 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                     }
                     else
                     {
-                        Logger?.LogWarning("Skipping tool definition missing required 'name' property: {ToolDefinition}", System.Text.Json.JsonSerializer.Serialize(toolDefObj));
+                        Logger?.LogWarning(
+                            "Skipping tool definition missing required 'name' property: {ToolDefinition}",
+                            System.Text.Json.JsonSerializer.Serialize(toolDefObj));
                     }
                 }
                 else
                 {
-                    Logger?.LogWarning("Skipping tool definition with unexpected format: {ToolDefinition}", System.Text.Json.JsonSerializer.Serialize(toolDefObj));
+                    Logger?.LogWarning("Skipping tool definition with unexpected format: {ToolDefinition}",
+                        System.Text.Json.JsonSerializer.Serialize(toolDefObj));
                 }
             }
 
             if (formattedTools.Any())
             {
-                Logger?.LogInformation("Adding {ToolCount} formatted tool definitions to OpenAI payload for model {ModelCode}",
-                     formattedTools.Count, model.ModelCode);
-                requestObj["tools"] = formattedTools; 
+                Logger?.LogInformation(
+                    "Adding {ToolCount} formatted tool definitions to OpenAI payload for model {ModelCode}",
+                    formattedTools.Count, model.ModelCode);
+                requestObj["tools"] = formattedTools;
 
                 if (IsParameterSupported("tool_choice", model.ModelType))
                 {
@@ -142,7 +155,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
         requestObj.Remove("presence_penalty");
         requestObj.Remove("stop");
 
-        AddOpenAiSpecificParameters(requestObj, context, parameter); 
+        AddOpenAiSpecificParameters(requestObj, context, parameter);
 
         return new AiRequestPayload(requestObj);
     }
@@ -150,12 +163,12 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
     private List<object> ProcessMessagesForOpenAIInput(List<MessageDto> history)
     {
         var processedMessages = new List<object>();
-        
+
 
         foreach (var message in history)
         {
-             var role = message.IsFromAi ? "assistant" : "user";
-             var rawContent = message.Content?.Trim() ?? "";
+            var role = message.IsFromAi ? "assistant" : "user";
+            var rawContent = message.Content?.Trim() ?? "";
 
             if (string.IsNullOrEmpty(rawContent)) continue;
 
@@ -181,7 +194,8 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                             hasNonTextContent = true;
                             break;
                         case FilePart filePart:
-                            Logger?.LogInformation("Adding file {FileName} using 'input_file' type.", filePart.FileName);
+                            Logger?.LogInformation("Adding file {FileName} using 'input_file' type.",
+                                filePart.FileName);
                             openAiContentItems.Add(new
                             {
                                 type = "input_file",
@@ -195,17 +209,18 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
 
                 if (openAiContentItems.Any())
                 {
-                    if (openAiContentItems.Count == 1 && !hasNonTextContent && openAiContentItems[0] is var textItem && textItem.GetType().GetProperty("type")?.GetValue(textItem)?.ToString() == "input_text")
+                    if (openAiContentItems.Count == 1 && !hasNonTextContent && openAiContentItems[0] is var textItem &&
+                        textItem.GetType().GetProperty("type")?.GetValue(textItem)?.ToString() == "input_text")
                     {
                         string? textContent = textItem.GetType().GetProperty("text")?.GetValue(textItem)?.ToString();
-                         if (!string.IsNullOrEmpty(textContent))
-                         {
-                             processedMessages.Add(new { role = "user", content = textContent });
-                         }
+                        if (!string.IsNullOrEmpty(textContent))
+                        {
+                            processedMessages.Add(new { role = "user", content = textContent });
+                        }
                     }
-                    else if (openAiContentItems.Count > 0) 
+                    else if (openAiContentItems.Count > 0)
                     {
-                         processedMessages.Add(new { role = "user", content = openAiContentItems.ToArray() });
+                        processedMessages.Add(new { role = "user", content = openAiContentItems.ToArray() });
                     }
                 }
             }
@@ -218,35 +233,38 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
         return processedMessages;
     }
 
-    private void AddOpenAiSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context, Dictionary<string, object> appliedParameters)
+    private void AddOpenAiSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context,
+        Dictionary<string, object> appliedParameters)
     {
         bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
 
         if (useEffectiveThinking && IsParameterSupported("reasoning", context.SpecificModel.ModelType))
         {
-            requestObj["reasoning"] = new { effort = "medium" }; 
+            requestObj["reasoning"] = new { effort = "medium", summary = "detailed" };
             Logger?.LogDebug("Adding reasoning effort for OpenAI model {ModelCode}", context.SpecificModel.ModelCode);
-            
+
             if (appliedParameters.ContainsKey("temperature")) requestObj.Remove("temperature");
             if (appliedParameters.ContainsKey("top_p")) requestObj.Remove("top_p");
-            if (appliedParameters.ContainsKey("max_output_tokens")) requestObj.Remove("max_output_tokens"); 
-             if (appliedParameters.ContainsKey("max_tokens")) requestObj.Remove("max_tokens");
+            if (appliedParameters.ContainsKey("max_output_tokens")) requestObj.Remove("max_output_tokens");
+            if (appliedParameters.ContainsKey("max_tokens")) requestObj.Remove("max_tokens");
 
-             Logger?.LogDebug("Removed potentially conflicting parameters (temp, top_p, max_tokens) due to reasoning effort.");
+            Logger?.LogDebug(
+                "Removed potentially conflicting parameters (temp, top_p, max_tokens) due to reasoning effort.");
         }
 
-         if (appliedParameters.TryGetValue("max_tokens", out var maxTokensValue) && !requestObj.ContainsKey("reasoning"))
-         {
-             if (requestObj.ContainsKey("max_tokens")) requestObj.Remove("max_tokens");
-             if (!requestObj.ContainsKey("max_output_tokens"))
-             {
-                 requestObj["max_output_tokens"] = maxTokensValue;
-                 Logger?.LogDebug("Mapped 'max_tokens' to 'max_output_tokens'.");
-             }
-         }
+        if (appliedParameters.TryGetValue("max_tokens", out var maxTokensValue) && !requestObj.ContainsKey("reasoning"))
+        {
+            if (requestObj.ContainsKey("max_tokens")) requestObj.Remove("max_tokens");
+            if (!requestObj.ContainsKey("max_output_tokens"))
+            {
+                requestObj["max_output_tokens"] = maxTokensValue;
+                Logger?.LogDebug("Mapped 'max_tokens' to 'max_output_tokens'.");
+            }
+        }
     }
 
-    protected void ApplyParametersToRequest(Dictionary<string, object> requestObj, Dictionary<string, object> parameters, ModelType modelType)
+    protected void ApplyParametersToRequest(Dictionary<string, object> requestObj,
+        Dictionary<string, object> parameters, ModelType modelType)
     {
         foreach (var kvp in parameters)
         {
@@ -265,7 +283,8 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
             }
             else
             {
-                 Logger?.LogWarning("Parameter {ParameterKey} is not supported for {ModelType} and was skipped.", key, modelType);
+                Logger?.LogWarning("Parameter {ParameterKey} is not supported for {ModelType} and was skipped.", key,
+                    modelType);
             }
         }
     }

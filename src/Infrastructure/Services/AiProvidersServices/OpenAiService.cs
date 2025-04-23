@@ -23,7 +23,6 @@ public class OpenAiService : BaseAiService
 
     protected override string GetEndpointPath() => "responses";
 
-    // Override ReadStreamAsync for Assistants API v2 SSE format
     protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -37,7 +36,6 @@ public class OpenAiService : BaseAiService
 
             if (string.IsNullOrWhiteSpace(line))
             {
-                // Blank line indicates end of event - reset event name
                 eventName = null;
                 continue;
             }
@@ -50,8 +48,6 @@ public class OpenAiService : BaseAiService
             {
                 var jsonData = line["data:".Length..].Trim();
                 
-                // We just yield the JSON data part. The parser will handle the event type.
-                // Don't check for [DONE] here, the completion event is handled by the parser.
                 if (!string.IsNullOrEmpty(jsonData))
                 {
                      yield return jsonData;

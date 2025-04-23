@@ -112,7 +112,7 @@ public abstract class BasePayloadBuilder
                 {
                     "temperature", "top_p", "max_tokens",
                     "seed", "response_format", "tools", "tool_choice", "logit_bias", "user", "n", "logprobs",
-                    "top_logprobs"
+                    "top_logprobs", "reasoning"
                 }.Contains(providerParamName);
 
             case ModelType.Anthropic:

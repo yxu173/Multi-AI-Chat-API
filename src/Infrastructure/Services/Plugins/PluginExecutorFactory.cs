@@ -55,7 +55,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         """;
 
         RegisterPlugin(
-            id: new Guid("9e976144-088d-4605-8a5c-42cfb21db3a1"),
+            id: new Guid("0f568eca-9d8e-4ab5-a1e9-0c16be2b52c8"),
             pluginType: typeof(WebSearchPlugin),
             name: "google_search",
             description: "Search the web using Google for real-time information.",
@@ -71,7 +71,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         );
 
         RegisterPlugin(
-            id: new Guid("c4f9349a-7fd7-4daa-bc50-b702ff34b8c3"),
+            id: new Guid("678eaf7e-7e0d-4513-83a3-738f55dab692"),
             pluginType: typeof(JinaWebPlugin),
             name: "read_webpage",
             description: "Retrieve and summarize web content from a specific URL using Jina AI.",
