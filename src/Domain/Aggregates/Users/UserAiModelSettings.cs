@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Domain.Common;
 using Domain.ValueObjects;
 
@@ -8,10 +9,20 @@ public sealed class UserAiModelSettings : BaseEntity
     public Guid UserId { get; private set; }
     public ModelParameters ModelParameters { get; private set; } = null!;
 
+
+    [JsonIgnore]
     public User User { get; private set; } = null!;
 
     private UserAiModelSettings()
     {
+    }
+
+    [JsonConstructor]
+    public UserAiModelSettings( Guid userId, ModelParameters modelParameters)
+    {
+        Id = Guid.NewGuid();
+        UserId = userId;
+        ModelParameters = modelParameters;
     }
 
     public static UserAiModelSettings Create(
@@ -19,7 +30,6 @@ public sealed class UserAiModelSettings : BaseEntity
     {
         return new UserAiModelSettings
         {
-            Id = Guid.NewGuid(),
             UserId = userId,
             ModelParameters = ModelParameters.Create()
         };

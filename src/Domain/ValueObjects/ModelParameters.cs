@@ -16,10 +16,7 @@ public record ModelParameters : ValueObject
     public int MaxTokens { get; init; }
     public bool PromptCaching { get; init; }
     public string? SafetySettings { get; init; }
-
-    private ModelParameters()
-    {
-    }
+    
 
     public static ModelParameters Create(
         Guid defaultModel = default,
