@@ -204,12 +204,9 @@ public class AiRequestHandler : IAiRequestHandler
                         formattedDefinitions.Add(new
                         {
                             type = "function",
-                            function = new
-                            {
-                                name = def.Name,
-                                description = def.Description,
-                                parameters = def.ParametersSchema
-                            }
+                            name = def.Name,
+                            description = def.Description,
+                            parameters = def.ParametersSchema
                         });
                         break;
 
@@ -236,16 +233,12 @@ public class AiRequestHandler : IAiRequestHandler
                         break;
 
                     case ModelType.Grok:
-                        // Format for Grok's tool specification (same as OpenAI)
                         formattedDefinitions.Add(new 
                         {
                             type = "function",
-                            function = new 
-                            {
-                                name = def.Name,
-                                description = def.Description,
-                                parameters = def.ParametersSchema
-                            }
+                            name = def.Name,
+                            description = def.Description,
+                            parameters = def.ParametersSchema
                         });
                         break;
 

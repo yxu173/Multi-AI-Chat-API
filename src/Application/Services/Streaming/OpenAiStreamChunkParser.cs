@@ -19,7 +19,7 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
     {
         try
         {
-            _logger?.LogTrace("[OpenAiParser] Received raw data chunk: {RawContent}", rawJson);
+            _logger?.LogInformation("[OpenAiParser] Received raw data chunk: {RawContent}", rawJson);
 
             using var doc = JsonDocument.Parse(rawJson);
             var root = doc.RootElement;
@@ -27,7 +27,7 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
             if (!root.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
             {
                 _logger?.LogWarning("OpenAI stream chunk missing or invalid 'type' property: {RawJson}", rawJson);
-                return new ParsedChunkInfo(); 
+                return new ParsedChunkInfo();
             }
 
             var eventType = typeElement.GetString();
@@ -49,20 +49,7 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                     break;
 
                 case "response.function_call.invoked":
-                    string? toolCallId = null;
-                    string? toolCallName = null;
-                    string? argumentChunk = null;
-                    int toolCallIndex = 0; 
-
-                    if (root.TryGetProperty("call", out var callElement))
-                    {
-                        if (callElement.TryGetProperty("call_id", out var idElement)) toolCallId = idElement.GetString();
-                        if (callElement.TryGetProperty("name", out var nameElement)) toolCallName = nameElement.GetString();
-                        if (callElement.TryGetProperty("arguments", out var argsElement)) argumentChunk = argsElement.GetString();
-                    }
-
-                    toolCallInfo = new ToolCallChunk(toolCallIndex, toolCallId, toolCallName, ArgumentChunk: argumentChunk);
-                    _logger?.LogInformation("Parsed OpenAI function call invocation. Id: {Id}, Name: {Name}, Args Length: {Length}", toolCallId, toolCallName, argumentChunk?.Length ?? 0);
+                    // ignore legacy invocation events
                     break;
 
                 case "response.completed":
@@ -81,25 +68,18 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                             var status = statusElement.GetString();
                             switch (status)
                             {
-                                case "completed":
-                                    finishReason = "stop"; 
-                                    break;
+                                case "completed": finishReason = "stop"; break;
                                 case "error":
-                                case "failed": 
+                                case "failed":
                                     finishReason = "error";
                                     if (responseElement.TryGetProperty("error", out var errorObj))
                                     {
-                                        errorDetails = errorObj.ToString(); 
+                                        errorDetails = errorObj.ToString();
                                         _logger?.LogError("OpenAI completion event reported error: {ErrorJson}", errorDetails);
                                     }
                                     break;
-                                case "incomplete":
-                                      finishReason = "length"; 
-                                     _logger?.LogWarning("OpenAI completion event reported incomplete status.");
-                                     break;
-                                default:
-                                    finishReason = status; 
-                                    break;
+                                case "incomplete": finishReason = "length"; _logger?.LogWarning("OpenAI completion event reported incomplete status."); break;
+                                default: finishReason = status; break;
                             }
                             _logger?.LogInformation("Parsed OpenAI finish status: {Status}, mapped to reason: {FinishReason}", status, finishReason);
                         }
@@ -109,19 +89,59 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                 case "response.error":
                     _logger?.LogError("Received OpenAI error event: {ErrorJson}", root.GetRawText());
                     finishReason = "error";
-                    if (root.TryGetProperty("error", out var errorContent)) {
-                         errorDetails = errorContent.ToString();
+                    if (root.TryGetProperty("error", out var errorContent)) errorDetails = errorContent.ToString();
+                    break;
+
+                case "response.output_item.added":
+                    // start of function call
+                    if (root.TryGetProperty("item", out var addedItem)
+                     && addedItem.GetProperty("type").GetString() == "function_call")
+                    {
+                        int idx = root.GetProperty("output_index").GetInt32();
+                        string? id = addedItem.GetProperty("call_id").GetString();
+                        string? name = addedItem.GetProperty("name").GetString();
+                        toolCallInfo = new ToolCallChunk(idx, id, name);
+                        _logger?.LogInformation("Function call started: {Name} (id={Id})", name, id);
+                    }
+                    break;
+
+                case "response.function_call_arguments.delta":
+                    // accumulate function call argument chunks
+                    if (root.TryGetProperty("delta", out var argDelta) && argDelta.ValueKind == JsonValueKind.String)
+                    {
+                        var chunk = argDelta.GetString() ?? string.Empty;
+                        var idx2 = root.GetProperty("output_index").GetInt32();
+                        toolCallInfo = new ToolCallChunk(idx2, ArgumentChunk: chunk);
+                        _logger?.LogTrace("[OpenAiParser] Function call arg chunk: {Chunk}", chunk);
+                    }
+                    break;
+
+                case "response.function_call_arguments.done":
+                    // signal arguments complete; argument chunks already accumulated
+                    {
+                        var idx3 = root.GetProperty("output_index").GetInt32();
+                        toolCallInfo = new ToolCallChunk(idx3, ArgumentChunk: null, IsComplete: true);
+                        _logger?.LogInformation("[OpenAiParser] Function call arguments complete for index {Index}", idx3);
+                    }
+                    break;
+
+                case "response.output_item.done":
+                    if (root.TryGetProperty("item", out var doneItem)
+                     && doneItem.GetProperty("type").GetString() == "function_call")
+                    {
+                        var idx4 = root.GetProperty("output_index").GetInt32();
+                        var id4 = doneItem.GetProperty("call_id").GetString();
+                        var name4 = doneItem.GetProperty("name").GetString();
+                        // finalize function call; use full args from previous event
+                        toolCallInfo = new ToolCallChunk(idx4, id4, name4, ArgumentChunk: null, IsComplete: true);
+                        finishReason = "function_call";
+                        _logger?.LogInformation("[OpenAiParser] Function call completed: {Name} (id={Id})", name4, id4);
                     }
                     break;
 
                 case "response.created":
                 case "response.in_progress":
-                case "response.output_item.added":
-                case "response.content_part.added":
-                case "response.output_text.done":
-                case "response.content_part.done":
-                case "response.output_item.done":
-                    _logger?.LogTrace("Received OpenAI meta/structure event: {EventType}", eventType);
+                    _logger?.LogTrace("[OpenAiParser] Received meta event: {EventType}", eventType);
                     break;
 
                 default:
@@ -135,7 +155,6 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                 InputTokens: inputTokens,
                 OutputTokens: outputTokens,
                 FinishReason: finishReason
- 
             );
         }
         catch (JsonException jsonEx)

@@ -44,110 +44,15 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
         var processedMessages = ProcessMessagesForOpenAIInput(context.History);
         requestObj["input"] = processedMessages;
 
-        // Handle Tools
+
         if (toolDefinitions?.Any() == true && IsParameterSupported("tools", model.ModelType))
         {
-            var formattedTools = new List<object>();
-            foreach (var toolDefObj in toolDefinitions)
+            Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
+                toolDefinitions.Count, model.ModelCode);
+            requestObj["tools"] = toolDefinitions;
+            if (IsParameterSupported("tool_choice", model.ModelType))
             {
-                IDictionary<string, object>? toolDict = toolDefObj as IDictionary<string, object>;
-
-                if (toolDict == null)
-                {
-                    if (toolDefObj is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Object)
-                    {
-                        try
-                        {
-                            toolDict = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonElement.GetRawText());
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger?.LogWarning(ex,
-                                "Failed to deserialize JsonElement tool definition: {ToolDefinition}",
-                                jsonElement.GetRawText());
-                        }
-                    }
-                }
-
-                if (toolDict != null)
-                {
-                    if (toolDict.ContainsKey("type") && toolDict["type"]?.ToString() == "function")
-                    {
-                        if (toolDict.ContainsKey("function"))
-                        {
-                            formattedTools.Add(toolDict);
-                            continue;
-                        }
-
-                        var functionObj = new Dictionary<string, object>();
-                        foreach (var kvp in toolDict)
-                        {
-                            if (kvp.Key == "type") continue;
-                            functionObj[kvp.Key] = kvp.Value;
-                        }
-
-                        var formattedTool = new Dictionary<string, object>
-                        {
-                            { "type", "function" },
-                            { "function", functionObj }
-                        };
-                        formattedTools.Add(formattedTool);
-                        continue;
-                    }
-
-                    if (toolDict.TryGetValue("name", out var name) && name is string)
-                    {
-                        var functionObj = new Dictionary<string, object>
-                        {
-                            { "name", name }
-                        };
-                        if (toolDict.TryGetValue("description", out var description))
-                        {
-                            functionObj.Add("description", description);
-                        }
-
-                        if (toolDict.TryGetValue("parameters", out var parameters))
-                        {
-                            functionObj.Add("parameters", parameters);
-                        }
-
-                        if (toolDict.TryGetValue("strict", out var strict))
-                        {
-                            functionObj.Add("strict", strict);
-                        }
-
-                        var formattedTool = new Dictionary<string, object>
-                        {
-                            { "type", "function" },
-                            { "function", functionObj }
-                        };
-                        formattedTools.Add(formattedTool);
-                    }
-                    else
-                    {
-                        Logger?.LogWarning(
-                            "Skipping tool definition missing required 'name' property: {ToolDefinition}",
-                            System.Text.Json.JsonSerializer.Serialize(toolDefObj));
-                    }
-                }
-                else
-                {
-                    Logger?.LogWarning("Skipping tool definition with unexpected format: {ToolDefinition}",
-                        System.Text.Json.JsonSerializer.Serialize(toolDefObj));
-                }
-            }
-
-            if (formattedTools.Any())
-            {
-                Logger?.LogInformation(
-                    "Adding {ToolCount} formatted tool definitions to OpenAI payload for model {ModelCode}",
-                    formattedTools.Count, model.ModelCode);
-                requestObj["tools"] = formattedTools;
-
-                if (IsParameterSupported("tool_choice", model.ModelType))
-                {
-                    requestObj["tool_choice"] = "auto";
-                }
+                requestObj["tool_choice"] = "auto";
             }
         }
 
