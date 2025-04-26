@@ -3,6 +3,18 @@ using System.Collections.Generic;
 
 namespace Application.Services;
 
+public record FunctionCall(
+    string Name,
+    string Arguments,
+    string? Id = null
+);
+
+public record FunctionResponse(
+    string Name,
+    string Content,
+    string FunctionCallId
+);
+
 public record MessageDto(
     string Content, 
     bool IsFromAi, 
@@ -10,4 +22,6 @@ public record MessageDto(
 {
     public List<FileAttachment>? FileAttachments { get; init; }
     public string? ThinkingContent { get; init; }
+    public FunctionCall? FunctionCall { get; init; }
+    public FunctionResponse? FunctionResponse { get; init; }
 } 

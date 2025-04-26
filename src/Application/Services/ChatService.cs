@@ -194,6 +194,9 @@ public class ChatService
         var userSettings =
             await _dbContext.UserAiModelSettings.FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
 
+        // Log model type for debugging
+        Console.WriteLine($"Using model type: {chatSession.AiModel.ModelType}");
+        
         var requestContext = new AiRequestContext(
             UserId: userId,
             ChatSession: chatSession,

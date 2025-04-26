@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using Domain.Aggregates.Chats;
 using System.IO;
+using Application.Abstractions.Interfaces;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Formats;
@@ -28,6 +29,8 @@ public class ChatHub : Hub
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly MessageService _messageService;
     private readonly IMediator _mediator;
+    private readonly IChatSessionPluginRepository _chatSessionPluginRepository;
+    private readonly IPluginExecutorFactory _pluginExecutorFactory;
 
     // Constants for file processing
     private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -40,7 +43,9 @@ public class ChatHub : Hub
         IMessageRepository messageRepository,
         IFileAttachmentRepository fileAttachmentRepository,
         MessageService messageService,
-        IMediator mediator)
+        IMediator mediator,
+        IChatSessionPluginRepository chatSessionPluginRepository,
+        IPluginExecutorFactory pluginExecutorFactory)
     {
         _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
         _streamingOperationManager = streamingOperationManager ?? throw new ArgumentNullException(nameof(streamingOperationManager));
@@ -48,6 +53,8 @@ public class ChatHub : Hub
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
+        _chatSessionPluginRepository = chatSessionPluginRepository ?? throw new ArgumentNullException(nameof(chatSessionPluginRepository));
+        _pluginExecutorFactory = pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
     }
 
     /// <summary>
@@ -104,6 +111,99 @@ public class ChatHub : Hub
         {
             Console.WriteLine($"Error joining chat session: {ex.Message}");
             await Clients.Caller.SendAsync("Error", $"Failed to join chat session: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Activates a plugin for a chat session
+    /// </summary>
+    public async Task ActivatePlugin(string chatSessionId, string pluginId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(chatSessionId) || string.IsNullOrWhiteSpace(pluginId))
+            {
+                await Clients.Caller.SendAsync("Error", "Chat session ID and plugin ID are required");
+                return;
+            }
+
+            var userId = Guid.Parse(Context.UserIdentifier);
+            var chatSessionGuid = Guid.Parse(chatSessionId);
+            var pluginGuid = Guid.Parse(pluginId);
+
+            // Check if the plugin exists
+            var allPlugins = _pluginExecutorFactory.GetAllPluginDefinitions();
+            if (!allPlugins.Any(p => p.Id == pluginGuid))
+            {
+                await Clients.Caller.SendAsync("Error", $"Plugin with ID {pluginId} not found");
+                return;
+            }
+
+            // Create a new chat session plugin
+            var chatSessionPlugin = ChatSessionPlugin.Create(chatSessionGuid, pluginGuid);
+            await _chatSessionPluginRepository.AddAsync(chatSessionPlugin, CancellationToken.None);
+
+            // Notify clients that the plugin was activated
+            await Clients.Group(chatSessionId).SendAsync("PluginActivated", new
+            {
+                chatSessionId,
+                pluginId
+            });
+
+            Console.WriteLine($"Plugin {pluginId} activated for chat session {chatSessionId} by user {userId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error activating plugin: {ex.Message}");
+            await Clients.Caller.SendAsync("Error", $"Failed to activate plugin: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Gets all available plugins
+    /// </summary>
+    public async Task GetAvailablePlugins()
+    {
+        try
+        {
+            var allPlugins = _pluginExecutorFactory.GetAllPluginDefinitions()
+                .Select(p => new
+                {
+                    id = p.Id,
+                    name = p.Name,
+                    description = p.Description
+                })
+                .ToList();
+
+            await Clients.Caller.SendAsync("AvailablePlugins", allPlugins);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error getting available plugins: {ex.Message}");
+            await Clients.Caller.SendAsync("Error", $"Failed to get available plugins: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Gets all active plugins for a chat session
+    /// </summary>
+    public async Task GetActivePlugins(string chatSessionId)
+    {
+        try
+        {
+            var chatSessionGuid = Guid.Parse(chatSessionId);
+            var activePlugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatSessionGuid, CancellationToken.None);
+            
+            var activePluginIds = activePlugins
+                .Select(p => p.PluginId)
+                .ToList();
+
+            await Clients.Caller.SendAsync("ActivePlugins", activePluginIds);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error getting active plugins: {ex.Message}");
+            await Clients.Caller.SendAsync("Error", $"Failed to get active plugins: {ex.Message}");
         }
     }
 

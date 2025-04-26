@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
 
 namespace Application.Services.Streaming;
 
@@ -49,6 +50,54 @@ public class GrokStreamChunkParser : IStreamChunkParser
                         _logger?.LogTrace("Parsed Grok text delta: '{TextDelta}'", textDelta);
                     }
                     
+                    // Parse function call information
+                    if (deltaElement.TryGetProperty("tool_calls", out var toolCallsElement) && 
+                        toolCallsElement.ValueKind == JsonValueKind.Array &&
+                        toolCallsElement.GetArrayLength() > 0)
+                    {
+                        var toolCall = toolCallsElement[0];
+                        
+                        string? functionId = null;
+                        string? functionName = null;
+                        string? argumentChunk = null;
+                        
+                        // Extract function call id if available
+                        if (toolCall.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String)
+                        {
+                            functionId = idElement.GetString();
+                        }
+                        
+                        // Extract function information
+                        if (toolCall.TryGetProperty("function", out var functionElement) && functionElement.ValueKind == JsonValueKind.Object)
+                        {
+                            // Get function name
+                            if (functionElement.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
+                            {
+                                functionName = nameElement.GetString();
+                            }
+                            
+                            // Get function arguments
+                            if (functionElement.TryGetProperty("arguments", out var argsElement) && argsElement.ValueKind == JsonValueKind.String)
+                            {
+                                argumentChunk = argsElement.GetString();
+                            }
+                        }
+                        
+                        if (!string.IsNullOrEmpty(functionId) || !string.IsNullOrEmpty(functionName) || !string.IsNullOrEmpty(argumentChunk))
+                        {
+                            toolCallInfo = new ToolCallChunk(
+                                Index: 0,
+                                Id: functionId,
+                                Name: functionName,
+                                ArgumentChunk: argumentChunk,
+                                IsComplete: false
+                            );
+                            
+                            _logger?.LogTrace("Parsed Grok function call: Id={Id}, Name={Name}, Args={Args}", 
+                                functionId, functionName, argumentChunk);
+                        }
+                    }
+                    
                     if (firstChoice.TryGetProperty("finish_reason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String)
                     { 
                         finishReason = reasonElement.GetString();
@@ -86,9 +135,9 @@ public class GrokStreamChunkParser : IStreamChunkParser
             }
 
             // If we received content, it's not the final signal chunk.
-            if (finishReason == null && textDelta == null && thinkingDelta == null)
+            if (finishReason == null && textDelta == null && thinkingDelta == null && toolCallInfo == null)
             {
-                _logger?.LogTrace("Grok chunk has no text delta, reasoning, or explicit finish reason. Might be final data chunk before [DONE].");
+                _logger?.LogTrace("Grok chunk has no text delta, reasoning, tool calls, or explicit finish reason. Might be final data chunk before [DONE].");
             }
 
             return new ParsedChunkInfo(

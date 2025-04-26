@@ -56,7 +56,7 @@ public static class DependencyInjection
         services.AddHttpClient();
 
 
-        var webSearchConfig = configuration.GetSection("Plugins:WebSearch");
+        var webSearchConfig = configuration.GetSection("PluginSettings:WebSearch");
         services.AddScoped<WebSearchPlugin>(sp =>
             new WebSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),

@@ -9,6 +9,9 @@ public class Plugin : BaseEntity
     public string IconUrl { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
+    
+    public IReadOnlyCollection<ChatSessionPlugin> ChatSessionPlugins => _chatSessionPlugins;
+    private readonly List<ChatSessionPlugin> _chatSessionPlugins = new();
 
     private Plugin()
     {
@@ -16,7 +19,6 @@ public class Plugin : BaseEntity
 
     public static Plugin Create(string name, string description, string iconUrl = "/icon.png")
     {
-
         return new Plugin
         {
             Id = Guid.NewGuid(),
@@ -27,7 +29,7 @@ public class Plugin : BaseEntity
         };
     }
 
-    public void Update(string name, string description,  string iconUrl)
+    public void Update(string name, string description, string iconUrl)
     {
         Name = name;
         Description = description;

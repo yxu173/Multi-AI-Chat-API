@@ -5,8 +5,17 @@ using Domain.Enums;
 using Microsoft.Extensions.Logging;
 using Domain.Repositories;
 using Application.Services.PayloadBuilders;
+using System.Collections.Generic;
+using System.Dynamic;
+using System.Text.Json;
 
 namespace Application.Services;
+
+public record FunctionDefinitionDto(
+    string Name,
+    string? Description,
+    object? Parameters
+);
 
 public record AiRequestContext(
     Guid UserId,
@@ -20,7 +29,9 @@ public record AiRequestContext(
     int? NumImages = null,
     string? OutputFormat = null,
     bool? EnableSafetyChecker = null,
-    string? SafetyTolerance = null
+    string? SafetyTolerance = null,
+    List<FunctionDefinitionDto>? Functions = null,
+    string? FunctionCall = null
 );
 
 public interface IAiRequestHandler
@@ -59,7 +70,7 @@ public class AiRequestHandler : IAiRequestHandler
         var modelType = context.SpecificModel.ModelType;
         var chatId = context.ChatSession.Id;
 
-        bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini or ModelType.DeepSeek;
+        bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini or ModelType.DeepSeek or ModelType.Grok;
         List<object>? toolDefinitions = null;
 
         if (modelMightSupportTools)
@@ -71,6 +82,55 @@ public class AiRequestHandler : IAiRequestHandler
             {
                 _logger?.LogInformation("Found {Count} active plugins for ChatSession {ChatId}", activePluginIds.Count, chatId);
                 toolDefinitions = GetToolDefinitionsForPayload(modelType, activePluginIds);
+                
+                // If we have function definitions, add them to the context for Grok
+                if (modelType == ModelType.Grok && toolDefinitions != null && toolDefinitions.Any())
+                {
+                    try
+                    {
+                        var functions = new List<FunctionDefinitionDto>();
+                        
+                        foreach (var tool in toolDefinitions)
+                        {
+                            // Convert to JSON and then back to access properties safely
+                            string json = JsonSerializer.Serialize(tool);
+                            using JsonDocument doc = JsonDocument.Parse(json);
+                            
+                            string? name = null;
+                            string? description = null;
+                            object? parameters = null;
+                            
+                            if (doc.RootElement.TryGetProperty("function", out var functionElement))
+                            {
+                                if (functionElement.TryGetProperty("name", out var nameElement))
+                                {
+                                    name = nameElement.GetString();
+                                }
+                                
+                                if (functionElement.TryGetProperty("description", out var descElement))
+                                {
+                                    description = descElement.GetString();
+                                }
+                                
+                                if (functionElement.TryGetProperty("parameters", out var paramsElement))
+                                {
+                                    parameters = JsonSerializer.Deserialize<object>(paramsElement.GetRawText());
+                                }
+                            }
+                            
+                            if (!string.IsNullOrEmpty(name))
+                            {
+                                functions.Add(new FunctionDefinitionDto(name, description, parameters));
+                            }
+                        }
+                        
+                        context = context with { Functions = functions, FunctionCall = "auto" };
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError(ex, "Error converting tool definitions to function definitions for Grok");
+                    }
+                }
             }
             else
             {
@@ -176,7 +236,17 @@ public class AiRequestHandler : IAiRequestHandler
                         break;
 
                     case ModelType.Grok:
-                        // Format for Grok's tool specification
+                        // Format for Grok's tool specification (same as OpenAI)
+                        formattedDefinitions.Add(new 
+                        {
+                            type = "function",
+                            function = new 
+                            {
+                                name = def.Name,
+                                description = def.Description,
+                                parameters = def.ParametersSchema
+                            }
+                        });
                         break;
 
                     default:

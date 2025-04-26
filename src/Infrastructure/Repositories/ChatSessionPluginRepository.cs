@@ -16,10 +16,12 @@ public class ChatSessionPluginRepository : IChatSessionPluginRepository
 
     public async Task<List<ChatSessionPlugin>> GetActivatedPluginsAsync(Guid chatSessionId, CancellationToken cancellationToken)
     {
-        return await _dbContext.ChatSessionPlugins
+        var plugins = await _dbContext.ChatSessionPlugins
             .Where(csp => csp.ChatSessionId == chatSessionId && csp.IsActive)
             .Include(csp => csp.Plugin)
             .ToListAsync(cancellationToken);
+            
+        return plugins;
     }
 
     public async Task AddAsync(ChatSessionPlugin chatSessionPlugin, CancellationToken cancellationToken)
