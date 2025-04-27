@@ -1,4 +1,5 @@
 using Application.Features.UserAiModelSettings.GetUserAiModelSettings;
+using Application.Features.UserAiModelSettings.ResetSystemInstructions;
 using Application.Features.UserAiModelSettings.UpdateUserAiModelSettings;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.UserSettings;
@@ -36,6 +37,14 @@ public class UserSettingsController : BaseController
     public async Task<IResult> GetUserAiModelSettings()
     {
         var command = new GetUserAiModelSettingsCommand(UserId);
+        var result = await _mediator.Send(command);
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [HttpPatch("ResetSystemInstructions")]
+    public async Task<IResult> ResetSystemInstructions()
+    {
+        var command = new ResetSystemInstructionsCommand(UserId);
         var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }

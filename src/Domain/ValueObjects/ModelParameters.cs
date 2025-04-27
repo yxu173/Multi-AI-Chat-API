@@ -5,7 +5,7 @@ namespace Domain.ValueObjects;
 
 public record ModelParameters : ValueObject
 {
-    public string SystemInstructions { get; init; }
+    public string SystemInstructions { get; private set; }
     public Guid DefaultModel { get; private set; }
     public int ContextLimit { get; init; }
     public double Temperature { get; init; }
@@ -46,6 +46,13 @@ public record ModelParameters : ValueObject
             ContextLimit = contextLimit ?? 2, //TODO: Make it 0 for no limit
             SafetySettings = safetySettings ?? string.Empty,
         };
+    }
+
+
+
+    public void ResetSystemInstructions()
+    {
+        SystemInstructions = "you are a helpful assistant";
     }
     
     

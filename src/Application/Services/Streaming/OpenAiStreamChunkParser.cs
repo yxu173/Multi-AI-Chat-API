@@ -115,7 +115,7 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                         _logger?.LogTrace("[OpenAiParser] Function call arg chunk: {Chunk}", chunk);
                     }
                     break;
-
+    
                 case "response.function_call_arguments.done":
                     // signal arguments complete; argument chunks already accumulated
                     {
