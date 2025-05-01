@@ -12,7 +12,7 @@ public sealed record AiModelRequest(
     bool IsEnabled,
     bool SupportsThinking,
     bool SupportsVision,
-    int? ContextLength,
+    int ContextLength,
     string ApiType,
     bool PluginsSupported,
     bool StreamingOutputSupported,

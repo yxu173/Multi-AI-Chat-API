@@ -29,7 +29,7 @@ public class ChatSessionRepository : IChatSessionRepository
     }
 
 
-    public async Task<ChatSession> GetByIdWithModelAsync(Guid id)
+    public async Task<ChatSession> GetByIdWithMessagesAndModelAndProviderAsync(Guid id)
     {
         var chat = await _context.ChatSessions
             .Include(c => c.Messages)
@@ -40,6 +40,14 @@ public class ChatSessionRepository : IChatSessionRepository
             .FirstOrDefaultAsync(c => c.Id == id);
         return chat;
     }
+
+    public async Task<ChatSession> GetChatWithModel(Guid chatId)
+    {
+        return await _context.ChatSessions
+            .Include(c => c.AiModel)
+            .FirstOrDefaultAsync(c => c.Id == chatId); 
+    }
+
 
     public async Task AddAsync(ChatSession chatSession, CancellationToken cancellationToken)
     {

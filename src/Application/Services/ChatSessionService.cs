@@ -20,7 +20,7 @@ public class ChatSessionService
     public async Task<ChatSession> GetChatSessionAsync(Guid chatSessionId,
         CancellationToken cancellationToken = default)
     {
-        var session = await _chatSessionRepository.GetByIdWithModelAsync(chatSessionId)
+        var session = await _chatSessionRepository.GetByIdWithMessagesAndModelAndProviderAsync(chatSessionId)
                       ?? throw new Exception("Chat session not found.");
         return session;
     }

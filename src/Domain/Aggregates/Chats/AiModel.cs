@@ -22,7 +22,7 @@ public sealed class AiModel
     public bool IsEnabled { get; private set; } = true;
     public bool SupportsThinking { get; private set; }
     public bool SupportsVision { get; private set; }
-    public int? ContextLength { get; private set; }
+    public int ContextLength { get; private set; }
     public string ApiType { get; private set; }
     public bool PluginsSupported { get; private set; }
     public bool StreamingOutputSupported { get; private set; }
@@ -39,7 +39,7 @@ public sealed class AiModel
     [JsonConstructor]
     public AiModel(Guid id, string name, ModelType modelType, Guid aiProviderId, double inputTokenPricePer1M,
         double outputTokenPricePer1M, string modelCode, int? maxInputTokens, int? maxOutputTokens,
-        bool isEnabled, bool supportsThinking, bool supportsVision, int? contextLength, string apiType,
+        bool isEnabled, bool supportsThinking, bool supportsVision, int contextLength, string apiType,
         bool pluginsSupported, bool streamingOutputSupported, bool systemRoleSupported, bool promptCachingSupported)
     {
         Id = id;
@@ -63,9 +63,9 @@ public sealed class AiModel
     }
 
     public static AiModel Create(string name, string modelType, Guid aiProviderId, double inputTokenPricePer1M,
-        double outputTokenPricePer1M, string modelCode, int? maxInputTokens = null, int? maxOutputTokens = null,
+        double outputTokenPricePer1M, string modelCode, int contextLength,int? maxInputTokens = null, int? maxOutputTokens = null,
         bool isEnabled = true, bool supportsThinking = false, bool supportsVision = false,
-        int? contextLength = null, string apiType = null, bool pluginsSupported = false,
+         string apiType = null, bool pluginsSupported = false,
         bool streamingOutputSupported = false, bool systemRoleSupported = false, bool promptCachingSupported = false)
     {
         var modelTypeEnum = Enum.Parse<ModelType>(modelType);

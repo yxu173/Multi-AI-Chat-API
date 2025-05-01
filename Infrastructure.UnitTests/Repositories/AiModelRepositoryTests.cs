@@ -45,7 +45,7 @@ namespace Infrastructure.UnitTests.Repositories
             var prov = CreateProvider(db);
             var model = AiModel.Create(
                 name: "M1", modelType: ModelType.OpenAi.ToString(), aiProviderId: prov.Id,
-                inputTokenPricePer1M: 1, outputTokenPricePer1M: 2, modelCode: "code",
+                inputTokenPricePer1M: 1, outputTokenPricePer1M: 2, modelCode: "code",128000,
                 apiType: "testApi");
 
             // Act
@@ -66,8 +66,8 @@ namespace Infrastructure.UnitTests.Repositories
             var cache = new TestCacheService();
             var repo = CreateRepo(db, cache);
             var prov = CreateProvider(db);
-            var m1 = AiModel.Create("M1", ModelType.OpenAi.ToString(), prov.Id, 1, 2, "c1", apiType: "testApi");
-            var m2 = AiModel.Create("M2", ModelType.OpenAi.ToString(), prov.Id, 1, 2, "c2", apiType: "testApi");
+            var m1 = AiModel.Create("M1", ModelType.OpenAi.ToString(), prov.Id, 1, 2, "c1", 128000,apiType: "testApi");
+            var m2 = AiModel.Create("M2", ModelType.OpenAi.ToString(), prov.Id, 1, 2, "c2", 128000,apiType: "testApi");
             await repo.AddAsync(m1);
             await repo.AddAsync(m2);
 
@@ -103,7 +103,7 @@ namespace Infrastructure.UnitTests.Repositories
             var cache = new TestCacheService();
             var repo = CreateRepo(db, cache);
             var prov = CreateProvider(db);
-            var model = AiModel.Create("M", ModelType.OpenAi.ToString(), prov.Id, 1, 2, "c", apiType: "testApi");
+            var model = AiModel.Create("M", ModelType.OpenAi.ToString(), prov.Id, 1, 2, "c", 128000,apiType: "testApi");
             await repo.AddAsync(model);
 
             // Act
@@ -123,7 +123,7 @@ namespace Infrastructure.UnitTests.Repositories
             var cache = new TestCacheService();
             var repo = CreateRepo(db, cache);
             var prov = CreateProvider(db);
-            var model = AiModel.Create("M", ModelType.Gemini.ToString(), prov.Id, 1, 2, "c", apiType: "testApi");
+            var model = AiModel.Create("M", ModelType.Gemini.ToString(), prov.Id, 1, 2, "c", 128000,apiType: "testApi");
             await repo.AddAsync(model);
 
             // Act
