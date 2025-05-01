@@ -112,7 +112,6 @@ public class GrokStreamChunkParser : IStreamChunkParser
                 }
             }
 
-            // Extract Token Usage
             if (root.TryGetProperty("usage", out var usageElement) && usageElement.ValueKind == JsonValueKind.Object)
             {
                 if (usageElement.TryGetProperty("prompt_tokens", out var promptTokensElement) && promptTokensElement.TryGetInt32(out var pt))
@@ -124,17 +123,15 @@ public class GrokStreamChunkParser : IStreamChunkParser
                     outputTokens = ct;
                 }
                 
-                // Try to get reasoning tokens as well
                 if (usageElement.TryGetProperty("reasoning_tokens", out var reasoningTokensElement) && reasoningTokensElement.TryGetInt32(out var rt))
                 {
                     _logger?.LogTrace("Found reasoning tokens: {ReasoningTokens}", rt);
-                    // We could add these tokens to the output tokens if needed
+                    outputTokens = (outputTokens ?? 0) + rt; 
                 }
                 
                 _logger?.LogTrace("Parsed Grok token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
             }
 
-            // If we received content, it's not the final signal chunk.
             if (finishReason == null && textDelta == null && thinkingDelta == null && toolCallInfo == null)
             {
                 _logger?.LogTrace("Grok chunk has no text delta, reasoning, tool calls, or explicit finish reason. Might be final data chunk before [DONE].");
@@ -152,13 +149,11 @@ public class GrokStreamChunkParser : IStreamChunkParser
         catch (JsonException jsonEx)
         {    
             _logger?.LogError(jsonEx, "Failed to parse Grok stream chunk JSON. RawChunk: {RawChunk}", rawJson);
-            // Signal error to the processor
             return new ParsedChunkInfo(FinishReason: "error"); 
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Unexpected error parsing Grok stream chunk. RawChunk: {RawChunk}", rawJson);
-            // Signal error to the processor
             return new ParsedChunkInfo(FinishReason: "error");
         }
     }

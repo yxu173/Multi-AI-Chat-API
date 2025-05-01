@@ -52,8 +52,6 @@ public class DeepSeekService : BaseAiService
                 if (cancellationToken.IsCancellationRequested) break;
 
                 bool isCompletion = false;
-                string? toolCallsFinishReason = null;
-                
                 try
                 {
                     using var doc = JsonDocument.Parse(jsonChunk);
@@ -61,36 +59,11 @@ public class DeepSeekService : BaseAiService
                     { 
                          if(choices[0].TryGetProperty("finish_reason", out var finishReason) && finishReason.ValueKind != JsonValueKind.Null)
                          {
-                            string? finishReasonValue = finishReason.GetString();
                             isCompletion = true;
-                            
-                            // Check for tool calls specifically (like OpenAI's API)
-                            if (finishReasonValue == "tool_calls" || finishReasonValue == "function_call")
-                            {
-                                toolCallsFinishReason = finishReasonValue;
-                                Console.WriteLine($"DeepSeek stream detected tool call completion with reason: {finishReasonValue}");
-                            }
-                         }
-                         
-                         // Check for tool calls in delta (similar to OpenAI's format)
-                         if (choices[0].TryGetProperty("delta", out var delta) && 
-                             delta.TryGetProperty("tool_calls", out var toolCalls) && 
-                             toolCalls.ValueKind == JsonValueKind.Array && 
-                             toolCalls.GetArrayLength() > 0)
-                         {
-                             Console.WriteLine($"DeepSeek stream chunk contains tool_calls data");
-                             
-                             // If we have a chunk with tool call data but no finish reason
-                             // and this is the completion chunk, we should ensure it's marked appropriately
-                             if (isCompletion && toolCallsFinishReason == null)
-                             {
-                                 Console.WriteLine("Setting completion reason to tool_calls based on content");
-                                 toolCallsFinishReason = "tool_calls";
-                             }
                          }
                     }
                 }
-                catch (JsonException) { /* Ignore parse errors, yield raw chunk anyway */ }
+                catch (JsonException) { /* Ignore parse errors */ }
 
                 yield return new AiRawStreamChunk(jsonChunk, isCompletion);
             }

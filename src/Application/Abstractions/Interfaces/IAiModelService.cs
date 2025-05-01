@@ -7,7 +7,11 @@ namespace Application.Abstractions.Interfaces;
 
 //public record AiRequestPayload(object Payload);
 
-public record AiRawStreamChunk(string RawContent, bool IsCompletion = false);
+public record AiRawStreamChunk(
+    string RawContent, 
+    bool IsCompletion = false, 
+    int? InputTokens = null, 
+    int? OutputTokens = null);
 
 public interface IAiModelService
 {

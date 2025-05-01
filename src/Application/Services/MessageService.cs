@@ -85,9 +85,17 @@ public class MessageService
         await _messageRepository.UpdateAsync(message, cancellationToken);
     }
 
+    public async Task UpdateMessageThinkingContentAsync(
+        Message message,
+        string? thinkingContent,
+        CancellationToken cancellationToken = default)
+    {
+        message.UpdateThinkingContent(thinkingContent);
+        await _messageRepository.UpdateAsync(message, cancellationToken);
+    }
+
     public async Task DeleteMessageAsync(Guid messageId, CancellationToken cancellationToken = default)
     {
-        // Delete associated file attachments
         var attachments = await _fileAttachmentRepository.GetByMessageIdAsync(messageId, cancellationToken);
         foreach (var attachment in attachments)
         {

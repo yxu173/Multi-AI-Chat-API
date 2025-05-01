@@ -5,8 +5,6 @@ using Domain.Enums;
 using Microsoft.Extensions.Logging;
 using Domain.Repositories;
 using Application.Services.PayloadBuilders;
-using System.Collections.Generic;
-using System.Dynamic;
 using System.Text.Json;
 
 namespace Application.Services;
@@ -69,7 +67,7 @@ public class AiRequestHandler : IAiRequestHandler
 
         var modelType = context.SpecificModel.ModelType;
         var chatId = context.ChatSession.Id;
-
+        
         bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini or ModelType.DeepSeek or ModelType.Grok;
         List<object>? toolDefinitions = null;
 
@@ -83,7 +81,6 @@ public class AiRequestHandler : IAiRequestHandler
                 _logger?.LogInformation("Found {Count} active plugins for ChatSession {ChatId}", activePluginIds.Count, chatId);
                 toolDefinitions = GetToolDefinitionsForPayload(modelType, activePluginIds);
                 
-                // If we have function definitions, add them to the context for Grok
                 if (modelType == ModelType.Grok && toolDefinitions != null && toolDefinitions.Any())
                 {
                     try
@@ -92,7 +89,6 @@ public class AiRequestHandler : IAiRequestHandler
                         
                         foreach (var tool in toolDefinitions)
                         {
-                            // Convert to JSON and then back to access properties safely
                             string json = JsonSerializer.Serialize(tool);
                             using JsonDocument doc = JsonDocument.Parse(json);
                             

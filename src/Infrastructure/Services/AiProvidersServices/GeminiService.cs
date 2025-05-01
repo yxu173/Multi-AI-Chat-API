@@ -154,24 +154,22 @@ public class GeminiService : BaseAiService, IAiFileUploader
 
         try
         {
-            bool cancelled = false; // Flag to check if loop exited due to cancellation
+            bool cancelled = false; 
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
                                .WithCancellation(cancellationToken))
             {
                  if (cancellationToken.IsCancellationRequested) 
                  {
-                    cancelled = true; // Mark as cancelled
+                    cancelled = true; 
                     break;
                  }
 
-                // Yield the chunk, completion is always false *during* the loop
-                yield return new AiRawStreamChunk(jsonChunk, false);
+                yield return new AiRawStreamChunk(jsonChunk);
             }
             
-            // If the loop completed without being cancelled, signal completion
             if (!cancelled)
             {
-                yield return new AiRawStreamChunk(string.Empty, true); // Signal end of stream
+                yield return new AiRawStreamChunk(string.Empty, true); 
             }
         }
         finally

@@ -1297,7 +1297,45 @@
             thinkingElement.className = 'message ai thinking';
             thinkingElement.id = `thinking-${messageId}`;
             thinkingElement.setAttribute('data-message-id', `thinking-${messageId}`);
-            thinkingElement.innerHTML = `<div class="message-content"><small><i>Thinking:</i></small><br></div>`;
+            
+            // Enhanced styling for thinking content - add a different background color and border
+            thinkingElement.innerHTML = `
+                <div class="message-header">
+                    <span class="thinking-label"><i class="fa fa-brain"></i> AI's Reasoning Process</span>
+                </div>
+                <div class="message-content thinking-content"></div>
+            `;
+            
+            // Add custom styles for thinking content
+            const style = document.createElement('style');
+            style.textContent = `
+                .message.ai.thinking {
+                    background-color: #f0f7ff;
+                    border-left: 3px solid #4a7bff;
+                    margin-bottom: 10px;
+                    animation: fade-in 0.3s ease-in-out;
+                }
+                .thinking-content {
+                    font-size: 0.95em;
+                    color: #444;
+                    white-space: pre-wrap;
+                }
+                .thinking-label {
+                    color: #4a7bff;
+                    font-weight: bold;
+                    font-size: 0.9em;
+                }
+                .message-header {
+                    border-bottom: 1px solid #e1e4e8;
+                    padding-bottom: 5px;
+                    margin-bottom: 8px;
+                }
+                @keyframes fade-in {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+            `;
+            document.head.appendChild(style);
             
             // Insert thinking bubble before the actual AI message bubble if it exists
             const aiMessageElement = document.querySelector(`.message.ai[data-message-id="${messageId}"]`);
@@ -1311,8 +1349,9 @@
             currentThinkingMessageId = messageId;
         }
 
-        const contentElement = thinkingElement.querySelector('.message-content');
+        const contentElement = thinkingElement.querySelector('.thinking-content');
         if (contentElement) {
+            // Process for markdown and highlight as code if it looks like code
             contentElement.innerHTML += formatMessageContent(chunk);
             scrollToBottom();
         }

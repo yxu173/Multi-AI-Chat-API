@@ -58,8 +58,8 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                     {
                         if (responseElement.TryGetProperty("usage", out var usage))
                         {
-                            if (usage.TryGetProperty("input_tokens", out var promptTokens)) inputTokens = promptTokens.GetInt32();
-                            if (usage.TryGetProperty("output_tokens", out var completionTokens)) outputTokens = completionTokens.GetInt32();
+                            if (usage.TryGetProperty("prompt_tokens", out var promptTokens)) inputTokens = promptTokens.GetInt32();
+                            if (usage.TryGetProperty("completion_tokens", out var completionTokens)) outputTokens = completionTokens.GetInt32();
                             _logger?.LogDebug("Parsed OpenAI token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
                         }
 
@@ -106,7 +106,6 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                     break;
 
                 case "response.function_call_arguments.delta":
-                    // accumulate function call argument chunks
                     if (root.TryGetProperty("delta", out var argDelta) && argDelta.ValueKind == JsonValueKind.String)
                     {
                         var chunk = argDelta.GetString() ?? string.Empty;

@@ -7,6 +7,7 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 using Domain.Enums;
 using Application.Services.Streaming;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Application.Services;
 
@@ -19,7 +20,8 @@ public class MessageStreamer
     private readonly IAiRequestHandler _aiRequestHandler;
     private readonly StreamProcessor _streamProcessor;
     private readonly ToolCallHandler _toolCallHandler;
-    private readonly TokenUsageTracker _tokenUsageTracker;
+    private readonly TokenUsageService _tokenUsageService;
+    private readonly MessageService _messageService;
 
     public MessageStreamer(
         IMediator mediator,
@@ -29,7 +31,9 @@ public class MessageStreamer
         IAiRequestHandler aiRequestHandler,
         StreamProcessor streamProcessor,
         ToolCallHandler toolCallHandler,
-        TokenUsageTracker tokenUsageTracker)
+        TokenUsageService tokenUsageService,
+        MessageService messageService
+        )
     {
         _mediator = mediator;
         _messageRepository = messageRepository;
@@ -38,7 +42,8 @@ public class MessageStreamer
         _aiRequestHandler = aiRequestHandler;
         _streamProcessor = streamProcessor;
         _toolCallHandler = toolCallHandler;
-        _tokenUsageTracker = tokenUsageTracker;
+        _tokenUsageService = tokenUsageService;
+        _messageService = messageService;
     }
 
     /// <summary>
@@ -63,40 +68,46 @@ public class MessageStreamer
 
         int totalInputTokens = 0;
         int totalOutputTokens = 0;
-        string finalAiResponseContent = string.Empty;
-        StringBuilder? finalAiResponseContentBuilder = null;
-        MessageDto? aiMessageToolCallRequestMessage = null;
-        List<MessageDto> toolResultMessages = new List<MessageDto>();
         List<MessageDto> originalHistory = new List<MessageDto>(requestContext.History);
 
-        int maxTurns = 5;
-        int turn = 0;
         bool aiResponseCompleted = false;
 
         try
         {
-            // Group handling for non-streaming image models
             if (modelType == ModelType.AimlFlux || modelType == ModelType.Imagen)
             {
                 await HandleSingleChunkImageResponse(requestContext, aiMessage, aiService, modelType, linkedToken);
+                aiResponseCompleted = true; 
             }
             else
             {
-                await HandleStandardResponse(
+                var standardResponseResult = await HandleStandardResponse(
                     requestContext,
                     aiMessage,
                     aiService,
                     modelType,
                     originalHistory,
-                     totalInputTokens,
-                     totalOutputTokens,
-                     aiResponseCompleted,
                     linkedToken);
+
+                totalInputTokens = standardResponseResult.TotalInputTokens;
+                totalOutputTokens = standardResponseResult.TotalOutputTokens;
+                aiResponseCompleted = standardResponseResult.AiResponseCompleted;
+
+                // --- Thinking Content Handling ---
+                if (!string.IsNullOrEmpty(standardResponseResult.AccumulatedThinkingContent))
+                {
+                    await _messageService.UpdateMessageThinkingContentAsync(aiMessage, standardResponseResult.AccumulatedThinkingContent, CancellationToken.None); // Use CancellationToken.None for final save?
+                    // SignalR update for thinking is implicitly handled by ThinkingUpdateNotification published by StreamProcessor
+                }
+                
+                decimal finalCost = aiModel.CalculateCost(totalInputTokens, totalOutputTokens);
+                _logger.LogInformation("Updating final accumulated token usage for ChatSession {ChatSessionId}: Input={InputTokens}, Output={OutputTokens}, Cost={Cost}",
+                    chatSessionId, totalInputTokens, totalOutputTokens, finalCost);
+                await _tokenUsageService.UpdateTokenUsageAsync(chatSessionId, totalInputTokens, totalOutputTokens, finalCost, CancellationToken.None); // Use CancellationToken.None for final save?
             }
 
             var finalUpdateToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
             await FinalizeMessageState(aiMessage, aiResponseCompleted, finalUpdateToken);
-            await _tokenUsageTracker.FinalizeTokenUsage(chatSessionId, aiModel, totalInputTokens, totalOutputTokens, finalUpdateToken);
         }
         catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
         {
@@ -115,12 +126,11 @@ public class MessageStreamer
         }
     }
 
-    // Renamed from HandleAimlFluxResponse to handle multiple single-chunk image providers
     private async Task HandleSingleChunkImageResponse(
         AiRequestContext requestContext,
         Message aiMessage,
         IAiModelService aiService,
-        ModelType modelType, // Added modelType parameter for logging
+        ModelType modelType,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Using single-chunk response path for model {ModelType}", modelType);
@@ -170,26 +180,28 @@ public class MessageStreamer
         }
     }
 
-    private async Task HandleStandardResponse(
+    private record StandardResponseResult(int TotalInputTokens, int TotalOutputTokens, bool AiResponseCompleted, string? AccumulatedThinkingContent);
+
+    private async Task<StandardResponseResult> HandleStandardResponse(
         AiRequestContext requestContext,
         Message aiMessage,
         IAiModelService aiService,
         ModelType modelType,
         List<MessageDto> originalHistory,
-         int totalInputTokens,
-         int totalOutputTokens,
-         bool aiResponseCompleted,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Using standard streaming response path for model {ModelType}", modelType);
         var finalAiResponseContentBuilder = new StringBuilder();
         var toolResultMessages = new List<MessageDto>();
         MessageDto? aiMessageToolCallRequestMessage = null;
-        string? accumulatedThinkingContent = null;
+        string? finalAccumulatedThinkingContent = null;
         int turn = 0;
         int maxTurns = 5;
+        int accumulatedInputTokens = 0;
+        int accumulatedOutputTokens = 0;
+        bool finalAiResponseCompleted = false;
 
-        while (turn < maxTurns && !aiResponseCompleted && !cancellationToken.IsCancellationRequested)
+        while (turn < maxTurns && !finalAiResponseCompleted && !cancellationToken.IsCancellationRequested)
         {
             turn++;
             _logger.LogInformation("Starting AI interaction turn {Turn} for Message {MessageId}", turn, aiMessage.Id);
@@ -214,27 +226,28 @@ public class MessageStreamer
             var streamResult = await _streamProcessor.ProcessStreamAsync(
                 rawStream,
                 modelType,
-                requestContext.SpecificModel.SupportsThinking,
+                requestContext.SpecificModel.SupportsThinking || requestContext.ChatSession.EnableThinking, 
                 aiMessage,
                 requestContext.ChatSession.Id,
                 (textChunk) => finalAiResponseContentBuilder.Append(textChunk),
                 cancellationToken);
 
-            // Capture thinking content if available in the result
             if (!string.IsNullOrEmpty(streamResult.ThinkingContent))
             {
-                accumulatedThinkingContent = streamResult.ThinkingContent;
-                _logger.LogDebug("Captured thinking content for message {MessageId} (Length: {Length})", aiMessage.Id, accumulatedThinkingContent.Length);
+                finalAccumulatedThinkingContent = streamResult.ThinkingContent; 
+                _logger.LogDebug("Captured thinking content in Turn {Turn} for message {MessageId} (Length: {Length})", turn, aiMessage.Id, finalAccumulatedThinkingContent.Length);
             }
 
-            totalInputTokens += streamResult.InputTokens;
-            totalOutputTokens += streamResult.OutputTokens;
+            accumulatedInputTokens += streamResult.InputTokens;
+            accumulatedOutputTokens += streamResult.OutputTokens;
 
             if (cancellationToken.IsCancellationRequested) break;
 
             if (streamResult.ToolCalls?.Any() == true)
             {
                 _logger.LogInformation("AI requested {ToolCallCount} tool calls (Turn {Turn})", streamResult.ToolCalls.Count, turn);
+
+                aiMessage.UpdateContent(finalAiResponseContentBuilder.ToString());
 
                 foreach (var toolCall in streamResult.ToolCalls)
                 {
@@ -243,45 +256,35 @@ public class MessageStreamer
                 }
 
                 aiMessageToolCallRequestMessage = await _toolCallHandler.FormatAiMessageWithToolCallsAsync(modelType, streamResult.ToolCalls);
+
+                finalAiResponseContentBuilder.Clear(); 
             }
             else if (streamResult.IsComplete)
             {
                 _logger.LogInformation("AI stream completed without tool calls (Turn {Turn})", turn);
-                aiResponseCompleted = true;
+                finalAiResponseCompleted = true;
+                aiMessage.UpdateContent(finalAiResponseContentBuilder.ToString()); // Ensure final content is set
             }
             else
             {
-                _logger.LogWarning("AI stream finished unexpectedly without completion or tool call (Turn {Turn})", turn);
-                aiResponseCompleted = true;
+                 _logger.LogWarning("Stream processing finished turn {Turn} unexpectedly.", turn);
             }
+        } 
+
+        if (!finalAiResponseCompleted && !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("AI interaction loop finished after {MaxTurns} turns without full completion for message {MessageId}", maxTurns, aiMessage.Id);
+            aiMessage.UpdateContent(finalAiResponseContentBuilder.ToString());
+            aiMessage.InterruptMessage(); 
+        }
+        else if (cancellationToken.IsCancellationRequested)
+        {
+             _logger.LogInformation("AI interaction cancelled during turn {Turn} for message {MessageId}", turn, aiMessage.Id);
+             aiMessage.InterruptMessage();
         }
 
-        _logger.LogInformation("AI interaction loop finished for Message {MessageId}. AI Response Completed: {IsCompleted}", aiMessage.Id, aiResponseCompleted);
 
-        string finalContent = finalAiResponseContentBuilder.ToString();
-        if (!string.IsNullOrEmpty(finalContent))
-        {
-            aiMessage.UpdateContent(finalContent);
-            _logger.LogInformation("Final AI message content updated (Length: {Length})", finalContent.Length);
-        }
-        else if (!aiResponseCompleted && !cancellationToken.IsCancellationRequested)
-        {
-            aiMessage.AppendContent("\n[AI response incomplete or ended unexpectedly]");
-            _logger.LogWarning("AI response seems incomplete for message {MessageId} after loop.", aiMessage.Id);
-        }
-        
-        // Update thinking content in message entity
-        if (!string.IsNullOrEmpty(accumulatedThinkingContent))
-        {
-            aiMessage.UpdateThinkingContent(accumulatedThinkingContent);
-            _logger.LogInformation("Updated thinking content for message {MessageId} (Length: {Length})", 
-                aiMessage.Id, accumulatedThinkingContent.Length);
-        }
-        
-        // Pass finalContent rather than accumulatedThinkingContent
-        var finalUpdateToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
-        await FinalizeMessageState(aiMessage, aiResponseCompleted, finalUpdateToken);
-        await _tokenUsageTracker.FinalizeTokenUsage(requestContext.ChatSession.Id, requestContext.SpecificModel, totalInputTokens, totalOutputTokens, finalUpdateToken);
+        return new StandardResponseResult(accumulatedInputTokens, accumulatedOutputTokens, finalAiResponseCompleted, finalAccumulatedThinkingContent);
     }
 
     private async Task FinalizeMessageState(Message aiMessage, bool wasCancelled, CancellationToken cancellationToken)

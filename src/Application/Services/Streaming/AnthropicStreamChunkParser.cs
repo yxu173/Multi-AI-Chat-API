@@ -82,8 +82,6 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
                             if (blockStart.TryGetProperty("id", out var toolId) && blockStart.TryGetProperty("name", out var toolName) &&
                                 root.TryGetProperty("index", out var startIndexElement) && startIndexElement.TryGetInt32(out int startIndex))
                             {
-                                // This signals the start of a tool call, capturing ID and Name.
-                                // ArgumentChunk will be populated by subsequent input_json_delta events.
                                 toolCallInfo = new ToolCallChunk(startIndex, Id: toolId.GetString(), Name: toolName.GetString(), ArgumentChunk: null);
                                 _logger?.LogInformation("Parsed tool_use start: Index={Index}, Id={Id}, Name={Name}", startIndex, toolCallInfo.Id, toolCallInfo.Name);
                             }
@@ -108,9 +106,6 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
                                 }
                                 else if (deltaType == "input_json_delta" && contentDelta.TryGetProperty("partial_json", out var argsChunkElement))
                                 {
-                                    // This captures a chunk of the arguments JSON.
-                                    // The StreamProcessor needs to aggregate these based on the index/ID.
-                                    // We create a ToolCallChunk *only* containing the argument chunk and index.
                                     toolCallInfo = new ToolCallChunk(deltaIndex, ArgumentChunk: argsChunkElement.GetString());
                                     _logger?.LogDebug("Parsed tool argument chunk (input_json_delta): Index={Index}, Length={Length}", deltaIndex, toolCallInfo.ArgumentChunk?.Length ?? 0);
                                 }
@@ -142,7 +137,7 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
                             {
                                 "end_turn" => "stop",
                                 "max_tokens" => "length",
-                                "tool_calls" => "tool_calls", // Important: Indicates tool calls are expected/complete.
+                                "tool_calls" => "tool_calls", 
                                 _ => reason
                             };
                             _logger?.LogInformation("Received stop reason: {Reason} (normalized to: {NormalizedReason})", reason, finishReason);
@@ -157,17 +152,20 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
 
                     case "message_stop":
                         _logger?.LogInformation("Received message_stop event.");
-                        // If finishReason hasn't been set by message_delta, assume normal stop.
                         if (string.IsNullOrEmpty(finishReason))
                         {
                             finishReason = "stop";
                             _logger?.LogInformation("Assuming normal 'stop' finish reason for message_stop.");
                         }
-                        // We might get final token counts here as well.
                          if (root.TryGetProperty("message", out var finalMessage) && finalMessage.TryGetProperty("usage", out var finalUsage))
                          {
                              if (finalUsage.TryGetProperty("input_tokens", out var finalInTok) && finalInTok.ValueKind == JsonValueKind.Number) inputTokens = finalInTok.GetInt32();
                              if (finalUsage.TryGetProperty("output_tokens", out var finalOutTok) && finalOutTok.ValueKind == JsonValueKind.Number) outputTokens = finalOutTok.GetInt32();
+                             if (root.TryGetProperty("message", out var startMsg) && startMsg.TryGetProperty("usage", out var startUsage) &&
+                                 startUsage.TryGetProperty("input_tokens", out var startInTok) && startInTok.ValueKind == JsonValueKind.Number && !inputTokens.HasValue)
+                             {
+                                 inputTokens = startInTok.GetInt32();
+                             }
                              if (inputTokens.HasValue || outputTokens.HasValue)
                              {
                                  _logger?.LogDebug("Parsed final token usage from message_stop: Input={Input}, Output={Output}", inputTokens, outputTokens);
@@ -185,9 +183,6 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
                 }
             }
 
-            // Note: Removed explicit tool call parsing here as it's handled by content_block_start/delta
-            // Note: Removed explicit usage parsing here as it's handled by message_start/delta/stop
-
             return new ParsedChunkInfo(
                 TextDelta: textDelta,
                 ThinkingDelta: thinkingDelta,
@@ -200,7 +195,6 @@ public class AnthropicStreamChunkParser : IStreamChunkParser
         catch (JsonException jsonEx)
         {
             _logger.LogError(jsonEx, "Failed to parse Anthropic stream chunk. RawChunk: {RawChunk}", rawJson);
-            // Return an empty chunk, but maybe log error finish reason if applicable?
             return new ParsedChunkInfo();
         }
         catch (Exception ex)
