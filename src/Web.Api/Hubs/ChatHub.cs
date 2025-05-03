@@ -4,15 +4,9 @@ using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using Domain.Repositories;
 using MediatR;
-using System.Threading.Tasks;
-using System;
-using System.Collections.Generic;
 using Domain.Aggregates.Chats;
-using System.IO;
-using Application.Abstractions.Interfaces;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Gif;
@@ -24,8 +18,6 @@ namespace Web.Api.Hubs;
 public class ChatHub : Hub
 {
     private readonly ChatService _chatService;
-    private readonly StreamingOperationManager _streamingOperationManager;
-    private readonly IMessageRepository _messageRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly MessageService _messageService;
     private readonly IMediator _mediator;
@@ -36,15 +28,11 @@ public class ChatHub : Hub
 
     public ChatHub(
         ChatService chatService,
-        StreamingOperationManager streamingOperationManager,
-        IMessageRepository messageRepository,
         IFileAttachmentRepository fileAttachmentRepository,
         MessageService messageService,
         IMediator mediator)
     {
         _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
-        _streamingOperationManager = streamingOperationManager ?? throw new ArgumentNullException(nameof(streamingOperationManager));
-        _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
@@ -307,27 +295,17 @@ public class ChatHub : Hub
 
             try
             {
-                var fileBytes = await File.ReadAllBytesAsync(fileAttachment.FilePath);
-                
-                if (fileBytes.Length > MAX_AI_FILE_SIZE)
-                {
-                    processedContent += $"\n[Attachment {fileAttachment.FileName} skipped: too large for AI processing (max {MAX_AI_FILE_SIZE / (1024 * 1024)}MB)]";
-                    continue;
-                }
-                
+                // Use file ID to identify attachment in the message without showing the base64
                 if (fileAttachment.FileType == FileType.Image)
                 {
-                    processedContent = await ProcessImageAttachmentAsync(processedContent, fileAttachment, fileBytes);
+                    // For images, add a special tag that will be processed server-side to include base64
+                    processedContent += $"\n\n<image:{fileId}>\n\n";
                 }
                 else
                 {
-                    processedContent = ProcessDocumentAttachmentAsync(processedContent, fileAttachment, fileBytes);
+                    // For documents, add a tag that will be processed server-side
+                    processedContent += $"\n\n<file:{fileId}:{fileAttachment.FileName}>\n\n";
                 }
-            }
-            catch (IOException ex)
-            {
-                Console.WriteLine($"Error reading file {fileAttachment.FilePath}: {ex.Message}");
-                processedContent += $"\n[Error reading attachment: {fileAttachment.FileName}]";
             }
             catch (Exception ex)
             {

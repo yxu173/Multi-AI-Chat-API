@@ -5,6 +5,7 @@ using Infrastructure.Database;
 using Web.Api;
 using Web.Api.Hubs;
 using System.Runtime;
+using FastEndpoints;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
@@ -16,6 +17,8 @@ builder.Services
     .AddPresentation()
     .AddApplication(builder.Configuration)
     .AddInfrastructure(builder.Configuration);
+
+builder.Services.AddFastEndpoints();
 
 builder.Services.AddSignalR(options =>
 {
@@ -103,5 +106,5 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<ChatHub>("/chatHub");
-
+app.UseFastEndpoints();
 app.Run();

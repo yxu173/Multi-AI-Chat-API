@@ -6,6 +6,10 @@ using Microsoft.Extensions.Logging;
 using Domain.Repositories;
 using Application.Services.PayloadBuilders;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.IO;
+using System.Net.Http;
+using System.Net.Http.Json;
 
 namespace Application.Services;
 
@@ -45,16 +49,20 @@ public class AiRequestHandler : IAiRequestHandler
     private readonly IPayloadBuilderFactory _payloadBuilderFactory;
     private readonly IPluginExecutorFactory _pluginExecutorFactory;
     private readonly IChatSessionPluginRepository _chatSessionPluginRepository;
+    private readonly IFileAttachmentRepository _fileAttachmentRepository;
+    private readonly string _apiBaseUrl;
 
     public AiRequestHandler(
         IPayloadBuilderFactory payloadBuilderFactory,
         IPluginExecutorFactory pluginExecutorFactory,
         IChatSessionPluginRepository chatSessionPluginRepository,
+        IFileAttachmentRepository fileAttachmentRepository,
         ILogger<AiRequestHandler> logger)
     {
         _payloadBuilderFactory = payloadBuilderFactory ?? throw new ArgumentNullException(nameof(payloadBuilderFactory));
         _pluginExecutorFactory = pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
         _chatSessionPluginRepository = chatSessionPluginRepository ?? throw new ArgumentNullException(nameof(chatSessionPluginRepository));
+        _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -65,8 +73,29 @@ public class AiRequestHandler : IAiRequestHandler
         ArgumentNullException.ThrowIfNull(context.SpecificModel);
         ArgumentNullException.ThrowIfNull(context.History);
 
-        var modelType = context.SpecificModel.ModelType;
-        var chatId = context.ChatSession.Id;
+        var processedHistory = new List<MessageDto>();
+        foreach (var message in context.History)
+        {
+            var processedContent = await ProcessFileTagsAsync(message.Content, cancellationToken);
+            
+            var processedMessage = new MessageDto(
+                processedContent, 
+                message.IsFromAi, 
+                message.MessageId)
+            {
+                FileAttachments = message.FileAttachments,
+                ThinkingContent = message.ThinkingContent,
+                FunctionCall = message.FunctionCall,
+                FunctionResponse = message.FunctionResponse
+            };
+            
+            processedHistory.Add(processedMessage);
+        }
+        
+        var updatedContext = context with { History = processedHistory };
+
+        var modelType = updatedContext.SpecificModel.ModelType;
+        var chatId = updatedContext.ChatSession.Id;
         
         bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini or ModelType.DeepSeek or ModelType.Grok;
         List<object>? toolDefinitions = null;
@@ -120,7 +149,7 @@ public class AiRequestHandler : IAiRequestHandler
                             }
                         }
                         
-                        context = context with { Functions = functions, FunctionCall = "auto" };
+                        updatedContext = updatedContext with { Functions = functions, FunctionCall = "auto" };
                     }
                     catch (Exception ex)
                     {
@@ -142,13 +171,13 @@ public class AiRequestHandler : IAiRequestHandler
         {
             AiRequestPayload payload = modelType switch
             {
-                ModelType.OpenAi => _payloadBuilderFactory.CreateOpenAiBuilder().PreparePayload(context, toolDefinitions),
-                ModelType.Anthropic => _payloadBuilderFactory.CreateAnthropicBuilder().PreparePayload(context, toolDefinitions),
-                ModelType.Gemini => await _payloadBuilderFactory.CreateGeminiBuilder().PreparePayloadAsync(context, toolDefinitions, cancellationToken),
-                ModelType.DeepSeek => await _payloadBuilderFactory.CreateDeepSeekBuilder().PreparePayloadAsync(context, toolDefinitions, cancellationToken),
-                ModelType.AimlFlux => _payloadBuilderFactory.CreateAimlFluxBuilder().PreparePayload(context),
-                ModelType.Imagen => _payloadBuilderFactory.CreateImagenBuilder().PreparePayload(context),
-                ModelType.Grok => _payloadBuilderFactory.CreateGrokBuilder().PreparePayload(context),
+                ModelType.OpenAi => _payloadBuilderFactory.CreateOpenAiBuilder().PreparePayload(updatedContext, toolDefinitions),
+                ModelType.Anthropic => _payloadBuilderFactory.CreateAnthropicBuilder().PreparePayload(updatedContext, toolDefinitions),
+                ModelType.Gemini => await _payloadBuilderFactory.CreateGeminiBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
+                ModelType.DeepSeek => await _payloadBuilderFactory.CreateDeepSeekBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
+                ModelType.AimlFlux => _payloadBuilderFactory.CreateAimlFluxBuilder().PreparePayload(updatedContext),
+                ModelType.Imagen => _payloadBuilderFactory.CreateImagenBuilder().PreparePayload(updatedContext),
+                ModelType.Grok => _payloadBuilderFactory.CreateGrokBuilder().PreparePayload(updatedContext),
                 _ => throw new NotSupportedException($"Model type {modelType} is not supported for request preparation."),
             };
             return payload;
@@ -257,5 +286,92 @@ public class AiRequestHandler : IAiRequestHandler
 
         _logger?.LogInformation("Successfully formatted {FormattedCount} tool definitions for {ModelType}.", formattedDefinitions.Count, modelType);
         return formattedDefinitions;
+    }
+
+    private async Task<string> ProcessFileTagsAsync(string content, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(content))
+            return content;
+
+        try
+        {
+            var imageTagRegex = new Regex(@"<image:([0-9a-fA-F-]{36})>");
+            var imageMatches = imageTagRegex.Matches(content);
+            foreach (Match match in imageMatches)
+            {
+                if (Guid.TryParse(match.Groups[1].Value, out Guid fileId))
+                {
+                    var base64Data = await GetFileBase64Async(fileId, cancellationToken);
+                    if (base64Data != null && !string.IsNullOrEmpty(base64Data.Base64Content))
+                    {
+                        var replacement = $"<image-base64:{base64Data.ContentType};base64,{base64Data.Base64Content}>";
+                        content = content.Replace(match.Value, replacement);
+                    }
+                    else
+                    {
+                        content = content.Replace(match.Value, "[Image could not be processed]");
+                    }
+                }
+            }
+
+            var fileTagRegex = new Regex(@"<file:([0-9a-fA-F-]{36}):([^>]*)>");
+            var fileMatches = fileTagRegex.Matches(content);
+            foreach (Match match in fileMatches)
+            {
+                if (Guid.TryParse(match.Groups[1].Value, out Guid fileId))
+                {
+                    string fileName = match.Groups[2].Value;
+                    var base64Data = await GetFileBase64Async(fileId, cancellationToken);
+                    if (base64Data != null && !string.IsNullOrEmpty(base64Data.Base64Content))
+                    {
+                        var replacement = $"<file-base64:{fileName}:{base64Data.ContentType};base64,{base64Data.Base64Content}>";
+                        content = content.Replace(match.Value, replacement);
+                    }
+                    else
+                    {
+                        content = content.Replace(match.Value, $"[File {fileName} could not be processed]");
+                    }
+                }
+            }
+
+            return content;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error processing file tags in content");
+            return content;
+        }
+    }
+
+    private async Task<FileBase64Data?> GetFileBase64Async(Guid fileId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId, cancellationToken);
+            if (fileAttachment == null) return null;
+            if (!File.Exists(fileAttachment.FilePath)) return null;
+            var bytes = await File.ReadAllBytesAsync(fileAttachment.FilePath, cancellationToken);
+            var base64 = Convert.ToBase64String(bytes);
+            return new FileBase64Data
+            {
+                Base64Content = base64,
+                ContentType = fileAttachment.ContentType,
+                FileName = fileAttachment.FileName,
+                FileType = fileAttachment.FileType.ToString()
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error getting base64 for file {FileId}", fileId);
+            return null;
+        }
+    }
+
+    private class FileBase64Data
+    {
+        public string Base64Content { get; set; } = string.Empty;
+        public string ContentType { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public string FileType { get; set; } = string.Empty;
     }
 }
