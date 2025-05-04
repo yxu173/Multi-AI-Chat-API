@@ -8,7 +8,7 @@ namespace Infrastructure.Services.AiProvidersServices;
 
 public class QwenService : BaseAiService
 {
-    private const string QwenBaseUrl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/";
+    private const string QwenBaseUrl = "https://api.aimlapi.com/v1/";
 
     public QwenService(IHttpClientFactory httpClientFactory, string? apiKey, string modelCode)
         : base(httpClientFactory, apiKey, modelCode, QwenBaseUrl)
