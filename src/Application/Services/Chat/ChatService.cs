@@ -7,7 +7,6 @@ using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-
 namespace Application.Services.Chat;
 
 public class ChatService
@@ -108,7 +107,7 @@ public class ChatService
         var contentToUse = newContent;
 
         var fileAttachments = messageToEdit.FileAttachments?.ToList() ?? new List<FileAttachment>();
-        List<Guid> newFileAttachmentIds = ExtractFileAttachmentIds(contentToUse);
+        List<Guid> newFileAttachmentIds = Utilities.Utilities.ExtractFileAttachmentIds(contentToUse);
         if (newFileAttachmentIds.Any())
         {
             var newFileAttachments = new List<FileAttachment>();
@@ -273,23 +272,5 @@ public class ChatService
                 FileAttachments = m.FileAttachments?.ToList()
             })
             .ToList();
-    }
-
-    private List<Guid> ExtractFileAttachmentIds(string content)
-    {
-        var fileIds = new List<Guid>();
-
-        var imageMatches = System.Text.RegularExpressions.Regex.Matches(content,
-            @"<(image|file):[^>]*?/api/file/([0-9a-fA-F-]{36})",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        foreach (System.Text.RegularExpressions.Match match in imageMatches)
-        {
-            if (Guid.TryParse(match.Groups[2].Value, out Guid fileId))
-            {
-                fileIds.Add(fileId);
-            }
-        }
-
-        return fileIds;
     }
 }
