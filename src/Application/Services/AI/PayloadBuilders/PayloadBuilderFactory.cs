@@ -50,6 +50,11 @@ public class PayloadBuilderFactory : IPayloadBuilderFactory
         return _serviceProvider.GetRequiredService<IGrokPayloadBuilder>();
     }
 
+    public IQwenPayloadBuilder CreateQwenBuilder()
+    {
+        return _serviceProvider.GetRequiredService<IQwenPayloadBuilder>();
+    }
+
     public BasePayloadBuilder GetBuilder(ModelType modelType)
     {
         _logger.LogDebug("Getting payload builder for model type {ModelType}", modelType);
@@ -58,10 +63,11 @@ public class PayloadBuilderFactory : IPayloadBuilderFactory
             ModelType.OpenAi => (BasePayloadBuilder)CreateOpenAiBuilder(),
             ModelType.Anthropic => (BasePayloadBuilder)CreateAnthropicBuilder(),
             ModelType.Gemini => (BasePayloadBuilder)CreateGeminiBuilder(),
-            ModelType.DeepSeek => (BasePayloadBuilder)CreateDeepSeekBuilder(),
-            ModelType.AimlFlux => (BasePayloadBuilder)CreateAimlFluxBuilder(),
             ModelType.Imagen => (BasePayloadBuilder)CreateImagenBuilder(),
+            ModelType.DeepSeek => (BasePayloadBuilder)CreateDeepSeekBuilder(),
             ModelType.Grok => (BasePayloadBuilder)CreateGrokBuilder(),
+            ModelType.AimlFlux => (BasePayloadBuilder)CreateAimlFluxBuilder(),
+            ModelType.Qwen => (BasePayloadBuilder)CreateQwenBuilder(),
             _ => throw new NotSupportedException($"Payload builder for model type {modelType} is not supported.")
         };
     }

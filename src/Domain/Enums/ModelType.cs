@@ -6,10 +6,8 @@ public enum ModelType
     Anthropic,
     DeepSeek,
     Gemini,
-    Imagen3,
-    Custom,
-    Unknown,
     AimlFlux,
     Imagen,
-    Grok
+    Grok,
+    Qwen
 }

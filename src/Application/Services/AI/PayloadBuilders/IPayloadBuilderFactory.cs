@@ -9,4 +9,5 @@ public interface IPayloadBuilderFactory
     IAimlFluxPayloadBuilder CreateAimlFluxBuilder();
     IPayloadBuilder CreateImagenBuilder();
     IGrokPayloadBuilder CreateGrokBuilder();
+    IQwenPayloadBuilder CreateQwenBuilder();
 } 

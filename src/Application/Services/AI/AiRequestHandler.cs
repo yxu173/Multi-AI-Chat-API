@@ -57,19 +57,14 @@ public class AiRequestHandler : IAiRequestHandler
         IFileAttachmentRepository fileAttachmentRepository,
         ILogger<AiRequestHandler> logger)
     {
-        _payloadBuilderFactory =
-            payloadBuilderFactory ?? throw new ArgumentNullException(nameof(payloadBuilderFactory));
-        _pluginExecutorFactory =
-            pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
-        _chatSessionPluginRepository = chatSessionPluginRepository ??
-                                       throw new ArgumentNullException(nameof(chatSessionPluginRepository));
-        _fileAttachmentRepository = fileAttachmentRepository ??
-                                    throw new ArgumentNullException(nameof(fileAttachmentRepository));
+        _payloadBuilderFactory = payloadBuilderFactory ?? throw new ArgumentNullException(nameof(payloadBuilderFactory));
+        _pluginExecutorFactory = pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
+        _chatSessionPluginRepository = chatSessionPluginRepository ?? throw new ArgumentNullException(nameof(chatSessionPluginRepository));
+        _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<AiRequestPayload> PrepareRequestPayloadAsync(AiRequestContext context,
-        CancellationToken cancellationToken = default)
+    public async Task<AiRequestPayload> PrepareRequestPayloadAsync(AiRequestContext context, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(context.ChatSession);
@@ -80,10 +75,10 @@ public class AiRequestHandler : IAiRequestHandler
         foreach (var message in context.History)
         {
             var processedContent = await ProcessFileTagsAsync(message.Content, cancellationToken);
-
+            
             var processedMessage = new MessageDto(
-                processedContent,
-                message.IsFromAi,
+                processedContent, 
+                message.IsFromAi, 
                 message.MessageId)
             {
                 FileAttachments = message.FileAttachments,
@@ -91,30 +86,16 @@ public class AiRequestHandler : IAiRequestHandler
                 FunctionCall = message.FunctionCall,
                 FunctionResponse = message.FunctionResponse
             };
-
+            
             processedHistory.Add(processedMessage);
         }
-
+        
         var updatedContext = context with { History = processedHistory };
 
         var modelType = updatedContext.SpecificModel.ModelType;
         var chatId = updatedContext.ChatSession.Id;
-
-        bool modelMightSupportTools;
-        switch (modelType)
-        {
-            case ModelType.OpenAi:
-            case ModelType.Anthropic:
-            case ModelType.Gemini:
-            case ModelType.DeepSeek:
-            case ModelType.Grok:
-                modelMightSupportTools = true;
-                break;
-            default:
-                modelMightSupportTools = false;
-                break;
-        }
-
+        
+        bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini or ModelType.DeepSeek or ModelType.Grok or ModelType.Qwen;
         List<object>? toolDefinitions = null;
 
         if (modelMightSupportTools)
@@ -124,54 +105,53 @@ public class AiRequestHandler : IAiRequestHandler
 
             if (activePluginIds.Any())
             {
-                _logger?.LogInformation("Found {Count} active plugins for ChatSession {ChatId}", activePluginIds.Count,
-                    chatId);
+                _logger?.LogInformation("Found {Count} active plugins for ChatSession {ChatId}", activePluginIds.Count, chatId);
                 toolDefinitions = GetToolDefinitionsForPayload(modelType, activePluginIds);
-
-                if (modelType == ModelType.Grok && toolDefinitions != null && toolDefinitions.Any())
+                
+                if ((modelType == ModelType.Grok || modelType == ModelType.Qwen) && toolDefinitions != null && toolDefinitions.Any())
                 {
                     try
                     {
                         var functions = new List<FunctionDefinitionDto>();
-
+                        
                         foreach (var tool in toolDefinitions)
                         {
                             string json = JsonSerializer.Serialize(tool);
                             using JsonDocument doc = JsonDocument.Parse(json);
-
+                            
                             string? name = null;
                             string? description = null;
                             object? parameters = null;
-
+                            
                             if (doc.RootElement.TryGetProperty("function", out var functionElement))
                             {
                                 if (functionElement.TryGetProperty("name", out var nameElement))
                                 {
                                     name = nameElement.GetString();
                                 }
-
+                                
                                 if (functionElement.TryGetProperty("description", out var descElement))
                                 {
                                     description = descElement.GetString();
                                 }
-
+                                
                                 if (functionElement.TryGetProperty("parameters", out var paramsElement))
                                 {
                                     parameters = JsonSerializer.Deserialize<object>(paramsElement.GetRawText());
                                 }
                             }
-
+                            
                             if (!string.IsNullOrEmpty(name))
                             {
                                 functions.Add(new FunctionDefinitionDto(name, description, parameters));
                             }
                         }
-
+                        
                         updatedContext = updatedContext with { Functions = functions, FunctionCall = "auto" };
                     }
                     catch (Exception ex)
                     {
-                        _logger?.LogError(ex, "Error converting tool definitions to function definitions for Grok");
+                        _logger?.LogError(ex, "Error converting tool definitions to function definitions for {ModelType}", modelType);
                     }
                 }
             }
@@ -182,26 +162,22 @@ public class AiRequestHandler : IAiRequestHandler
         }
         else
         {
-            _logger?.LogDebug("Tool support check skipped for model type {ModelType}", modelType);
+             _logger?.LogDebug("Tool support check skipped for model type {ModelType}", modelType);
         }
 
         try
         {
             AiRequestPayload payload = modelType switch
             {
-                ModelType.OpenAi => _payloadBuilderFactory.CreateOpenAiBuilder()
-                    .PreparePayload(updatedContext, toolDefinitions),
-                ModelType.Anthropic => _payloadBuilderFactory.CreateAnthropicBuilder()
-                    .PreparePayload(updatedContext, toolDefinitions),
-                ModelType.Gemini => await _payloadBuilderFactory.CreateGeminiBuilder()
-                    .PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
-                ModelType.DeepSeek => await _payloadBuilderFactory.CreateDeepSeekBuilder()
-                    .PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
+                ModelType.OpenAi => _payloadBuilderFactory.CreateOpenAiBuilder().PreparePayload(updatedContext, toolDefinitions),
+                ModelType.Anthropic => _payloadBuilderFactory.CreateAnthropicBuilder().PreparePayload(updatedContext, toolDefinitions),
+                ModelType.Gemini => await _payloadBuilderFactory.CreateGeminiBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
+                ModelType.DeepSeek => await _payloadBuilderFactory.CreateDeepSeekBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
                 ModelType.AimlFlux => _payloadBuilderFactory.CreateAimlFluxBuilder().PreparePayload(updatedContext),
                 ModelType.Imagen => _payloadBuilderFactory.CreateImagenBuilder().PreparePayload(updatedContext),
                 ModelType.Grok => _payloadBuilderFactory.CreateGrokBuilder().PreparePayload(updatedContext),
-                _ => throw new NotSupportedException(
-                    $"Model type {modelType} is not supported for request preparation."),
+                ModelType.Qwen => _payloadBuilderFactory.CreateQwenBuilder().PreparePayload(updatedContext),
+                _ => throw new NotSupportedException($"Model type {modelType} is not supported for request preparation."),
             };
             return payload;
         }
@@ -229,22 +205,18 @@ public class AiRequestHandler : IAiRequestHandler
 
         if (!activeDefinitions.Any())
         {
-            _logger?.LogWarning("No matching definitions found in factory for active plugin IDs: {ActiveIds}",
-                string.Join(", ", activePluginIds));
+            _logger?.LogWarning("No matching definitions found in factory for active plugin IDs: {ActiveIds}", string.Join(", ", activePluginIds));
             return null;
         }
 
-        _logger?.LogInformation("Found {DefinitionCount} active plugin definitions to format for {ModelType}.",
-            activeDefinitions.Count, modelType);
+        _logger?.LogInformation("Found {DefinitionCount} active plugin definitions to format for {ModelType}.", activeDefinitions.Count, modelType);
         var formattedDefinitions = new List<object>();
 
         foreach (var def in activeDefinitions)
         {
             if (def.ParametersSchema == null)
             {
-                _logger?.LogWarning(
-                    "Skipping tool definition for {ToolName} ({ToolId}) due to missing parameter schema.", def.Name,
-                    def.Id);
+                _logger?.LogWarning("Skipping tool definition for {ToolName} ({ToolId}) due to missing parameter schema.", def.Name, def.Id);
                 continue;
             }
 
@@ -279,35 +251,45 @@ public class AiRequestHandler : IAiRequestHandler
                             parameters = def.ParametersSchema
                         });
                         break;
-
+                        
                     case ModelType.DeepSeek:
-                        _logger?.LogWarning(
-                            "Tool definition formatting for DeepSeek is not yet defined/supported. Skipping tool: {ToolName}",
-                            def.Name);
+                        _logger?.LogWarning("Tool definition formatting for DeepSeek is not yet defined/supported. Skipping tool: {ToolName}", def.Name);
                         break;
 
                     case ModelType.Grok:
-                        formattedDefinitions.Add(new
+                        formattedDefinitions.Add(new 
                         {
                             type = "function",
-                            name = def.Name,
-                            description = def.Description,
-                            parameters = def.ParametersSchema
+                            function = new
+                            {
+                                name = def.Name,
+                                description = def.Description,
+                                parameters = def.ParametersSchema
+                            }
+                        });
+                        break;
+
+                    case ModelType.Qwen:
+                        formattedDefinitions.Add(new 
+                        {
+                            type = "function",
+                            function = new
+                            {
+                                name = def.Name,
+                                description = def.Description,
+                                parameters = def.ParametersSchema
+                            }
                         });
                         break;
 
                     default:
-                        _logger?.LogWarning(
-                            "Tool definition requested for provider {ModelType} which may not support the standard format or is unknown. Skipping tool: {ToolName}",
-                            modelType, def.Name);
+                        _logger?.LogWarning("Tool definition requested for provider {ModelType} which may not support the standard format or is unknown. Skipping tool: {ToolName}", modelType, def.Name);
                         break;
                 }
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex,
-                    "Error formatting tool definition for {ToolName} ({ToolId}) for provider {ModelType}", def.Name,
-                    def.Id, modelType);
+                _logger?.LogError(ex, "Error formatting tool definition for {ToolName} ({ToolId}) for provider {ModelType}", def.Name, def.Id, modelType);
             }
         }
 
@@ -317,8 +299,7 @@ public class AiRequestHandler : IAiRequestHandler
             return null;
         }
 
-        _logger?.LogInformation("Successfully formatted {FormattedCount} tool definitions for {ModelType}.",
-            formattedDefinitions.Count, modelType);
+        _logger?.LogInformation("Successfully formatted {FormattedCount} tool definitions for {ModelType}.", formattedDefinitions.Count, modelType);
         return formattedDefinitions;
     }
 
@@ -329,15 +310,11 @@ public class AiRequestHandler : IAiRequestHandler
 
         try
         {
-            // Use shared utility to extract file IDs
-            var fileIds = Utilities.Utilities.ExtractFileAttachmentIds(content);
-
-            // Process image tags
             var imageTagRegex = new Regex(@"<image:([0-9a-fA-F-]{36})>");
             var imageMatches = imageTagRegex.Matches(content);
             foreach (Match match in imageMatches)
             {
-                if (Guid.TryParse(match.Groups[1].Value, out Guid fileId) && fileIds.Contains(fileId))
+                if (Guid.TryParse(match.Groups[1].Value, out Guid fileId))
                 {
                     var base64Data = await GetFileBase64Async(fileId, cancellationToken);
                     if (base64Data != null && !string.IsNullOrEmpty(base64Data.Base64Content))
@@ -352,19 +329,17 @@ public class AiRequestHandler : IAiRequestHandler
                 }
             }
 
-            // Process file tags
             var fileTagRegex = new Regex(@"<file:([0-9a-fA-F-]{36}):([^>]*)>");
             var fileMatches = fileTagRegex.Matches(content);
             foreach (Match match in fileMatches)
             {
-                if (Guid.TryParse(match.Groups[1].Value, out Guid fileId) && fileIds.Contains(fileId))
+                if (Guid.TryParse(match.Groups[1].Value, out Guid fileId))
                 {
                     string fileName = match.Groups[2].Value;
                     var base64Data = await GetFileBase64Async(fileId, cancellationToken);
                     if (base64Data != null && !string.IsNullOrEmpty(base64Data.Base64Content))
                     {
-                        var replacement =
-                            $"<file-base64:{fileName}:{base64Data.ContentType};base64,{base64Data.Base64Content}>";
+                        var replacement = $"<file-base64:{fileName}:{base64Data.ContentType};base64,{base64Data.Base64Content}>";
                         content = content.Replace(match.Value, replacement);
                     }
                     else

@@ -46,6 +46,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var aimlLogger = _serviceProvider.GetService<ILogger<AimlApiService>>();
         var imagenLogger = _serviceProvider.GetService<ILogger<ImagenService>>();
         var grokLogger = _serviceProvider.GetService<ILogger<GrokService>>();
+        var qwenLogger = _serviceProvider.GetService<ILogger<QwenService>>();
         
         return aiModel.ModelType switch
         {
@@ -56,6 +57,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             ModelType.AimlFlux => new AimlApiService(httpClientFactory, apiKey, aiModel.ModelCode, aimlLogger),
             ModelType.Imagen => CreateImagenService(httpClientFactory, apiKey, aiModel.ModelCode, imagenLogger),
             ModelType.Grok => new GrokService(httpClientFactory, apiKey, aiModel.ModelCode),
+            ModelType.Qwen => new QwenService(httpClientFactory, apiKey, aiModel.ModelCode),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
         };
     }

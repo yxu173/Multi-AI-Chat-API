@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<IStreamChunkParser, DeepseekStreamChunkParser>();
         services.AddScoped<IStreamChunkParser, AimlStreamChunkParser>();
         services.AddScoped<IStreamChunkParser, GrokStreamChunkParser>();
+        services.AddScoped<IStreamChunkParser, QwenStreamChunkParser>();
 
         services.AddScoped<MultimodalContentParser>();
 
@@ -47,6 +48,7 @@ public static class DependencyInjection
         services.AddScoped<IDeepSeekPayloadBuilder, DeepSeekPayloadBuilder>();
         services.AddScoped<IAimlFluxPayloadBuilder, AimlFluxPayloadBuilder>();
         services.AddScoped<IGrokPayloadBuilder, GrokPayloadBuilder>();
+        services.AddScoped<IQwenPayloadBuilder, QwenPayloadBuilder>();
         services.AddScoped<IPayloadBuilderFactory, PayloadBuilderFactory>();
         services.AddTransient<ImagenPayloadBuilder>();
 
