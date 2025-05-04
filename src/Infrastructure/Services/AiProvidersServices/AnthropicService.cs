@@ -11,6 +11,7 @@ using Infrastructure.Services.AiProvidersServices.Base;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using Application.Services.AI;
 
 public class AnthropicService : BaseAiService
 {

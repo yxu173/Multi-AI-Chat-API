@@ -1,0 +1,192 @@
+using Application.Services.Helpers;
+using Application.Services.Messaging;
+using Domain.Enums;
+using Microsoft.Extensions.Logging;
+
+namespace Application.Services.AI.PayloadBuilders;
+
+public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
+{
+    private readonly MultimodalContentParser _multimodalContentParser;
+
+    public OpenAiPayloadBuilder(
+        MultimodalContentParser multimodalContentParser,
+        ILogger<OpenAiPayloadBuilder> logger)
+        : base(logger)
+    {
+        _multimodalContentParser =
+            multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
+    }
+
+    public AiRequestPayload PreparePayload(AiRequestContext context, List<object>? toolDefinitions)
+    {
+        var requestObj = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+
+        requestObj["model"] = model.ModelCode;
+        requestObj["stream"] = true;
+
+        var parameter = GetMergedParameters(context);
+        ApplyParametersToRequest(requestObj, parameter, model.ModelType);
+
+        string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ??
+                                context.UserSettings?.ModelParameters.SystemInstructions;
+        if (!string.IsNullOrWhiteSpace(systemMessage))
+        {
+            requestObj["instructions"] = systemMessage.Trim();
+            Logger?.LogDebug("Adding system instructions for model {ModelCode}", model.ModelCode);
+        }
+
+        var processedMessages = ProcessMessagesForOpenAIInput(context.History);
+        requestObj["input"] = processedMessages;
+
+
+        if (toolDefinitions?.Any() == true && IsParameterSupported("tools", model.ModelType))
+        {
+            Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
+                toolDefinitions.Count, model.ModelCode);
+            requestObj["tools"] = toolDefinitions;
+            if (IsParameterSupported("tool_choice", model.ModelType))
+            {
+                requestObj["tool_choice"] = "auto";
+            }
+        }
+
+        requestObj.Remove("frequency_penalty");
+        requestObj.Remove("presence_penalty");
+        requestObj.Remove("stop");
+
+        AddOpenAiSpecificParameters(requestObj, context, parameter);
+
+        return new AiRequestPayload(requestObj);
+    }
+
+    private List<object> ProcessMessagesForOpenAIInput(List<MessageDto> history)
+    {
+        var processedMessages = new List<object>();
+
+
+        foreach (var message in history)
+        {
+            var role = message.IsFromAi ? "assistant" : "user";
+            var rawContent = message.Content?.Trim() ?? "";
+
+            if (string.IsNullOrEmpty(rawContent)) continue;
+
+            if (role == "user")
+            {
+                var contentParts = _multimodalContentParser.Parse(rawContent);
+                var openAiContentItems = new List<object>();
+                bool hasNonTextContent = false;
+
+                foreach (var part in contentParts)
+                {
+                    switch (part)
+                    {
+                        case TextPart textPart:
+                            openAiContentItems.Add(new { type = "input_text", text = textPart.Text });
+                            break;
+                        case ImagePart imagePart:
+                            openAiContentItems.Add(new
+                            {
+                                type = "input_image",
+                                image_url = $"data:{imagePart.MimeType};base64,{imagePart.Base64Data}"
+                            });
+                            hasNonTextContent = true;
+                            break;
+                        case FilePart filePart:
+                            Logger?.LogInformation("Adding file {FileName} using 'input_file' type.",
+                                filePart.FileName);
+                            openAiContentItems.Add(new
+                            {
+                                type = "input_file",
+                                filename = filePart.FileName,
+                                file_data = $"data:{filePart.MimeType};base64,{filePart.Base64Data}"
+                            });
+                            hasNonTextContent = true;
+                            break;
+                    }
+                }
+
+                if (openAiContentItems.Any())
+                {
+                    if (openAiContentItems.Count == 1 && !hasNonTextContent && openAiContentItems[0] is var textItem &&
+                        textItem.GetType().GetProperty("type")?.GetValue(textItem)?.ToString() == "input_text")
+                    {
+                        string? textContent = textItem.GetType().GetProperty("text")?.GetValue(textItem)?.ToString();
+                        if (!string.IsNullOrEmpty(textContent))
+                        {
+                            processedMessages.Add(new { role = "user", content = textContent });
+                        }
+                    }
+                    else if (openAiContentItems.Count > 0)
+                    {
+                        processedMessages.Add(new { role = "user", content = openAiContentItems.ToArray() });
+                    }
+                }
+            }
+            else
+            {
+                processedMessages.Add(new { role = "assistant", content = rawContent });
+            }
+        }
+
+        return processedMessages;
+    }
+
+    private void AddOpenAiSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context,
+        Dictionary<string, object> appliedParameters)
+    {
+        bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
+
+        if (useEffectiveThinking && IsParameterSupported("reasoning", context.SpecificModel.ModelType))
+        {
+            requestObj["reasoning"] = new { effort = "medium", summary = "detailed" };
+            Logger?.LogDebug("Adding reasoning effort for OpenAI model {ModelCode}", context.SpecificModel.ModelCode);
+
+            if (appliedParameters.ContainsKey("temperature")) requestObj.Remove("temperature");
+            if (appliedParameters.ContainsKey("top_p")) requestObj.Remove("top_p");
+            if (appliedParameters.ContainsKey("max_output_tokens")) requestObj.Remove("max_output_tokens");
+            if (appliedParameters.ContainsKey("max_tokens")) requestObj.Remove("max_tokens");
+
+            Logger?.LogDebug(
+                "Removed potentially conflicting parameters (temp, top_p, max_tokens) due to reasoning effort.");
+        }
+
+        if (appliedParameters.TryGetValue("max_tokens", out var maxTokensValue) && !requestObj.ContainsKey("reasoning"))
+        {
+            if (requestObj.ContainsKey("max_tokens")) requestObj.Remove("max_tokens");
+            if (!requestObj.ContainsKey("max_output_tokens"))
+            {
+                requestObj["max_output_tokens"] = maxTokensValue;
+                Logger?.LogDebug("Mapped 'max_tokens' to 'max_output_tokens'.");
+            }
+        }
+    }
+
+    protected void ApplyParametersToRequest(Dictionary<string, object> requestObj,
+        Dictionary<string, object> parameters, ModelType modelType)
+    {
+        foreach (var kvp in parameters)
+        {
+            string key = kvp.Key;
+            object value = kvp.Value;
+
+            if (key == "max_tokens")
+            {
+                key = "max_output_tokens";
+            }
+
+            if (IsParameterSupported(key, modelType))
+            {
+                requestObj[key] = value;
+                Logger?.LogTrace("Applied parameter {ParameterKey}={ParameterValue}", key, value);
+            }
+            else
+            {
+                Logger?.LogWarning("Parameter {ParameterKey} is not supported for {ModelType} and was skipped.", key,
+                    modelType);
+            }
+        }
+    }
+}

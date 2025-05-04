@@ -4,6 +4,7 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
+using Application.Services.Files;
 
 namespace Web.Api.Endpoints.Files;
 

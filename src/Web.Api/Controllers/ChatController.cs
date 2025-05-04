@@ -5,6 +5,8 @@ using Application.Features.Chats.GetChatById;
 using Application.Features.Chats.GetChatBySeacrh;
 using Application.Features.Chats.GetChatDetails;
 using Application.Features.Chats.UpdateChatSession;
+using Application.Services.Chat;
+using Application.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.Chats;
@@ -73,7 +75,7 @@ public class ChatController : BaseController
 
     [HttpPost("StopResponse/{messageId}")]
     public IResult StopResponse([FromRoute] Guid messageId,
-        [FromServices] Application.Services.StreamingOperationManager streamingOperationManager)
+        [FromServices] StreamingOperationManager streamingOperationManager)
     {
         bool stopped = streamingOperationManager.StopStreaming(messageId);
         if (stopped)
@@ -89,7 +91,7 @@ public class ChatController : BaseController
 
     [HttpPost("ToggleThinking/{chatId}")]
     public async Task<IResult> ToggleThinking([FromRoute] Guid chatId, [FromBody] ToggleThinkingRequest request,
-        [FromServices] Application.Services.ChatSessionService chatSessionService,
+        [FromServices] ChatSessionService chatSessionService,
         [FromServices] Domain.Repositories.IAiModelRepository aiModelRepository)
     {
         try

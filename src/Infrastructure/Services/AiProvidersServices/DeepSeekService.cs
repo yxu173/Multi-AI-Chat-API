@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 
 public class DeepSeekService : BaseAiService

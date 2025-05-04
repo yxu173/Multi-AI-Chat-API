@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 
 namespace Infrastructure.Services.AiProvidersServices;

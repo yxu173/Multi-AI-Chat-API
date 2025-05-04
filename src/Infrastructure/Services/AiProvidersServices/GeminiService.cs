@@ -11,6 +11,7 @@ using Infrastructure.Services.AiProvidersServices.Base;
 using System.IO;
 using System.Net.Http.Headers;
 using Application.Services;
+using Application.Services.AI;
 
 
 public class GeminiService : BaseAiService, IAiFileUploader

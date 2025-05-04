@@ -1,4 +1,5 @@
 using Application.Services;
+using Application.Services.Messaging;
 using Domain.Aggregates.Chats;
 using MediatR;
 

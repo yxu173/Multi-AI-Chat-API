@@ -11,6 +11,8 @@ using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Gif;
 using Application.Features.Chats.GetChatById;
+using Application.Services.Chat;
+using Application.Services.Messaging;
 
 namespace Web.Api.Hubs;
 

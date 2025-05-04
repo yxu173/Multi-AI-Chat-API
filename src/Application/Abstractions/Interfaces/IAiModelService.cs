@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using Application.Services;
+using Application.Services.AI;
 
 namespace Application.Abstractions.Interfaces;
 

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services;
+using Application.Services.AI;
 using Google.Apis.Auth.OAuth2;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;

@@ -4,9 +4,16 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using System.IO;
-using Application.Services.PayloadBuilders;
-using Application.Services.Streaming;
+using Application.Services.AI;
+using Application.Services.AI.PayloadBuilders;
+using Application.Services.AI.Streaming;
+using Application.Services.Chat;
+using Application.Services.Files;
 using Application.Services.Helpers;
+using Application.Services.Infrastructure;
+using Application.Services.Messaging;
+using Application.Services.Plugins;
+using Application.Services.TokenUsage;
 
 namespace Application;
 
@@ -25,7 +32,6 @@ public static class DependencyInjection
 
         services.AddScoped<StreamProcessor>();
         services.AddScoped<ToolCallHandler>();
-        services.AddScoped<TokenUsageTracker>();
         services.AddScoped<IStreamChunkParser, OpenAiStreamChunkParser>();
         services.AddScoped<IStreamChunkParser, AnthropicStreamChunkParser>();
         services.AddScoped<IStreamChunkParser, GeminiStreamChunkParser>();

@@ -1,4 +1,5 @@
 using Application.Services;
+using Application.Services.Files;
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 

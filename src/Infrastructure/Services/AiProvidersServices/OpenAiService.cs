@@ -5,6 +5,7 @@ using Application.Abstractions.Interfaces;
 using Infrastructure.Services.AiProvidersServices.Base;
 using System.IO;
 using Application.Services;
+using Application.Services.AI;
 
 public class OpenAiService : BaseAiService
 {
