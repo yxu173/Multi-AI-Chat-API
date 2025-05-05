@@ -54,4 +54,3 @@ public class ChatFolderRepository : IChatFolderRepository
         }
     }
 }
-    
