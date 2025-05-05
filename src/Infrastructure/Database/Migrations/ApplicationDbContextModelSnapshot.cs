@@ -185,7 +185,7 @@ namespace Infrastructure.Database.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int?>("ContextLength")
+                    b.Property<int>("ContextLength")
                         .HasColumnType("integer");
 
                     b.Property<double>("InputTokenPricePer1M")
@@ -771,7 +771,8 @@ namespace Infrastructure.Database.Migrations
 
                     b.HasOne("Domain.Aggregates.Chats.ChatFolder", "Folder")
                         .WithMany("ChatSessions")
-                        .HasForeignKey("FolderId");
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("AiModel");
 
@@ -901,7 +902,7 @@ namespace Infrastructure.Database.Migrations
                         .IsRequired();
 
                     b.HasOne("Domain.Aggregates.Chats.Plugin", "Plugin")
-                        .WithMany()
+                        .WithMany("ChatSessionPlugins")
                         .HasForeignKey("PluginId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1190,6 +1191,11 @@ namespace Infrastructure.Database.Migrations
             modelBuilder.Entity("Domain.Aggregates.Chats.Message", b =>
                 {
                     b.Navigation("FileAttachments");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Chats.Plugin", b =>
+                {
+                    b.Navigation("ChatSessionPlugins");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Users.User", b =>

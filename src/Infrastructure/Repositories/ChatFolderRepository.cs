@@ -2,6 +2,7 @@ using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 
 namespace Infrastructure.Repositories;
 
@@ -48,14 +49,9 @@ public class ChatFolderRepository : IChatFolderRepository
         var folder = await GetByIdAsync(id, cancellationToken);
         if (folder != null)
         {
-            foreach (var chatSession in folder.ChatSessions)
-            {
-                chatSession.RemoveFromFolder();
-                _context.Entry(chatSession).State = EntityState.Modified;
-            }
-            
             _context.ChatFolders.Remove(folder);
             await _context.SaveChangesAsync(cancellationToken);
         }
     }
 }
+    
