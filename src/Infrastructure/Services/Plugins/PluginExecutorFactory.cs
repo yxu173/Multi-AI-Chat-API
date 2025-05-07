@@ -68,6 +68,24 @@ public class PluginExecutorFactory : IPluginExecutorFactory
       }
       """;
 
+        string wikipediaSearchSchema = """
+      {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search term to look up on Wikipedia."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results to return (1-10).",
+            "default": 3
+          }
+        },
+        "required": ["query"]
+      }
+      """;
+
         RegisterPlugin(
             id: new Guid("0f568eca-9d8e-4ab5-a1e9-0c16be2b52c8"),
             pluginType: typeof(WebSearchPlugin),
@@ -98,6 +116,14 @@ public class PluginExecutorFactory : IPluginExecutorFactory
             name: "search_hacker_news",
             description: "Search Hacker News posts and comments using various filters like relevance, date, tags and more.",
             parametersSchemaJson: hackerNewsSearchSchema
+        );
+        
+        RegisterPlugin(
+            id: new Guid("7edcc319-45ea-4a93-bf2b-77f24842bd8c"),
+            pluginType: typeof(WikipediaPlugin),
+            name: "wikipedia_search",
+            description: "Search Wikipedia for information on a specific topic or term",
+            parametersSchemaJson: wikipediaSearchSchema
         );
     }
 

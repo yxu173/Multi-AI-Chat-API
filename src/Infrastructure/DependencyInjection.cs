@@ -19,7 +19,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using Microsoft.IdentityModel.Tokens;
+using Polly;
+using Polly.Extensions.Http;
 using StackExchange.Redis;
 
 namespace Infrastructure;
@@ -54,7 +57,6 @@ public static class DependencyInjection
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
 
         services.AddHttpClient();
-
 
         var webSearchConfig = configuration.GetSection("PluginSettings:WebSearch");
         services.AddScoped<WebSearchPlugin>(sp =>
@@ -211,6 +213,30 @@ public static class DependencyInjection
                 googleOptions.SaveTokens = true;
             });
         services.AddAuthorization();
+
+        services.AddHttpClient("WikipediaApiClient", client =>
+        {
+            client.DefaultRequestHeaders.Add("Api-User-Agent", "MultiAiChatApi/1.0 (https://github.com/yourrepo/Multi-AI-Chat-API; your-email@example.com)");
+        }).AddPolicyHandler(GetRetryPolicy());
+
+        // Register Wikipedia Plugin
+        services.AddScoped<WikipediaPlugin>(sp =>
+            new WikipediaPlugin(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient("WikipediaApiClient")
+            )
+        );
+        services.AddScoped<IChatPlugin, WikipediaPlugin>(sp =>
+            sp.GetRequiredService<WikipediaPlugin>()
+        );
+
         return services;
+    }
+
+    static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+    {
+        return HttpPolicyExtensions
+            .HandleTransientHttpError() // Handles HttpRequestException, 5XX and 408
+            .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
     }
 }
