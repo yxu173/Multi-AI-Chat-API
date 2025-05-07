@@ -87,6 +87,16 @@ public static class DependencyInjection
             sp.GetRequiredService<JinaWebPlugin>()
         );
 
+        // Register Hacker News Search Plugin
+        services.AddScoped<HackerNewsSearchPlugin>(sp =>
+            new HackerNewsSearchPlugin(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient()
+            )
+        );
+        services.AddScoped<IChatPlugin, HackerNewsSearchPlugin>(sp =>
+            sp.GetRequiredService<HackerNewsSearchPlugin>()
+        );
+
         services.AddDistributedMemoryCache();
         services.AddSingleton<IConnectionMultiplexer>(sp =>
         {

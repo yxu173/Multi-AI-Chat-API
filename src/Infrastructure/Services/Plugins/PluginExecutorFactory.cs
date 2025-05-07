@@ -54,6 +54,20 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         }
         """;
 
+
+      string hackerNewsSearchSchema = """
+      {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query to execute."
+          }
+        },
+        "required": ["query"]
+      }
+      """;
+
         RegisterPlugin(
             id: new Guid("0f568eca-9d8e-4ab5-a1e9-0c16be2b52c8"),
             pluginType: typeof(WebSearchPlugin),
@@ -76,6 +90,14 @@ public class PluginExecutorFactory : IPluginExecutorFactory
             name: "read_webpage",
             description: "Retrieve and summarize web content from a specific URL using Jina AI.",
             parametersSchemaJson: urlSchema
+        );
+
+        RegisterPlugin(
+            id: new Guid("7f3ca05c-0d72-4480-915f-9b8bc538983a"),
+            pluginType: typeof(HackerNewsSearchPlugin),
+            name: "search_hacker_news",
+            description: "Search Hacker News posts and comments using various filters like relevance, date, tags and more.",
+            parametersSchemaJson: hackerNewsSearchSchema
         );
     }
 
