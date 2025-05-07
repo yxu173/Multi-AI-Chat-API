@@ -150,6 +150,29 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
                                 }
                             });
                             break;
+                        case FilePart filePart:
+                            // Special handling for CSV files
+                            if (filePart.MimeType == "text/csv" || filePart.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
+                            {
+                                Logger?.LogWarning("CSV file {FileName} detected - Grok doesn't support CSV files directly. " +
+                                    "Using the csv_reader plugin is recommended instead.", filePart.FileName);
+                                
+                                contentArray.Add(new { 
+                                    type = "text", 
+                                    text = $"Note: The CSV file '{filePart.FileName}' can't be processed directly by Grok. " +
+                                           $"Please use the csv_reader tool to analyze this file. Example usage:\n\n" +
+                                           $"{{\n  \"name\": \"csv_reader\",\n  \"arguments\": {{\n    \"file_name\": \"{filePart.FileName}\",\n    \"max_rows\": 100,\n    \"analyze\": true\n  }}\n}}" 
+                                });
+                            }
+                            else
+                            {
+                                // Handle other file types with a simple text reference
+                                contentArray.Add(new { 
+                                    type = "text", 
+                                    text = $"[Attached file: {filePart.FileName} ({filePart.MimeType}) - Not supported by Grok directly]" 
+                                });
+                            }
+                            break;
                     }
                 }
                 

@@ -95,15 +95,36 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
                             hasNonTextContent = true;
                             break;
                         case FilePart filePart:
-                            Logger?.LogInformation("Adding file {FileName} using 'input_file' type.",
-                                filePart.FileName);
-                            openAiContentItems.Add(new
+                            // Check if the file is a CSV, which OpenAI doesn't support directly
+                            if (filePart.MimeType == "text/csv" || 
+                                filePart.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
                             {
-                                type = "input_file",
-                                filename = filePart.FileName,
-                                file_data = $"data:{filePart.MimeType};base64,{filePart.Base64Data}"
-                            });
-                            hasNonTextContent = true;
+                                // Log that CSV files should be handled by our plugin instead of direct upload
+                                Logger?.LogWarning("CSV file {FileName} detected - OpenAI doesn't support CSV files directly. " +
+                                    "Using the csv_reader plugin is recommended instead.", filePart.FileName);
+                                
+                                // Add a text content explaining why the file can't be used directly
+                                openAiContentItems.Add(new
+                                {
+                                    type = "input_text",
+                                    text = $"Note: The CSV file '{filePart.FileName}' can't be processed directly by OpenAI. " +
+                                           $"Please use the csv_reader tool to analyze this file. Example usage:\n\n" +
+                                           $"```json\n{{\n  \"type\": \"function\",\n  \"function\": {{\n    \"name\": \"csv_reader\",\n    \"arguments\": {{\n      \"file_name\": \"{filePart.FileName}\",\n      \"max_rows\": 100,\n      \"analyze\": true\n    }}\n  }}\n}}\n```"
+                                });
+                            }
+                            else
+                            {
+                                // Process other file types normally
+                                Logger?.LogInformation("Adding file {FileName} using 'input_file' type.",
+                                    filePart.FileName);
+                                openAiContentItems.Add(new
+                                {
+                                    type = "input_file",
+                                    filename = filePart.FileName,
+                                    file_data = $"data:{filePart.MimeType};base64,{filePart.Base64Data}"
+                                });
+                                hasNonTextContent = true;
+                            }
                             break;
                     }
                 }

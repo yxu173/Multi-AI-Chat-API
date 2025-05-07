@@ -20,6 +20,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Polly;
 using Polly.Extensions.Http;
@@ -227,6 +228,17 @@ public static class DependencyInjection
         );
         services.AddScoped<IChatPlugin, WikipediaPlugin>(sp =>
             sp.GetRequiredService<WikipediaPlugin>()
+        );
+
+        // Register CSV Reader Plugin
+        services.AddScoped<CsvReaderPlugin>(sp =>
+            new CsvReaderPlugin(
+                sp.GetRequiredService<IFileAttachmentRepository>(),
+                sp.GetRequiredService<ILogger<CsvReaderPlugin>>()
+            )
+        );
+        services.AddScoped<IChatPlugin, CsvReaderPlugin>(sp =>
+            sp.GetRequiredService<CsvReaderPlugin>()
         );
 
         return services;

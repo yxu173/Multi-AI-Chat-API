@@ -136,12 +136,23 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IGeminiPayloadBuilder
                     string base64Data = (part is FilePart fileP3) ? fileP3.Base64Data : ((ImagePart)part).Base64Data;
                     string partTypeName = part.GetType().Name.Replace("Part", "");
 
-                    if (fileUploader != null && IsValidGeminiFileFormat(mimeType)) // Check if format is uploadable
+                    // Check if the file is a CSV, which should be handled by our plugin instead
+                    if (part is FilePart && (mimeType == "text/csv" || 
+                        fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        // Log that CSV files should be handled by our plugin instead of direct upload
+                        Logger?.LogWarning("CSV file {FileName} detected - Using the csv_reader plugin is recommended instead of direct upload", fileName);
+                        
+                        // Add a text content explaining how to use the plugin instead
+                        geminiParts.Add(new { text = $"Note: The CSV file '{fileName}' can be analyzed using the csv_reader plugin. " +
+                               $"Example: {{\"name\": \"csv_reader\", \"arguments\": {{\"file_name\": \"{fileName}\", \"analyze\": true}}}}" });
+                    }
+                    else if (fileUploader != null && IsValidGeminiFileFormat(mimeType)) // Check if format is uploadable
                     {
                         try
                         {
                             byte[] fileBytes = Convert.FromBase64String(base64Data);
-                             Logger?.LogInformation("Uploading {PartType} {FileName} ({MimeType}, {Size} bytes) to Gemini File API...", partTypeName, fileName, mimeType, fileBytes.Length);
+                            Logger?.LogInformation("Uploading {PartType} {FileName} ({MimeType}, {Size} bytes) to Gemini File API...", partTypeName, fileName, mimeType, fileBytes.Length);
                             var uploadResult = await fileUploader.UploadFileForAiAsync(fileBytes, mimeType, fileName, cancellationToken);
 
                             if (uploadResult != null && !string.IsNullOrEmpty(uploadResult.Uri))
@@ -157,7 +168,7 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IGeminiPayloadBuilder
                         }
                         catch (FormatException ex)
                         {
-                             Logger?.LogError(ex, "Invalid Base64 data for {PartType} {FileName}", partTypeName, fileName);
+                            Logger?.LogError(ex, "Invalid Base64 data for {PartType} {FileName}", partTypeName, fileName);
                             geminiParts.Add(new { text = $"[Invalid {partTypeName} Data: {fileName}]" });
                         }
                         catch (Exception ex)
@@ -168,9 +179,9 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IGeminiPayloadBuilder
                     }
                     else
                     {
-                         string reason = fileUploader == null ? "Uploader N/A" : "Unsupported Format";
-                         Logger?.LogWarning("Cannot upload {PartType} {FileName} ({MimeType}) for Gemini. Reason: {Reason}. Sending placeholder text.", partTypeName, fileName, mimeType, reason);
-                         geminiParts.Add(new { text = $"[Attached {partTypeName}: {fileName} - {reason}]" });
+                        string reason = fileUploader == null ? "Uploader N/A" : "Unsupported Format";
+                        Logger?.LogWarning("Cannot upload {PartType} {FileName} ({MimeType}) for Gemini. Reason: {Reason}. Sending placeholder text.", partTypeName, fileName, mimeType, reason);
+                        geminiParts.Add(new { text = $"[Attached {partTypeName}: {fileName} - {reason}]" });
                     }
                 }
             }

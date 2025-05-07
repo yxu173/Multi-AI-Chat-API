@@ -125,6 +125,44 @@ public class PluginExecutorFactory : IPluginExecutorFactory
             description: "Search Wikipedia for information on a specific topic or term",
             parametersSchemaJson: wikipediaSearchSchema
         );
+
+        string csvReaderSchema = """
+      {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "The ID of the CSV file to read (provide either file_id or file_name)."
+          },
+          "file_name": {
+            "type": "string",
+            "description": "The name of the CSV file to read (provide either file_id or file_name)."
+          },
+          "max_rows": {
+            "type": "integer",
+            "description": "Maximum number of rows to read from the CSV (default: 100).",
+            "default": 100
+          },
+          "analyze": {
+            "type": "boolean",
+            "description": "Whether to include basic analysis of the CSV data.",
+            "default": true
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional query to filter or find specific data in the CSV."
+          }
+        }
+      }
+      """;
+
+        RegisterPlugin(
+            id: new Guid("665ceec6-d8ed-473e-b1ff-5f4326652fe7"),
+            pluginType: typeof(CsvReaderPlugin),
+            name: "csv_reader",
+            description: "Read and analyze CSV files that have been uploaded to the chat.",
+            parametersSchemaJson: csvReaderSchema
+        );
     }
 
     private void RegisterPlugin(Guid id, Type pluginType, string name, string description, string parametersSchemaJson)

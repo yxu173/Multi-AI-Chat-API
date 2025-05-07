@@ -98,13 +98,43 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IDeepSeekPayloadBuilde
             if (string.IsNullOrEmpty(rawContent)) continue;
 
             var contentParts = _multimodalContentParser.Parse(rawContent);
-            string contentText = string.Join("\n", contentParts.Select(p => p switch
+            var processedParts = new List<string>();
+            
+            foreach (var part in contentParts)
             {
-                TextPart tp => tp.Text,
-                ImagePart ip => $"[Image: {ip.FileName ?? ip.MimeType} - Not Sent]",
-                FilePart fp => $"[File: {fp.FileName} ({fp.MimeType}) - Not Sent]",
-                _ => ""
-            })).Trim();
+                string partText = "";
+                
+                if (part is TextPart tp)
+                {
+                    partText = tp.Text;
+                }
+                else if (part is ImagePart ip)
+                {
+                    partText = $"[Image: {ip.FileName ?? ip.MimeType} - Not Sent]";
+                }
+                else if (part is FilePart fp)
+                {
+                    // Special handling for CSV files
+                    if (fp.MimeType == "text/csv" || fp.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        Logger?.LogWarning("CSV file {FileName} detected - DeepSeek doesn't support CSV files directly. Using the csv_reader plugin is recommended instead.", fp.FileName);
+                        partText = $"Note: The CSV file '{fp.FileName}' can't be processed directly by DeepSeek. " + 
+                                  $"Please use the csv_reader tool to analyze this file. Example usage:\n" + 
+                                  $"csv_reader(file_name=\"{fp.FileName}\", max_rows=100, analyze=true)";
+                    }
+                    else
+                    {
+                        partText = $"[File: {fp.FileName} ({fp.MimeType}) - Not Sent]";
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(partText))
+                {
+                    processedParts.Add(partText);
+                }
+            }
+            
+            string contentText = string.Join("\n", processedParts).Trim();
 
             if (!string.IsNullOrWhiteSpace(contentText))
             {

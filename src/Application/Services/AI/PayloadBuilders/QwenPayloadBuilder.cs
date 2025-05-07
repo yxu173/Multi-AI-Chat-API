@@ -187,12 +187,29 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IQwenPayloadBuilder
                                     });
                                     break;
                                 case FilePart filePart:
-                                    // Handle files by converting to text reference
-                                    contentArray.Add(new
+                                    // Special handling for CSV files
+                                    if (filePart.MimeType == "text/csv" || filePart.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
                                     {
-                                        type = "text",
-                                        text = $"[Attached file: {filePart.FileName}]"
-                                    });
+                                        Logger?.LogWarning("CSV file {FileName} detected - Qwen doesn't support CSV files directly. " +
+                                            "Using the csv_reader plugin is recommended instead.", filePart.FileName);
+                                        
+                                        contentArray.Add(new
+                                        {
+                                            type = "text",
+                                            text = $"Note: The CSV file '{filePart.FileName}' can't be processed directly by Qwen. " +
+                                                   $"Please use the csv_reader tool to analyze this file. Example usage:\n\n" +
+                                                   $"{{\n  \"type\": \"function\",\n  \"function\": {{\n    \"name\": \"csv_reader\",\n    \"arguments\": {{\n      \"file_name\": \"{filePart.FileName}\",\n      \"max_rows\": 100,\n      \"analyze\": true\n    }}\n  }}\n}}"
+                                        });
+                                    }
+                                    else
+                                    {
+                                        // Handle other files by converting to text reference
+                                        contentArray.Add(new
+                                        {
+                                            type = "text",
+                                            text = $"[Attached file: {filePart.FileName}]"
+                                        });
+                                    }
                                     break;
                             }
                         }
