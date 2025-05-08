@@ -1,7 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using FastEndpoints.Swagger;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.OpenApi.Models;
+using NSwag;
 using Web.Api.Infrastructure;
 using Web.Api.NotificationHandlers;
 
@@ -23,43 +26,25 @@ public static class DependencyInjection
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails();
 
-        services.AddSwaggerGen(options =>
+        services.SwaggerDocument(o =>
         {
-            options.SwaggerDoc("v1", new OpenApiInfo
+            o.EnableJWTBearerAuth = true;
+            o.DocumentSettings = s =>
             {
-                Title = "Multi-Model AI API",
-                Version = "v1"
-            });
-            options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-            {
-                Description = "JWT Authorization header using the Bearer scheme.\r\n\r\n" +
-                              "Enter 'Bearer' [space] and then your token.\r\n\r\n" +
-                              "Example: \"Bearer eyJhbGc...\"",
-                Name = "Authorization",
-                In = ParameterLocation.Header,
-                Type = SecuritySchemeType.ApiKey,
-                Scheme = "Bearer",
-                BearerFormat = "JWT"
-            });
-            options.AddSecurityRequirement(new OpenApiSecurityRequirement
-            {
+                s.DocumentName = "Initial-Release";
+                s.Title = "Web API";
+                s.Version = "v1.0";
+                
+                s.AddAuth("Bearer", new()
                 {
-                    new OpenApiSecurityScheme
-                    {
-                        Reference = new OpenApiReference
-                        {
-                            Type = ReferenceType.SecurityScheme,
-                            Id = "Bearer"
-                        },
-                        Scheme = "Bearer",
-                        Name = "Bearer",
-                        In = ParameterLocation.Header,
-                    },
-                    new List<string>()
-                }
-            });
+                    Type = OpenApiSecuritySchemeType.Http,
+                    Scheme = JwtBearerDefaults.AuthenticationScheme,
+                    BearerFormat = "JWT",
+                });
+            };
+            
         });
 
-        return services;
+    return services;
     }
 }

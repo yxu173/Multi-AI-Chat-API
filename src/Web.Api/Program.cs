@@ -7,6 +7,7 @@ using Web.Api.Hubs;
 using System.Runtime;
 using FastEndpoints;
 using Application.Abstractions.PreProcessors;
+using FastEndpoints.Swagger;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
@@ -19,7 +20,8 @@ builder.Services
     .AddApplication(builder.Configuration)
     .AddInfrastructure(builder.Configuration);
 
-builder.Services.AddFastEndpoints();
+builder.Services.AddFastEndpoints()
+    .SwaggerDocument();
 
 // Register global pre-processors and post-processors for FastEndpoints
 builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(RequestLoggingPreProcessor<>));
@@ -83,12 +85,6 @@ catch (Exception ex)
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json",
-            "My API V1");
-    });
     app.MapOpenApi();
 }
 
@@ -112,5 +108,6 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<ChatHub>("/chatHub");
-app.UseFastEndpoints();
+app.UseFastEndpoints()
+    .UseSwaggerGen();
 app.Run();
