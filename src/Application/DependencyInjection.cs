@@ -1,9 +1,7 @@
-﻿using Application.Abstractions.Behaviors;
-using Application.Services;
+using Application.Abstractions.PreProcessors;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
-using System.IO;
 using Application.Services.AI;
 using Application.Services.AI.PayloadBuilders;
 using Application.Services.AI.Streaming;
@@ -67,13 +65,8 @@ public static class DependencyInjection
                 provider.GetRequiredService<Domain.Repositories.IFileAttachmentRepository>(),
                 uploadsBasePath));
         services.AddSingleton<StreamingOperationManager>();
-        services.AddMediatR(config =>
-        {
-            config.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly);
-
-            config.AddOpenBehavior(typeof(RequestLoggingPipelineBehavior<,>));
-            config.AddOpenBehavior(typeof(ValidationPipelineBehavior<,>));
-        });
+        
+        services.AddGlobalPreProcessors();
 
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
         return services;

@@ -6,6 +6,7 @@ using Web.Api;
 using Web.Api.Hubs;
 using System.Runtime;
 using FastEndpoints;
+using Application.Abstractions.PreProcessors;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
@@ -19,6 +20,11 @@ builder.Services
     .AddInfrastructure(builder.Configuration);
 
 builder.Services.AddFastEndpoints();
+
+// Register global pre-processors and post-processors for FastEndpoints
+builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(RequestLoggingPreProcessor<>));
+builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(ValidationPreProcessor<>));
+builder.Services.AddSingleton(typeof(IPostProcessor<,>), typeof(RequestLoggingPostProcessor<,>));
 
 builder.Services.AddSignalR(options =>
 {
