@@ -14,10 +14,10 @@ public sealed class AddUserPluginCommandHandler : ICommandHandler<AddUserPluginC
         _userPluginRepository = userPluginRepository;
     }
 
-    public async Task<Result<Guid>> Handle(AddUserPluginCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(AddUserPluginCommand command, CancellationToken ct)
     {
-        var userPlugin = UserPlugin.Create(request.UserId, request.PluginId);
+        var userPlugin = UserPlugin.Create(command.UserId, command.PluginId);
         await _userPluginRepository.AddAsync(userPlugin);
         return Result.Success(userPlugin.Id);
-    }
+    } 
 }

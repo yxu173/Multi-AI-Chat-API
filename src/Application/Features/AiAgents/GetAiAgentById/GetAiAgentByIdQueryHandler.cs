@@ -15,9 +15,9 @@ public class GetAiAgentByIdQueryHandler : IQueryHandler<GetAiAgentByIdQuery, AiA
         _aiAgentRepository = aiAgentRepository;
     }
 
-    public async Task<Result<AiAgentResponse>> Handle(GetAiAgentByIdQuery query, CancellationToken cancellationToken)
+    public async Task<Result<AiAgentResponse>> ExecuteAsync(GetAiAgentByIdQuery query, CancellationToken ct)
     {
-        var agent = await _aiAgentRepository.GetByIdAsync(query.AiAgentId, cancellationToken);
+        var agent = await _aiAgentRepository.GetByIdAsync(query.AiAgentId, ct);
 
         if (agent == null)
         {

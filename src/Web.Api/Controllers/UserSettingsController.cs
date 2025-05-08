@@ -1,7 +1,7 @@
 using Application.Features.UserAiModelSettings.GetUserAiModelSettings;
 using Application.Features.UserAiModelSettings.ResetSystemInstructions;
 using Application.Features.UserAiModelSettings.UpdateUserAiModelSettings;
-using Microsoft.AspNetCore.Mvc;
+using FastEndpoints;
 using Web.Api.Contracts.UserSettings;
 using Web.Api.Extensions;
 using Web.Api.Infrastructure;
@@ -10,10 +10,10 @@ namespace Web.Api.Controllers;
 
 public class UserSettingsController : BaseController
 {
-    [HttpPut("UpdateUserAiModelSettings")]
-    public async Task<IResult> UpdateUserAiModelSettings([FromBody] UpdateUserAiModelSettingsRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPut("UpdateUserAiModelSettings")]
+    public async Task<IResult> UpdateUserAiModelSettings([Microsoft.AspNetCore.Mvc.FromBody] UpdateUserAiModelSettingsRequest request)
     {
-        var command = new UpdateUserAiModelSettingsCommand
+        var result = await new UpdateUserAiModelSettingsCommand
         (
             UserId,
             request.AiModelId,
@@ -27,25 +27,22 @@ public class UserSettingsController : BaseController
             request.MaxTokens,
             request.SafetySettings,
             request.PromptCaching
-        );
+        ).ExecuteAsync();
 
-        var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("GetUserAiModelSettings")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetUserAiModelSettings")]
     public async Task<IResult> GetUserAiModelSettings()
     {
-        var command = new GetUserAiModelSettingsCommand(UserId);
-        var result = await _mediator.Send(command);
+        var result = await new GetUserAiModelSettingsCommand(UserId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPatch("ResetSystemInstructions")]
+    [Microsoft.AspNetCore.Mvc.HttpPatch("ResetSystemInstructions")]
     public async Task<IResult> ResetSystemInstructions()
     {
-        var command = new ResetSystemInstructionsCommand(UserId);
-        var result = await _mediator.Send(command);
+        var result = await new ResetSystemInstructionsCommand(UserId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

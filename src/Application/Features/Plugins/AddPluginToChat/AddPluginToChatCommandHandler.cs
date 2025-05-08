@@ -14,10 +14,11 @@ public sealed class AddPluginToChatCommandHandler : ICommandHandler<AddPluginToC
         _chatSessionPluginRepository = chatSessionPluginRepository;
     }
 
-    public async Task<Result<Guid>> Handle(AddPluginToChatCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(AddPluginToChatCommand request, CancellationToken ct)
     {
         var chatSessionPlugin = ChatSessionPlugin.Create(request.ChatId, request.PluginId);
-        await _chatSessionPluginRepository.AddAsync(chatSessionPlugin, cancellationToken);
+        await _chatSessionPluginRepository.AddAsync(chatSessionPlugin, ct);
         return Result.Success(chatSessionPlugin.Id);
     }
+
 }

@@ -13,9 +13,9 @@ public sealed class DeleteChatFolderCommandHandler : ICommandHandler<DeleteChatF
         _chatFolderRepository = chatFolderRepository;
     }
 
-    public async Task<Result<bool>> Handle(DeleteChatFolderCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(DeleteChatFolderCommand command, CancellationToken ct)
     {
-        await _chatFolderRepository.DeleteAsync(request.Id, cancellationToken);
+        await _chatFolderRepository.DeleteAsync(command.Id, ct);
         return Result.Success(true);
     }
 }

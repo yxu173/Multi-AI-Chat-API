@@ -14,11 +14,11 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
         _aiAgentRepository = aiAgentRepository;
     }
 
-    public async Task<Result<bool>> Handle(UpdateAiAgentCommand command, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(UpdateAiAgentCommand command, CancellationToken ct)
     {
         try
         {
-            var agent = await _aiAgentRepository.GetByIdAsync(command.AiAgentId, cancellationToken);
+            var agent = await _aiAgentRepository.GetByIdAsync(command.AiAgentId, ct);
 
             if (agent == null)
             {
@@ -72,7 +72,7 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                 }
             }
 
-            await _aiAgentRepository.UpdateAsync(agent, cancellationToken);
+            await _aiAgentRepository.UpdateAsync(agent, ct);
             return Result.Success(true);
         }
         catch (Exception ex)

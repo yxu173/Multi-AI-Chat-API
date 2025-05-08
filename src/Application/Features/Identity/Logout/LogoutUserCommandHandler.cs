@@ -7,7 +7,7 @@ namespace Application.Features.Identity.Logout;
 
 public class LogoutUserCommandHandler(SignInManager<User> signInManager) : ICommandHandler<LogoutUserCommand, bool>
 {
-    public async Task<Result<bool>> Handle(LogoutUserCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(LogoutUserCommand command, CancellationToken ct)
     {
         await signInManager.SignOutAsync();
         return Result.Success(true);

@@ -8,9 +8,9 @@ namespace Application.Features.Roles.DeleteRole;
 
 public class DeleteRoleCommandHandler(RoleManager<Role> roleManager) : ICommandHandler<DeleteRoleCommand, bool>
 {
-    public async Task<Result<bool>> Handle(DeleteRoleCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(DeleteRoleCommand command, CancellationToken ct)
     {
-        var role = await roleManager.FindByNameAsync(request.RoleName);
+        var role = await roleManager.FindByNameAsync(command.RoleName);
         if (role == null)
         {
             return Result.Failure<bool>(RoleErrors.RoleNameIsNotExist);

@@ -13,10 +13,10 @@ public sealed class CreateUserApiKeyCommandHandler : ICommandHandler<CreateUserA
         _userApiKeyRepository = userApiKeyRepository;
     }
 
-    public async Task<Result<bool>> Handle(CreateUserApiKeyCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(CreateUserApiKeyCommand command, CancellationToken ct)
     {
         var userApiKey =
-            Domain.Aggregates.Users.UserApiKey.Create(request.UserId, request.AiProviderId, request.ApiKey);
+            Domain.Aggregates.Users.UserApiKey.Create(command.UserId, command.AiProviderId, command.ApiKey);
         await _userApiKeyRepository.AddAsync(userApiKey);
 
         return Result.Success(true);

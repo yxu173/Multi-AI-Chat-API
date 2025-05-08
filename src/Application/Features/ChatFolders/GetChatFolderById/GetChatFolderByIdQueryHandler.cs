@@ -13,9 +13,9 @@ public sealed class GetChatFolderByIdQueryHandler : IQueryHandler<GetChatFolderB
         _chatFolderRepository = chatFolderRepository;
     }
 
-    public async Task<Result<ChatFolderDto>> Handle(GetChatFolderByIdQuery request, CancellationToken cancellationToken)
+    public async Task<Result<ChatFolderDto>> ExecuteAsync(GetChatFolderByIdQuery command, CancellationToken ct)
     {
-        var chatFolder = await _chatFolderRepository.GetByIdAsync(request.Id, cancellationToken);
+        var chatFolder = await _chatFolderRepository.GetByIdAsync(command.Id, ct);
         var result = new ChatFolderDto(chatFolder.Id,
             chatFolder.Name,
             chatFolder.Description,

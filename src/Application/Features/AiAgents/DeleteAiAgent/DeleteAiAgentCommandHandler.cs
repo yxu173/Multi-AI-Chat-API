@@ -13,9 +13,9 @@ public sealed class DeleteAiAgentCommandHandler : ICommandHandler<DeleteAiAgentC
         _aiAgentRepository = aiAgentRepository;
     }
 
-    public async Task<Result<bool>> Handle(DeleteAiAgentCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(DeleteAiAgentCommand request, CancellationToken ct)
     {
-        var aiAgent = await _aiAgentRepository.GetByIdAsync(request.AiAgentId, cancellationToken);
+        var aiAgent = await _aiAgentRepository.GetByIdAsync(request.AiAgentId, ct);
 
         if (aiAgent == null || aiAgent.UserId != request.UserId)
         {
@@ -25,7 +25,7 @@ public sealed class DeleteAiAgentCommandHandler : ICommandHandler<DeleteAiAgentC
             ));
         }
         
-        await _aiAgentRepository.DeleteAsync(request.AiAgentId, cancellationToken);
+        await _aiAgentRepository.DeleteAsync(request.AiAgentId, ct);
         
         return Result.Success(true);
         

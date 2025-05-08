@@ -14,8 +14,8 @@ public sealed class GetAiModelByIdQueryHandler : IQueryHandler<GetAiModelByIdQue
         _aiModelRepository = aiModelRepository;
     }
 
-    public async Task<Result<DetailedAiModelDto>> Handle(GetAiModelByIdQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<DetailedAiModelDto>> ExecuteAsync(GetAiModelByIdQuery request, CancellationToken ct)
+
     {
         var aiModel = await _aiModelRepository.GetByIdAsync(request.ModelId);
 

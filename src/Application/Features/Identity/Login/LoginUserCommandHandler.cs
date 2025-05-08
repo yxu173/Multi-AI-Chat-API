@@ -12,7 +12,7 @@ public sealed class LoginUserCommandHandler(
     ITokenProvider tokenProvider)
     : ICommandHandler<LoginUserCommand, string>
 {
-    public async Task<Result<string>> Handle(LoginUserCommand request, CancellationToken cancellationToken)
+    public async Task<Result<string>> ExecuteAsync(LoginUserCommand request, CancellationToken ct)
     {
         var user = await userRepository.GetByEmailAsync(request.Email);
         if (user == null)

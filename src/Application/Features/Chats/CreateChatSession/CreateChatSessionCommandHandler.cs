@@ -18,12 +18,12 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
         _aiAgentRepository = aiAgentRepository;
     }
 
-    public async Task<Result<Guid>> Handle(CreateChatSessionCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(CreateChatSessionCommand request, CancellationToken ct)
     {
         ChatSession chatSession;
         if (request.AiAgentId != null)
         {
-            var aiAgent = await _aiAgentRepository.GetByIdAsync(request.AiAgentId.Value, cancellationToken);
+            var aiAgent = await _aiAgentRepository.GetByIdAsync(request.AiAgentId.Value, ct);
             if (aiAgent == null)
                 return Result.Failure<Guid>(Error.NotFound("AiAgent.NotFound", "AI Agent not found"));
 
@@ -55,7 +55,7 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
                 "Either ModelId or AiAgentId must be provided"));
         }
 
-        await _chatSessionRepository.AddAsync(chatSession, cancellationToken);
+        await _chatSessionRepository.AddAsync(chatSession, ct);
         return Result.Success(chatSession.Id);
     }
 }

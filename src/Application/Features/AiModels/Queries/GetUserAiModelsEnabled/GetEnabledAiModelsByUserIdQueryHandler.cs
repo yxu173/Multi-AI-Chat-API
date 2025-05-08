@@ -15,8 +15,7 @@ public sealed class
         _aiModelRepository = aiModelRepository;
     }
 
-    public async Task<Result<IReadOnlyList<AiModelDto>>> Handle(GetEnabledAiModelsByUserIdQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<IReadOnlyList<AiModelDto>>> ExecuteAsync(GetEnabledAiModelsByUserIdQuery request, CancellationToken ct)
     {
         var aiModels = await _aiModelRepository.GetEnabledByUserIdAsync(request.UserId);
 

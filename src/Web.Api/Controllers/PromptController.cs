@@ -2,6 +2,7 @@ using Application.Features.Prompts.CreatePrompt;
 using Application.Features.Prompts.DeletePrompt;
 using Application.Features.Prompts.GetAllPromptsByUserId;
 using Application.Features.Prompts.UpdatePrompt;
+using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.Prompts;
@@ -13,45 +14,41 @@ namespace Web.Api.Controllers;
 [Authorize]
 public class PromptController : BaseController
 {
-    [HttpPost("Create")]
-    public async Task<IResult> CreatePrompt([FromBody] CreatePromptRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPost("Create")]
+    public async Task<IResult> CreatePrompt([Microsoft.AspNetCore.Mvc.FromBody] CreatePromptRequest request)
     {
-        var command =
-            new CreatePromptCommand(UserId, request.Title, request.Description, request.Content, request.Tags);
-        var result = await _mediator.Send(command);
+        var result =
+            await new CreatePromptCommand(UserId, request.Title, request.Description, request.Content, request.Tags)
+                .ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("GetMyPrompts")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetMyPrompts")]
     public async Task<IResult> GetMyPrompts()
     {
-        var query = new GetAllPromptsByUserIdQuery(UserId);
-        var result = await _mediator.Send(query);
+        var result = await new GetAllPromptsByUserIdQuery(UserId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("{id}/GetAllPrompts")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("{id}/GetAllPrompts")]
     public async Task<IResult> GetAllPrompts([FromRoute] Guid id)
     {
-        var query = new GetAllPromptsByUserIdQuery(id);
-        var result = await _mediator.Send(query);
+        var result = await new GetAllPromptsByUserIdQuery(id).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpDelete("{id}")]
+    [Microsoft.AspNetCore.Mvc.HttpDelete("{id}")]
     public async Task<IResult> DeletePrompt([FromRoute] Guid id)
     {
-        var command = new DeletePromptCommand(id);
-        var result = await _mediator.Send(command);
+        var result = await new DeletePromptCommand(id).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPut("{id}")]
+    [Microsoft.AspNetCore.Mvc.HttpPut("{id}")]
     public async Task<IResult> UpdatePrompt([FromRoute] Guid id, CreatePromptRequest request)
     {
-        var command = new UpdatePromptCommand(id, UserId, request.Title, request.Description, request.Content,
-            request.Tags);
-        var result = await _mediator.Send(command);
+        var result = await new UpdatePromptCommand(id, UserId, request.Title, request.Description, request.Content,
+            request.Tags).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

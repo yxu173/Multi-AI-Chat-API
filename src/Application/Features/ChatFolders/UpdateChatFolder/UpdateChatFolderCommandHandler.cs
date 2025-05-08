@@ -13,11 +13,11 @@ public sealed class UpdateChatFolderCommandHandler : ICommandHandler<UpdateChatF
         _chatFolderRepository = chatFolderRepository;
     }
 
-    public async Task<Result<bool>> Handle(UpdateChatFolderCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(UpdateChatFolderCommand command, CancellationToken ct)
     {
-        var chatFolder = await _chatFolderRepository.GetByIdAsync(request.Id, cancellationToken);
-        chatFolder.UpdateDetails(request.Name, request.Description);
-        await _chatFolderRepository.UpdateAsync(chatFolder, cancellationToken);
+        var chatFolder = await _chatFolderRepository.GetByIdAsync(command.Id, ct);
+        chatFolder.UpdateDetails(command.Name, command.Description);
+        await _chatFolderRepository.UpdateAsync(chatFolder, ct);
         return Result.Success(true);
     }
 }

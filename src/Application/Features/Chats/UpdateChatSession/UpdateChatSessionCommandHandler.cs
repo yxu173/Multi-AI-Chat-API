@@ -13,7 +13,7 @@ public class UpdateChatSessionCommandHandler : ICommandHandler<UpdateChatSession
         _chatSessionRepository = chatSessionRepository;
     }
 
-    public async Task<Result<bool>> Handle(UpdateChatSessionCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(UpdateChatSessionCommand request, CancellationToken ct)
     {
         var chatSession = await _chatSessionRepository.GetByIdAsync(request.ChatSessionId);
         if (chatSession == null)
@@ -37,7 +37,7 @@ public class UpdateChatSessionCommandHandler : ICommandHandler<UpdateChatSession
             chatSession.ToggleThinking(request.EnableThinking.Value);
         }
 
-        await _chatSessionRepository.UpdateAsync(chatSession, cancellationToken);
+        await _chatSessionRepository.UpdateAsync(chatSession, ct);
         return Result.Success(true);
     }
 } 

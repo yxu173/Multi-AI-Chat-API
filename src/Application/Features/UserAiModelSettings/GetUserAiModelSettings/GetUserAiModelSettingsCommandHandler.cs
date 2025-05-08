@@ -16,15 +16,14 @@ public sealed class
         _aiModelRepository = aiModelRepository;
     }
 
-    public async Task<Result<UserAiModelSettingsResponse>> Handle(GetUserAiModelSettingsCommand request,
-        CancellationToken cancellationToken)
+    public async Task<Result<UserAiModelSettingsResponse>> ExecuteAsync(GetUserAiModelSettingsCommand command, CancellationToken ct)
     {
-        var settings = await _userAiModelSettingsRepository.GetByUserAndModelIdAsync(request.UserId, cancellationToken);
+        var settings = await _userAiModelSettingsRepository.GetByUserAndModelIdAsync(command.UserId, ct);
         if (settings == null)
         {
             return Result.Failure<UserAiModelSettingsResponse>(Error.NotFound(
                 "UserAiModelSettings.NotFound",
-                $"User AI Model Settings for user with ID {request.UserId} not found."));
+                $"User AI Model Settings for user with ID {command.UserId} not found."));
         }
 
         var modelName = await _aiModelRepository.GetModelNameById(settings.ModelParameters.DefaultModel);

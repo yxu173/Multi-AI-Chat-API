@@ -13,11 +13,11 @@ public class GetAllChatsByUserIdQueryHandler : IQueryHandler<GetAllChatsByUserId
         _chatSessionRepository = chatSessionRepository;
     }
 
-    public async Task<Result<IReadOnlyList<GetAllChatsDto>>> Handle(GetAllChatsByUserIdQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<IReadOnlyList<GetAllChatsDto>>> ExecuteAsync(GetAllChatsByUserIdQuery command, CancellationToken ct)
     {
-        var chats = await _chatSessionRepository.GetAllChatsByUserId(request.UserId);
+        var chats = await _chatSessionRepository.GetAllChatsByUserId(command.UserId);
         var chatDtos = chats.Select(c => new GetAllChatsDto(c.Id, c.Title)).ToList();
         return Result.Success<IReadOnlyList<GetAllChatsDto>>(chatDtos);
     }
+
 }

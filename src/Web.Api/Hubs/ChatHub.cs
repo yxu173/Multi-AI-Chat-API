@@ -13,6 +13,7 @@ using SixLabors.ImageSharp.Formats.Gif;
 using Application.Features.Chats.GetChatById;
 using Application.Services.Chat;
 using Application.Services.Messaging;
+using FastEndpoints;
 
 namespace Web.Api.Hubs;
 
@@ -65,8 +66,7 @@ public class ChatHub : Hub
             try
             {
                 var chatGuid = Guid.Parse(chatSessionId);
-                var query = new GetChatByIdQuery(chatGuid);
-                var chatResult = await _mediator.Send(query);
+                var chatResult = await new GetChatByIdQuery(chatGuid).ExecuteAsync();
 
                 if (chatResult.IsSuccess)
                 {

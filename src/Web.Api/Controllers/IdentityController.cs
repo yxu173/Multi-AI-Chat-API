@@ -6,6 +6,7 @@ using Application.Features.Identity.Logout;
 using Application.Features.Identity.Register;
 using Application.Features.Identity.ResetPassword;
 using Domain.Aggregates.Users;
+using FastEndpoints;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
@@ -35,65 +36,63 @@ public class IdentityController : BaseController
         _tokenProvider = tokenProvider;
     }
 
-    [HttpPost("Register")]
-    public async Task<IResult> Register([FromBody] RegisterCreate model)
+    [Microsoft.AspNetCore.Mvc.HttpPost("Register")]
+    public async Task<IResult> Register([Microsoft.AspNetCore.Mvc.FromBody] RegisterCreate model)
     {
-        var command = new RegisterUserCommand(
+        var result = await new RegisterUserCommand(
             model.UserName,
             model.Email,
             model.Password
-        );
+        ).ExecuteAsync();
 
-        var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPost("Login")]
-    public async Task<IResult> Login([FromBody] LoginCreate model)
+    [Microsoft.AspNetCore.Mvc.HttpPost("Login")]
+    public async Task<IResult> Login([Microsoft.AspNetCore.Mvc.FromBody] LoginCreate model)
     {
-        var command = new LoginUserCommand(
+        var result = await new LoginUserCommand(
             model.Email,
             model.Password
-        );
+        ).ExecuteAsync();
 
-        var result = await _mediator.Send(command);
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPost("Logout")]
+    [Microsoft.AspNetCore.Mvc.HttpPost("Logout")]
     [Authorize]
     public async Task<IResult> Logout()
     {
-        Result<bool> result = await _mediator.Send(new LogoutUserCommand());
+        Result<bool> result = await new LogoutUserCommand().ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPost("ForgotPassword")]
-    public async Task<IResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPost("ForgotPassword")]
+    public async Task<IResult> ForgotPassword([Microsoft.AspNetCore.Mvc.FromBody] ForgotPasswordRequest request)
     {
-        var result = await _mediator.Send(new ForgetPasswordCommand(request.Email));
+        var result = await new ForgetPasswordCommand(request.Email).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPost("ResetPassword")]
-    public async Task<IResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPost("ResetPassword")]
+    public async Task<IResult> ResetPassword([Microsoft.AspNetCore.Mvc.FromBody] ResetPasswordRequest request)
     {
-        var result = await _mediator.Send(new ResetPasswordCommand(request.Email,
+        var result = await new ResetPasswordCommand(request.Email,
             request.ResetCode,
-            request.NewPassword));
+            request.NewPassword).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("google-login")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("google-login")]
     public IActionResult GoogleLogin()
     {
         var redirectUrl = Url.Action("ExternalCallback", "Identity");
         var properties = _signInManager.ConfigureExternalAuthenticationProperties("Google", redirectUrl);
         return Challenge(properties, "Google");
     }
-    
 
-    [HttpGet("external-callback")]
+
+    [Microsoft.AspNetCore.Mvc.HttpGet("external-callback")]
     public async Task<IActionResult> ExternalCallback()
     {
         var info = await _signInManager.GetExternalLoginInfoAsync();
@@ -131,18 +130,18 @@ public class IdentityController : BaseController
                 }
 
                 user = Domain.Aggregates.Users.User.Create(
-                email,
-                givenName
+                    email,
+                    givenName
                 ).Value;
 
                 var createResult = await _userManager.CreateAsync(user);
                 if (!createResult.Succeeded)
                 {
                     return BadRequest("User creation failed: " +
-                        string.Join(", ", createResult.Errors.Select(e => e.Description)));
+                                      string.Join(", ", createResult.Errors.Select(e => e.Description)));
                 }
 
-               // var roleResult = await _userManager.AddToRoleAsync(user, Roles.Basic.ToString());
+                // var roleResult = await _userManager.AddToRoleAsync(user, Roles.Basic.ToString());
                 // if (!roleResult.Succeeded)
                 // {
                 //     return BadRequest("Role assignment failed: " +
@@ -150,12 +149,12 @@ public class IdentityController : BaseController
                 // }
             }
 
-            
+
             var addLoginResult = await _userManager.AddLoginAsync(user, info);
             if (!addLoginResult.Succeeded)
             {
                 return BadRequest("Failed to add external login: " +
-                    string.Join(", ", addLoginResult.Errors.Select(e => e.Description)));
+                                  string.Join(", ", addLoginResult.Errors.Select(e => e.Description)));
             }
 
             await _signInManager.SignInAsync(user, isPersistent: false);
@@ -166,10 +165,11 @@ public class IdentityController : BaseController
         return Ok(new { Token = token });
     }
 
-    [HttpGet("external-login")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("external-login")]
     public IActionResult ExternalLogin()
     {
         var redirectUrl = Url.Action("ExternalLoginCallback");
-        return Challenge(new AuthenticationProperties { RedirectUri = redirectUrl }, GoogleDefaults.AuthenticationScheme);
+        return Challenge(new AuthenticationProperties { RedirectUri = redirectUrl },
+            GoogleDefaults.AuthenticationScheme);
     }
 }

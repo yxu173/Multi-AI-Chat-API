@@ -14,10 +14,10 @@ public sealed class UpdateUserApiKeyCommandHandler : ICommandHandler<UpdateUserA
         _userApiKeyRepository = userApiKeyRepository;
     }
 
-    public async Task<Result<bool>> Handle(UpdateUserApiKeyCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(UpdateUserApiKeyCommand command, CancellationToken ct)
     {
-        var apiKey = await _userApiKeyRepository.GetByIdAsync(request.UserApiKeyId);
-        if (apiKey.UserId != request.UserId)
+        var apiKey = await _userApiKeyRepository.GetByIdAsync(command.UserApiKeyId);
+        if (apiKey.UserId != command.UserId)
         {
             return Result.Failure<bool>(ApiKeyErrors.ValidUserId);
         }

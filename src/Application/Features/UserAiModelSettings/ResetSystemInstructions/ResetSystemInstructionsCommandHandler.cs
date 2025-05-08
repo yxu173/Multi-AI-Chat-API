@@ -13,9 +13,9 @@ public sealed class ResetSystemInstructionsCommandHandler : ICommandHandler<Rese
         _userAiModelSettingsRepository = userAiModelSettingsRepository;
     }
 
-    public async Task<Result<bool>> Handle(ResetSystemInstructionsCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(ResetSystemInstructionsCommand command, CancellationToken ct)
     {
-        var setting = await _userAiModelSettingsRepository.GetByUserAndModelIdAsync(request.UserId, cancellationToken);
+        var setting = await _userAiModelSettingsRepository.GetByUserAndModelIdAsync(command.UserId, ct);
 
         if (setting == null)
             return Result.Failure<bool>(Error.NotFound(
@@ -24,7 +24,7 @@ public sealed class ResetSystemInstructionsCommandHandler : ICommandHandler<Rese
 
         setting.ModelParameters.ResetSystemInstructions();
 
-        await _userAiModelSettingsRepository.UpdateAsync(setting, cancellationToken);
+        await _userAiModelSettingsRepository.UpdateAsync(setting, ct);
 
         return Result.Success(true);
     }

@@ -13,9 +13,9 @@ public sealed class CreateAiProviderCommandHandler : ICommandHandler<CreateAiPro
         _providerRepository = providerRepository;
     }
 
-    public async Task<Result<Guid>> Handle(CreateAiProviderCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(CreateAiProviderCommand command, CancellationToken ct)
     {
-        var aiProvider = AiProvider.Create(request.Name, request.Description);
+        var aiProvider = AiProvider.Create(command.Name, command.Description);
 
         await _providerRepository.AddAsync(aiProvider);
 

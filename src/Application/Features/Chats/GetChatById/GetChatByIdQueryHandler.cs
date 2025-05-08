@@ -14,10 +14,10 @@ public class GetChatByIdQueryHandler : IQueryHandler<GetChatByIdQuery, ChatDto>
         _chatSessionRepository = chatSessionRepository;
     }
 
-    public async Task<Result<ChatDto>> Handle(GetChatByIdQuery request, CancellationToken cancellationToken)
+    public async Task<Result<ChatDto>> ExecuteAsync(GetChatByIdQuery command, CancellationToken ct)
     {
         var chatSession = await _chatSessionRepository.GetByIdAsync(
-            request.ChatId
+            command.ChatId
         );
 
         var response = new ChatDto(
@@ -43,4 +43,5 @@ public class GetChatByIdQueryHandler : IQueryHandler<GetChatByIdQuery, ChatDto>
         );
         return Result.Success(response);
     }
+
 }

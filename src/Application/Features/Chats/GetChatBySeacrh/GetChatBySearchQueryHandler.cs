@@ -16,20 +16,19 @@ public sealed class GetChatBySearchQueryHandler : IQueryHandler<GetChatBySearchQ
         _chatSessionRepository = chatSessionRepository;
     }
 
-    public async Task<Result<IEnumerable<ChatSearchResultDto>>> Handle(GetChatBySearchQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<IEnumerable<ChatSearchResultDto>>> ExecuteAsync(GetChatBySearchQuery command, CancellationToken ct)
     {
         var chatSessions = await _chatSessionRepository.GetChatSearch(
-            request.UserId, 
-            request.Search,
+            command.UserId, 
+            command.Search,
             includeMessages: true);
 
         var results = chatSessions.Select(c => new ChatSearchResultDto(
             c.Id,
             c.Title,
             c.Messages
-                .Where(m => string.IsNullOrEmpty(request.Search) || 
-                           m.Content.Contains(request.Search))
+                .Where(m => string.IsNullOrEmpty(command.Search) || 
+                           m.Content.Contains(command.Search))
                 .Select(m => new MessageSearchResultDto(
                     m.Id,
                     m.Content,

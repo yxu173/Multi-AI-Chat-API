@@ -16,32 +16,28 @@ public class PluginController : BaseController
     [Microsoft.AspNetCore.Mvc.HttpPost("create")]
     public async Task<IResult> Create([Microsoft.AspNetCore.Mvc.FromBody] CreatePluginRequest request)
     {
-        var command = new CreatePluginCommand(request.Name, request.Description, request.IconUrl);
-        var result = await _mediator.Send(command);
+        var result = await new CreatePluginCommand(request.Name, request.Description, request.IconUrl).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
     [Microsoft.AspNetCore.Mvc.HttpPost("AddUserPlugin")]
     public async Task<IResult> AddUserPlugin([Microsoft.AspNetCore.Mvc.FromBody] AddUserPluginRequest request)
     {
-        var command = new AddUserPluginCommand(UserId, request.PluginId);
-        var result = await _mediator.Send(command);
+        var result = await new AddUserPluginCommand(UserId, request.PluginId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
     [Microsoft.AspNetCore.Mvc.HttpPost("AddChatPlugin")]
     public async Task<IResult> AddChatPlugin([Microsoft.AspNetCore.Mvc.FromBody] AddChatPluginRequest request)
     {
-        var command = new AddPluginToChatCommand(request.ChatId, request.PluginId);
-        var result = await _mediator.Send(command);
+        var result = await new AddPluginToChatCommand(request.ChatId, request.PluginId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
     [Microsoft.AspNetCore.Mvc.HttpGet]
     public async Task<IResult> GetAllPlugins()
     {
-        var query = new GetAllPluginsQuery();
-        var result = await _mediator.Send(query);
+        var result = await new GetAllPluginsQuery().ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 

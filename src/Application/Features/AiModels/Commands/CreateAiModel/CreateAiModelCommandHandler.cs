@@ -14,7 +14,7 @@ public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelC
         _aiModelRepository = aiModelRepository;
     }
 
-    public async Task<Result<Guid>> Handle(CreateAiModelCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(CreateAiModelCommand request, CancellationToken ct)
     {
         var aiModel = AiModel.Create(
             request.Name,

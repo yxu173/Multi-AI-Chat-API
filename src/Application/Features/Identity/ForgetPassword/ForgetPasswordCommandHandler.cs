@@ -17,7 +17,7 @@ public class ForgetPasswordCommandHandler : ICommandHandler<ForgetPasswordComman
         _emailSender = emailSender;
     }
 
-    public async Task<Result<bool>> Handle(ForgetPasswordCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(ForgetPasswordCommand request, CancellationToken ct)
     {
         var user = await _userRepository.GetByEmailAsync(request.Email);
         if (user == null)

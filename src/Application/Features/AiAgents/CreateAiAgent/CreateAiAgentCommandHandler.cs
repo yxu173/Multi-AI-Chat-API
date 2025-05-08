@@ -19,7 +19,7 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
         _aiModelRepository = aiModelRepository ?? throw new ArgumentNullException(nameof(aiModelRepository));
     }
 
-    public async Task<Result<Guid>> Handle(CreateAiAgentCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(CreateAiAgentCommand request, CancellationToken ct)
     {
         var model = await _aiModelRepository.GetByIdAsync(request.DefaultModel);
         if (model == null)
@@ -66,7 +66,7 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                 }
             }
             
-            await _aiAgentRepository.AddAsync(agent, cancellationToken);
+            await _aiAgentRepository.AddAsync(agent, ct);
 
             return Result.Success(agent.Id);
         }

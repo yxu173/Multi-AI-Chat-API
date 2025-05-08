@@ -13,10 +13,10 @@ public class GetAllPromptsByUserIdQueryHandler : IQueryHandler<GetAllPromptsByUs
         _promptRepository = promptRepository;
     }
 
-    public async Task<Result<IEnumerable<PromptDto>>> Handle(GetAllPromptsByUserIdQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<IEnumerable<PromptDto>>> ExecuteAsync(GetAllPromptsByUserIdQuery command,
+        CancellationToken ct)
     {
-        var prompts = await _promptRepository.GetAllPromptsByUserId(request.UserId);
+        var prompts = await _promptRepository.GetAllPromptsByUserId(command.UserId);
 
         return Result.Success(prompts.Select(p => new PromptDto(p.Id, p.Title, p.Description, p.Content)));
     }

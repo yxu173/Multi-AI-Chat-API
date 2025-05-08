@@ -15,7 +15,7 @@ public sealed class UpdatePromptCommandHandler : ICommandHandler<UpdatePromptCom
         _promptRepository = promptRepository;
     }
 
-    public async Task<Result<bool>> Handle(UpdatePromptCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(UpdatePromptCommand request, CancellationToken ct)
     {
         var promptResult = await _promptRepository.GetByIdAsync(request.PromptId);
         if (promptResult.IsFailure)

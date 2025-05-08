@@ -14,10 +14,11 @@ public sealed class CreatePluginCommandHandler : ICommandHandler<CreatePluginCom
         _pluginRepository = pluginRepository;
     }
 
-    public async Task<Result<Guid>> Handle(CreatePluginCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(CreatePluginCommand command, CancellationToken ct)
     {
-        var plugin = Plugin.Create(request.Name, request.Description, request.IconUrl);
+        var plugin = Plugin.Create(command.Name, command.Description, command.IconUrl);
         await _pluginRepository.AddAsync(plugin);
         return Result.Success(plugin.Id);
     }
+
 }

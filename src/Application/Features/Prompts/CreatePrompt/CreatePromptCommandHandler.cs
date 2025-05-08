@@ -15,7 +15,7 @@ public sealed class CreatePromptCommandHandler : ICommandHandler<CreatePromptCom
         _promptRepository = promptRepository;
     }
 
-    public async Task<Result<Guid>> Handle(CreatePromptCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(CreatePromptCommand request, CancellationToken ct)
     {
         var tags = request.Tags
             .Select(x => x.Trim().ToLowerInvariant())
@@ -38,4 +38,5 @@ public sealed class CreatePromptCommandHandler : ICommandHandler<CreatePromptCom
 
         return Result.Success(promptTemplate.Id);
     }
+
 }

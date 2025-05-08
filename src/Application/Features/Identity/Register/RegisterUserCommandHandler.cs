@@ -19,7 +19,7 @@ internal sealed class RegisterUserCommandHandler(
     IUserAiModelSettingsRepository userAiModelSettingsRepository)
     : ICommandHandler<RegisterUserCommand, string>
 {
-    public async Task<Result<string>> Handle(RegisterUserCommand command, CancellationToken cancellationToken)
+    public async Task<Result<string>> ExecuteAsync(RegisterUserCommand command, CancellationToken ct)
     {
         if (await userRepository.ExistsByEmailAsync(command.Email))
         {
@@ -39,7 +39,7 @@ internal sealed class RegisterUserCommandHandler(
         }
 
         // Create default settings for all enabled AI models
-        await CreateDefaultUserSettings(user.Value.Id, cancellationToken);
+        await CreateDefaultUserSettings(user.Value.Id, ct);
 
         var token = tokenProvider.Create(user.Value);
 

@@ -20,10 +20,9 @@ public class GetAllAiAgentsQueryHandler : IQueryHandler<GetAllAiAgentsQuery, Get
         _aiAgentRepository = aiAgentRepository;
     }
 
-    public async Task<Result<GetAllAiAgentsGroupedByCategoryResponse>> Handle(GetAllAiAgentsQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<GetAllAiAgentsGroupedByCategoryResponse>> ExecuteAsync(GetAllAiAgentsQuery request, CancellationToken ct)
     {
-        var agents = await _aiAgentRepository.GetByUserIdAsync(request.UserId, cancellationToken);
+        var agents = await _aiAgentRepository.GetByUserIdAsync(request.UserId, ct);
 
         if (agents == null || !agents.Any())
         {

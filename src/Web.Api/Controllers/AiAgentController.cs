@@ -3,6 +3,7 @@ using Application.Features.AiAgents.DeleteAiAgent;
 using Application.Features.AiAgents.GetAiAgentById;
 using Application.Features.AiAgents.GetAllAiAgents;
 using Application.Features.AiAgents.UpdateAiAgent;
+using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.AiAgents;
@@ -15,10 +16,10 @@ namespace Web.Api.Controllers;
 [Authorize]
 public class AiAgentController : BaseController
 {
-    [HttpPost("Create")]
-    public async Task<IResult> CreateAiAgent([FromBody] CreateAiAgentRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPost("Create")]
+    public async Task<IResult> CreateAiAgent([Microsoft.AspNetCore.Mvc.FromBody] CreateAiAgentRequest request)
     {
-        var command = new CreateAiAgentCommand(
+        var result = await new CreateAiAgentCommand(
             UserId,
             request.Name,
             request.Description,
@@ -38,32 +39,28 @@ public class AiAgentController : BaseController
             request.SafetySettings,
             request.ProfilePictureUrl,
             request.Plugins?.Select(p => new PluginInfo(p.PluginId, p.IsActive)).ToList()
-        );
-
-        var result = await _mediator.Send(command);
+        ).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("GetAllAgentsByCategories")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetAllAgentsByCategories")]
     public async Task<IResult> GetAllAgentsByCategories()
     {
-        var query = new GetAllAiAgentsQuery(UserId);
-        var result = await _mediator.Send(query);
+        var result = await new GetAllAiAgentsQuery(UserId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("{id}")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("{id}")]
     public async Task<IResult> GetById(Guid id)
     {
-        var query = new GetAiAgentByIdQuery(UserId, id);
-        var result = await _mediator.Send(query);
+        var result = await new GetAiAgentByIdQuery(UserId, id).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPut("{id}")]
-    public async Task<IResult> UpdateAiAgent(Guid id, [FromBody] CreateAiAgentRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPut("{id}")]
+    public async Task<IResult> UpdateAiAgent(Guid id, [Microsoft.AspNetCore.Mvc.FromBody] CreateAiAgentRequest request)
     {
-        var command = new UpdateAiAgentCommand(
+        var result = await new UpdateAiAgentCommand(
             UserId,
             id,
             request.Name,
@@ -84,21 +81,19 @@ public class AiAgentController : BaseController
             request.SafetySettings,
             request.ProfilePictureUrl,
             request.Plugins?.Select(p => new PluginInfo(p.PluginId, p.IsActive)).ToList()
-        );
+        ).ExecuteAsync();
 
-        var result = await _mediator.Send(command);
         return result.Match(val => Results.Ok(val), CustomResults.Problem);
     }
 
-    [HttpDelete("{id:guid}")]
+    [Microsoft.AspNetCore.Mvc.HttpDelete("{id:guid}")]
     public async Task<IResult> DeleteAiAgent([FromRoute] Guid id)
     {
-        var command = new DeleteAiAgentCommand(UserId, id);
-        var result = await _mediator.Send(command);
+        var result = await new DeleteAiAgentCommand(UserId, id).ExecuteAsync(); 
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("GetAllCategories")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetAllCategories")]
     public IActionResult GetAllCategories()
     {
         var categories = Enum.GetNames(typeof(Domain.Enums.AgentCategories));

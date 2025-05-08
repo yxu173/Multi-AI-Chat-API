@@ -13,9 +13,9 @@ public sealed class DeleteAiProviderCommandHandler : ICommandHandler<DeleteAiPro
         _aiProviderRepository = aiProviderRepository;
     }
 
-    public async Task<Result<bool>> Handle(DeleteAiProviderCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(DeleteAiProviderCommand command, CancellationToken ct)
     {
-        var result = await _aiProviderRepository.DeleteAsync(request.Id);
+        var result = await _aiProviderRepository.DeleteAsync(command.Id);
         return Result.Success(result);
     }
 }

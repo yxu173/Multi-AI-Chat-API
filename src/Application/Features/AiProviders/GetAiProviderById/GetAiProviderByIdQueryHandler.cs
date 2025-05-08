@@ -14,9 +14,9 @@ public sealed class GetAiProviderByIdQueryHandler : IQueryHandler<GetAiProviderB
         _aiProviderRepository = aiProviderRepository;
     }
 
-    public async Task<Result<AiProviderDto>> Handle(GetAiProviderByIdQuery request, CancellationToken cancellationToken)
+    public async Task<Result<AiProviderDto>> ExecuteAsync(GetAiProviderByIdQuery command, CancellationToken ct)
     {
-        var aiProvider = await _aiProviderRepository.GetByIdAsync(request.Id);
+        var aiProvider = await _aiProviderRepository.GetByIdAsync(command.Id);
 
         var dto = new AiProviderDto(aiProvider.Id, aiProvider.Name, aiProvider.Description);
         return Result.Success(dto);

@@ -14,8 +14,7 @@ public sealed class GetAllAiModelsQueryHandler : IQueryHandler<GetAllAiModelsQue
         _modelRepository = modelRepository;
     }
 
-    public async Task<Result<IReadOnlyList<AiModelDto>>> Handle(GetAllAiModelsQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<IReadOnlyList<AiModelDto>>> ExecuteAsync(GetAllAiModelsQuery command, CancellationToken ct)
     {
         var aiModels = await _modelRepository.GetAllAsync();
 

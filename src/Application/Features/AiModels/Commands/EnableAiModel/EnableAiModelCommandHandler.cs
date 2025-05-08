@@ -13,9 +13,9 @@ public sealed class EnableAiModelCommandHandler : ICommandHandler<EnableAiModelC
         _aiModelRepository = aiModelRepository;
     }
 
-    public async Task<Result<bool>> Handle(EnableAiModelCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(EnableAiModelCommand command, CancellationToken ct)
     {
-        var aiModel = await _aiModelRepository.GetByIdAsync(request.ModelId);
+        var aiModel = await _aiModelRepository.GetByIdAsync(command.ModelId);
         if (aiModel.IsEnabled == true)
         {
             aiModel.SetEnabled(false);

@@ -1,5 +1,6 @@
 using Application.Features.UserApiKey.CreateUserApiKey;
 using Application.Features.UserApiKey.UpdateUserApiKey;
+using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.UserApiKeys;
@@ -11,23 +12,22 @@ namespace Web.Api.Controllers;
 [Authorize]
 public class UserApiKeyController : BaseController
 {
-    [HttpPost("Create")]
-    public async Task<IResult> CreateUserApiKey([FromBody] UserApiKeyRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPost("Create")]
+    public async Task<IResult> CreateUserApiKey([Microsoft.AspNetCore.Mvc.FromBody] UserApiKeyRequest request)
     {
-        var command = new CreateUserApiKeyCommand(
+        var result = await new CreateUserApiKeyCommand(
             UserId,
             request.AiProviderId,
             request.ApiKey
-        );
-        var result = await _mediator.Send(command);
+        ).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPut("update/{id}")]
-    public async Task<IResult> UpdateUserApiKey([FromRoute] Guid id, [FromBody] string UserApiKey)
+    [Microsoft.AspNetCore.Mvc.HttpPut("update/{id}")]
+    public async Task<IResult> UpdateUserApiKey([FromRoute] Guid id,
+        [Microsoft.AspNetCore.Mvc.FromBody] string UserApiKey)
     {
-        var command = new UpdateUserApiKeyCommand(UserId, id, UserApiKey);
-        var result = await _mediator.Send(command);
+        var result = await new UpdateUserApiKeyCommand(UserId, id, UserApiKey).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

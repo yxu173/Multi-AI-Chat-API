@@ -16,8 +16,7 @@ public sealed class GetChatDetailsQueryHandler : IQueryHandler<GetChatDetailsQue
         _chatTokenUsageRepository = chatTokenUsageRepository;
     }
 
-    public async Task<Result<ChatDetailsResponse>> Handle(GetChatDetailsQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<ChatDetailsResponse>> ExecuteAsync(GetChatDetailsQuery request, CancellationToken ct)
     {
         var chat = await _chatSessionRepository.GetChatWithModel(request.ChatId);
 

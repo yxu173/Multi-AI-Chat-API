@@ -13,8 +13,7 @@ public sealed class GetAllAiProvidersQueryHandler : IQueryHandler<GetAllAiProvid
         _aiProviderRepository = aiProviderRepository;
     }
 
-    public async Task<Result<IReadOnlyList<AiProviderDto>>> Handle(GetAllAiProvidersQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<IReadOnlyList<AiProviderDto>>> ExecuteAsync(GetAllAiProvidersQuery command, CancellationToken ct)
     {
         var aiProviders = await _aiProviderRepository.GetAllAsync();
         var dtos = aiProviders.Select(p => new AiProviderDto(p.Id, p.Name, p.Description)).ToList();

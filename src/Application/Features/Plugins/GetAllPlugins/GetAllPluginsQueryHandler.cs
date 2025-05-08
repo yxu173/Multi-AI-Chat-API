@@ -13,8 +13,7 @@ public class GetAllPluginsQueryHandler : IQueryHandler<GetAllPluginsQuery, IRead
         _pluginRepository = pluginRepository;
     }
 
-    public async Task<Result<IReadOnlyList<PluginResponse>>> Handle(GetAllPluginsQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<IReadOnlyList<PluginResponse>>> ExecuteAsync(GetAllPluginsQuery command, CancellationToken ct)
     {
         var plugins = await _pluginRepository.GetAllAsync();
 
@@ -26,4 +25,5 @@ public class GetAllPluginsQueryHandler : IQueryHandler<GetAllPluginsQuery, IRead
         )).ToList();
         return Result.Success<IReadOnlyList<PluginResponse>>(responses);
     }
+
 }

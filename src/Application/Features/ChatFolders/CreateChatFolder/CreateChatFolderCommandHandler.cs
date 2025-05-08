@@ -14,10 +14,10 @@ public sealed class CreateChatFolderCommandHandler : ICommandHandler<CreateChatF
         _chatFolderRepository = chatFolderRepository;
     }
 
-    public async Task<Result<Guid>> Handle(CreateChatFolderCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> ExecuteAsync(CreateChatFolderCommand command, CancellationToken ct)
     {
-        var chatFolder = ChatFolder.Create(request.UserId, request.Name, request.Description);
-        await _chatFolderRepository.AddAsync(chatFolder, cancellationToken);
+        var chatFolder = ChatFolder.Create(command.UserId, command.Name, command.Description);
+        await _chatFolderRepository.AddAsync(chatFolder, ct);
         return Result.Success(chatFolder.Id);
     }
 }

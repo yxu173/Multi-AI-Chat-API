@@ -2,6 +2,7 @@
 using Application.Features.AiProviders.DeleteAiProvider;
 using Application.Features.AiProviders.GetAiProviderById;
 using Application.Features.AiProviders.GetAllAiProviders;
+using FastEndpoints;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.AiProviders;
 using Web.Api.Extensions;
@@ -11,38 +12,34 @@ namespace Web.Api.Controllers;
 
 public class AiProviderController : BaseController
 {
-    [HttpPost("Create")]
-    public async Task<IResult> CreateAiProvider([FromBody] AiProviderRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPost("Create")]
+    public async Task<IResult> CreateAiProvider([Microsoft.AspNetCore.Mvc.FromBody] AiProviderRequest request)
     {
-        var command = new CreateAiProviderCommand(
+        var result = await new CreateAiProviderCommand(
             request.Name,
             request.Description
-        );
-        var result = await _mediator.Send(command);
+        ).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("{id:guid}")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("{id:guid}")]
     public async Task<IResult> GetAiProviderById([FromRoute] Guid id)
     {
-        var query = new GetAiProviderByIdQuery(id);
-        var result = await _mediator.Send(query);
+        var result = await new GetAiProviderByIdQuery(id).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("GetAll")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetAll")]
     public async Task<IResult> GetAllAiProviders()
     {
-        var query = new GetAllAiProvidersQuery();
-        var result = await _mediator.Send(query);
+        var result = await new GetAllAiProvidersQuery().ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpDelete("{id:guid}")]
+    [Microsoft.AspNetCore.Mvc.HttpDelete("{id:guid}")]
     public async Task<IResult> DeleteAiProvder([FromRoute] Guid id)
     {
-        var command = new DeleteAiProviderCommand(id);
-        var result = await _mediator.Send(command);
+        var result = await new DeleteAiProviderCommand(id).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

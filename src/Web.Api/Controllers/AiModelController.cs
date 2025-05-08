@@ -6,6 +6,7 @@ using Application.Features.AiModels.Queries.GetAllAiModels;
 using Application.Features.AiModels.Queries.GetEnabledAiModels;
 using Application.Features.AiModels.Queries.GetUserAiModels;
 using Application.Features.AiModels.Queries.GetUserAiModelsEnabled;
+using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.AiModels;
@@ -17,10 +18,10 @@ namespace Web.Api.Controllers;
 [Authorize]
 public class AiModelController : BaseController
 {
-    [HttpPost("Create")]
-    public async Task<IResult> Create([FromBody] AiModelRequest request)
+    [Microsoft.AspNetCore.Mvc.HttpPost("Create")]
+    public async Task<IResult> Create([Microsoft.AspNetCore.Mvc.FromBody] AiModelRequest request)
     {
-        var command = new CreateAiModelCommand(
+        var result = await new CreateAiModelCommand(
             request.Name,
             request.ModelType,
             request.AiProviderId,
@@ -38,65 +39,57 @@ public class AiModelController : BaseController
             request.StreamingOutputSupported,
             request.SystemRoleSupported,
             request.PromptCachingSupported
-        );
-        var result = await _mediator.Send(command);
+        ).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("GetAll")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetAll")]
     public async Task<IResult> GetAll()
     {
-        var query = new GetAllAiModelsQuery();
-        var result = await _mediator.Send(query);
+        var result = await new GetAllAiModelsQuery().ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("{id:guid}")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("{id:guid}")]
     public async Task<IResult> GetById([FromRoute] Guid id)
     {
-        var query = new GetAiModelByIdQuery(id);
-        var result = await _mediator.Send(query);
+        var result = await new GetAiModelByIdQuery(id).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPatch("{id:guid}")]
+    [Microsoft.AspNetCore.Mvc.HttpPatch("{id:guid}")]
     public async Task<IResult> SetEnabledAiModel([FromRoute] Guid id)
     {
-        var command = new EnableAiModelCommand(id);
-        var result = await _mediator.Send(command);
+        var result = await new EnableAiModelCommand(id).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("EnabledModels")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("EnabledModels")]
     public async Task<IResult> GetEnabledAiModels()
     {
-        var query = new GetEnabledAiModelsQuery();
-        var result = await _mediator.Send(query);
+        var result = await new GetEnabledAiModelsQuery().ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
 
-    [HttpGet("GetUserEnabledAiModel/me")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetUserEnabledAiModel/me")]
     public async Task<IResult> GetMyEnabledAiModels()
     {
-        var query = new GetEnabledAiModelsByUserIdQuery(UserId);
-        var result = await _mediator.Send(query);
+        var result = await new GetEnabledAiModelsByUserIdQuery(UserId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpGet("me/UserAiModels")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("me/UserAiModels")]
     public async Task<IResult> GetMyAiModels()
     {
-        var query = new GetUserAiModelsQuery(UserId);
-        var result = await _mediator.Send(query);
+        var result = await new GetUserAiModelsQuery(UserId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [HttpPut("UserModels/{id:guid}/Enable")]
+    [Microsoft.AspNetCore.Mvc.HttpPut("UserModels/{id:guid}/Enable")]
     public async Task<IResult> EnableAiModel([FromRoute] Guid id)
     {
-        var command = new UserEnableAiModelCommand(UserId, id);
-        var result = await _mediator.Send(command);
+        var result = await new UserEnableAiModelCommand(UserId, id).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

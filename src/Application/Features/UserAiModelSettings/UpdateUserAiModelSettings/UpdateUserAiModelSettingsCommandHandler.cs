@@ -13,10 +13,9 @@ public sealed class UpdateUserAiModelSettingsCommandHandler : ICommandHandler<Up
         _userAiModelSettingsRepository = userAiModelSettingsRepository;
     }
 
-    public async Task<Result<bool>> Handle(UpdateUserAiModelSettingsCommand request,
-        CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(UpdateUserAiModelSettingsCommand request, CancellationToken ct)
     {
-        var settings = await _userAiModelSettingsRepository.GetByUserAndModelIdAsync(request.UserId, cancellationToken);
+        var settings = await _userAiModelSettingsRepository.GetByUserAndModelIdAsync(request.UserId, ct);
         if (settings == null)
         {
             return Result.Failure<bool>(Error.NotFound(
@@ -38,7 +37,7 @@ public sealed class UpdateUserAiModelSettingsCommandHandler : ICommandHandler<Up
             request.PromptCaching
         );
 
-        await _userAiModelSettingsRepository.UpdateAsync(settings, cancellationToken);
+        await _userAiModelSettingsRepository.UpdateAsync(settings, ct);
 
         return Result.Success(true);
     }

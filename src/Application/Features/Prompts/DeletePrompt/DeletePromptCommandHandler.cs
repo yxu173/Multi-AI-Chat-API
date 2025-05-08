@@ -13,9 +13,9 @@ public class DeletePromptCommandHandler : ICommandHandler<DeletePromptCommand, b
         _promptRepository = promptRepository;
     }
 
-    public async Task<Result<bool>> Handle(DeletePromptCommand request, CancellationToken cancellationToken)
+    public async Task<Result<bool>> ExecuteAsync(DeletePromptCommand command, CancellationToken ct)
     {
-        var result = await _promptRepository.DeleteAsync(request.PromptId);
+        var result = await _promptRepository.DeleteAsync(command.PromptId);
         if (result.IsFailure)
         {
             return Result.Failure<bool>(result.Error);

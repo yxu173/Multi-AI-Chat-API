@@ -15,10 +15,9 @@ public sealed class
         _chatFolderRepository = chatFolderRepository;
     }
 
-    public async Task<Result<IReadOnlyList<ChatFolderDto>>> Handle(GetChatsFolderByUserIdQuery request,
-        CancellationToken cancellationToken)
+    public async Task<Result<IReadOnlyList<ChatFolderDto>>> ExecuteAsync(GetChatsFolderByUserIdQuery command, CancellationToken ct)
     {
-        var chatFolders = await _chatFolderRepository.GetByUserIdAsync(request.UserId, cancellationToken);
+        var chatFolders = await _chatFolderRepository.GetByUserIdAsync(command.UserId, ct);
 
         var result = chatFolders.Select(
             f => new ChatFolderDto(
