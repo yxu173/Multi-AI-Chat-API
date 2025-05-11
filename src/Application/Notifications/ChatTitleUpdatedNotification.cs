@@ -1,5 +1,6 @@
+using FastEndpoints;
 using MediatR;
 
 namespace Application.Notifications;
 
-public record ChatTitleUpdatedNotification(Guid ChatId, string NewTitle) : INotification;
+public record ChatTitleUpdatedNotification(Guid ChatId, string NewTitle) : IEvent;

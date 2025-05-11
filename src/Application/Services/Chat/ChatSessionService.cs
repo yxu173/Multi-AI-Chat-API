@@ -1,5 +1,6 @@
 using Application.Notifications;
 using Domain.Repositories;
+using FastEndpoints;
 using MediatR;
 
 namespace Application.Services.Chat;
@@ -33,7 +34,7 @@ public class ChatSessionService
             var title = GenerateTitleFromContent(content);
             chatSession.UpdateTitle(title);
             await _chatSessionRepository.UpdateAsync(chatSession, cancellationToken);
-            await _mediator.Publish(new ChatTitleUpdatedNotification(chatSession.Id, title), cancellationToken);
+            await new ChatTitleUpdatedNotification(chatSession.Id, title).PublishAsync(cancellation: cancellationToken);
         }
     }
 

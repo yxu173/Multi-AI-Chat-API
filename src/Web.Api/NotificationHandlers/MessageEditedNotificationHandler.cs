@@ -1,11 +1,12 @@
 using Application.Notifications;
+using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Web.Api.Hubs;
 
 namespace Web.Api.NotificationHandlers;
 
-public class MessageEditedNotificationHandler : INotificationHandler<MessageEditedNotification>
+public class MessageEditedNotificationHandler : IEventHandler<MessageEditedNotification>
 {
     private readonly IHubContext<ChatHub> _hubContext;
 
@@ -14,9 +15,9 @@ public class MessageEditedNotificationHandler : INotificationHandler<MessageEdit
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
     }
 
-    public async Task Handle(MessageEditedNotification notification, CancellationToken cancellationToken)
+    public async Task HandleAsync(MessageEditedNotification eventModel, CancellationToken ct)
     {
-        await _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("MessageEdited", notification.MessageId, notification.NewContent, cancellationToken);
+        await _hubContext.Clients.Group(eventModel.ChatSessionId.ToString())
+            .SendAsync("MessageEdited", eventModel.MessageId, eventModel.NewContent, ct);
     }
 }

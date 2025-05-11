@@ -1,6 +1,7 @@
 using Application.Notifications;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
+using FastEndpoints;
 using MediatR;
 
 namespace Application.Services.Messaging;
@@ -45,9 +46,7 @@ public class MessageService
             FileAttachments = message.FileAttachments.ToList()
         };
         
-        await _mediator.Publish(
-            new MessageSentNotification(chatSessionId, messageDto),
-            cancellationToken);
+        await new MessageSentNotification(chatSessionId, messageDto).PublishAsync(cancellation: cancellationToken);
         return message;
     }
 
@@ -58,9 +57,7 @@ public class MessageService
     {
         var message = Message.CreateAiMessage(userId, chatSessionId);
         await _messageRepository.AddAsync(message, cancellationToken);
-        await _mediator.Publish(
-            new MessageSentNotification(chatSessionId, new MessageDto(message.Content, true, message.Id)),
-            cancellationToken);
+        await new MessageSentNotification(chatSessionId, new MessageDto(message.Content, true, message.Id)).PublishAsync(cancellation: cancellationToken);
         return message;
     }
 

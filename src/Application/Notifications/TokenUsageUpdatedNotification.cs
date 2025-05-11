@@ -1,8 +1,9 @@
+ using FastEndpoints;
  using MediatR;
 
 namespace Application.Notifications;
 
-public class TokenUsageUpdatedNotification : INotification
+public class TokenUsageUpdatedNotification : IEvent
 {
     public Guid ChatSessionId { get; }
     public int InputTokens { get; }

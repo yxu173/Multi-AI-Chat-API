@@ -1,8 +1,9 @@
+using FastEndpoints;
 using MediatR;
 
 namespace Application.Notifications;
 
-public class ThinkingChunkReceivedNotification : INotification
+public class ThinkingChunkReceivedNotification : IEvent
 {
     public Guid ChatSessionId { get; }
     public Guid MessageId { get; }

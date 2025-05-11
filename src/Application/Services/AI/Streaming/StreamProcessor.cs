@@ -3,6 +3,7 @@ using Application.Abstractions.Interfaces;
 using Application.Notifications;
 using Domain.Aggregates.Chats;
 using Domain.Enums;
+using FastEndpoints;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -76,9 +77,7 @@ public class StreamProcessor
                 if (!string.IsNullOrEmpty(parsedInfo.TextDelta))
                 {
                     appendFinalContentAction(parsedInfo.TextDelta);
-                    await _mediator.Publish(
-                        new MessageChunkReceivedNotification(chatSessionId, aiMessage.Id, parsedInfo.TextDelta),
-                        cancellationToken);
+                    await new MessageChunkReceivedNotification(chatSessionId, aiMessage.Id, parsedInfo.TextDelta).PublishAsync(cancellation: cancellationToken);
                 }
 
                 // Handle thinking indicators
@@ -86,9 +85,7 @@ public class StreamProcessor
                 {
                     thinkingContentBuilder.Append(parsedInfo.ThinkingDelta);
 
-                    await _mediator.Publish(
-                        new ThinkingUpdateNotification(chatSessionId, aiMessage.Id, parsedInfo.ThinkingDelta),
-                        cancellationToken);
+                    await new ThinkingUpdateNotification(chatSessionId, aiMessage.Id, parsedInfo.ThinkingDelta).PublishAsync(cancellation: cancellationToken);
                 }
 
                 // Handle tool calls

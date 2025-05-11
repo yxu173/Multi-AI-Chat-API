@@ -1,8 +1,9 @@
+using FastEndpoints;
 using MediatR;
 
 namespace Application.Notifications;
 
-public class ResponseStoppedNotification : INotification
+public class ResponseStoppedNotification : IEvent
 {
     public Guid ChatSessionId { get; }
     public Guid MessageId { get; }

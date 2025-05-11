@@ -1,11 +1,12 @@
 using Application.Notifications;
+using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Web.Api.Hubs;
 
 namespace Web.Api.NotificationHandlers;
 
-public class MessageDeletedNotificationHandler : INotificationHandler<MessageDeletedNotification>
+public class MessageDeletedNotificationHandler : IEventHandler<MessageDeletedNotification>
 {
     private readonly IHubContext<ChatHub> _hubContext;
 
@@ -14,10 +15,10 @@ public class MessageDeletedNotificationHandler : INotificationHandler<MessageDel
         _hubContext = hubContext;
     }
 
-    public Task Handle(MessageDeletedNotification notification, CancellationToken cancellationToken)
+    public Task HandleAsync(MessageDeletedNotification eventModel, CancellationToken ct)
     {
-        Console.WriteLine($"Handler: Deleting message {notification.MessageId} in chat {notification.ChatSessionId}");
-        return _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("MessageDeleted", notification.MessageId, cancellationToken);
+        Console.WriteLine($"Handler: Deleting message {eventModel.MessageId} in chat {eventModel.ChatSessionId}");
+        return _hubContext.Clients.Group(eventModel.ChatSessionId.ToString())
+            .SendAsync("MessageDeleted", eventModel.MessageId, ct);
     }
-} 
+}

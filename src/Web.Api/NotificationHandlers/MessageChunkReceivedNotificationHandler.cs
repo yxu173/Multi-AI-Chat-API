@@ -1,11 +1,12 @@
 using Application.Notifications;
+using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Web.Api.Hubs;
 
 namespace Web.Api.NotificationHandlers;
 
-public class MessageChunkReceivedNotificationHandler : INotificationHandler<MessageChunkReceivedNotification>
+public class MessageChunkReceivedNotificationHandler : IEventHandler<MessageChunkReceivedNotification>
 {
     private readonly IHubContext<ChatHub> _hubContext;
 
@@ -14,9 +15,10 @@ public class MessageChunkReceivedNotificationHandler : INotificationHandler<Mess
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
     }
 
-    public async Task Handle(MessageChunkReceivedNotification notification, CancellationToken cancellationToken)
+    public async Task HandleAsync(MessageChunkReceivedNotification eventModel, CancellationToken ct)
     {
-        await _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("ReceiveMessageChunk", notification.MessageId, notification.Chunk, cancellationToken);
+        await _hubContext.Clients.Group(eventModel.ChatSessionId.ToString())
+            .SendAsync("ReceiveMessageChunk", eventModel.MessageId, eventModel.Chunk, ct);
     }
+
 }

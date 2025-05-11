@@ -1,6 +1,7 @@
 using Application.Notifications;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
+using FastEndpoints;
 using MediatR;
 
 namespace Application.Services.TokenUsage;
@@ -33,9 +34,8 @@ public class TokenUsageService
         // Pass the incremental values directly - the entity will add them to existing totals
         tokenUsage.UpdateTokenCountsAndCost(inputTokens, outputTokens, cost);
         await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
-        await _mediator.Publish(
-            new TokenUsageUpdatedNotification(chatSessionId, tokenUsage.InputTokens, tokenUsage.OutputTokens,
-                tokenUsage.TotalCost), cancellationToken);
+        await new TokenUsageUpdatedNotification(chatSessionId, tokenUsage.InputTokens, tokenUsage.OutputTokens,
+                tokenUsage.TotalCost).PublishAsync(cancellation: cancellationToken);
     }
     
     public async Task SetTokenUsageFromModelAsync(Guid chatSessionId, int totalInputTokens, int totalOutputTokens, 
@@ -46,8 +46,7 @@ public class TokenUsageService
         // Create a new update method for direct setting values
         tokenUsage.SetTokenCountsAndCost(totalInputTokens, totalOutputTokens, modelCost);
         await _tokenUsageRepository.UpdateAsync(tokenUsage, cancellationToken);
-        await _mediator.Publish(
-            new TokenUsageUpdatedNotification(chatSessionId, tokenUsage.InputTokens, tokenUsage.OutputTokens,
-                tokenUsage.TotalCost), cancellationToken);
+        await new TokenUsageUpdatedNotification(chatSessionId, tokenUsage.InputTokens, tokenUsage.OutputTokens,
+                tokenUsage.TotalCost).PublishAsync(cancellation: cancellationToken);
     }
 }

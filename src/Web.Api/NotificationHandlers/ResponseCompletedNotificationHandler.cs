@@ -1,11 +1,12 @@
 using Application.Notifications;
+using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Web.Api.Hubs;
 
 namespace Web.Api.NotificationHandlers;
 
-public class ResponseCompletedNotificationHandler : INotificationHandler<ResponseCompletedNotification>
+public class ResponseCompletedNotificationHandler : IEventHandler<ResponseCompletedNotification>
 {
     private readonly IHubContext<ChatHub> _hubContext;
 
@@ -14,9 +15,9 @@ public class ResponseCompletedNotificationHandler : INotificationHandler<Respons
         _hubContext = hubContext;
     }
 
-    public async Task Handle(ResponseCompletedNotification notification, CancellationToken cancellationToken)
+    public async Task HandleAsync(ResponseCompletedNotification eventModel, CancellationToken ct)
     {
-        await _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("ResponseCompleted", notification.MessageId, cancellationToken);
+        await _hubContext.Clients.Group(eventModel.ChatSessionId.ToString())
+            .SendAsync("ResponseCompleted", eventModel.MessageId, ct);
     }
 }

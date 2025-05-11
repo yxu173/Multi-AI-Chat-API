@@ -1,11 +1,12 @@
 using Application.Notifications;
+using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Web.Api.Hubs;
 
 namespace Web.Api.NotificationHandlers;
 
-public class ThinkingChunkReceivedNotificationHandler : INotificationHandler<ThinkingChunkReceivedNotification>
+public class ThinkingChunkReceivedNotificationHandler : IEventHandler<ThinkingChunkReceivedNotification>
 {
     private readonly IHubContext<ChatHub> _hubContext;
 
@@ -14,9 +15,9 @@ public class ThinkingChunkReceivedNotificationHandler : INotificationHandler<Thi
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
     }
 
-    public async Task Handle(ThinkingChunkReceivedNotification notification, CancellationToken cancellationToken)
+    public async Task HandleAsync(ThinkingChunkReceivedNotification eventModel, CancellationToken ct)
     {
-        await _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("ReceiveThinkingChunk", notification.MessageId, notification.Chunk, cancellationToken);
+        await _hubContext.Clients.Group(eventModel.ChatSessionId.ToString())
+            .SendAsync("ReceiveThinkingChunk", eventModel.MessageId, eventModel.Chunk, ct);
     }
 } 

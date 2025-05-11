@@ -1,11 +1,12 @@
 using Application.Notifications;
+using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Web.Api.Hubs;
 
 namespace Web.Api.NotificationHandlers;
 
-public class ThinkingUpdateNotificationHandler : INotificationHandler<ThinkingUpdateNotification>
+public class ThinkingUpdateNotificationHandler : IEventHandler<ThinkingUpdateNotification>
 {
     private readonly IHubContext<ChatHub> _hubContext;
 
@@ -14,10 +15,10 @@ public class ThinkingUpdateNotificationHandler : INotificationHandler<ThinkingUp
         _hubContext = hubContext;
     }
 
-    public async Task Handle(ThinkingUpdateNotification notification, CancellationToken cancellationToken)
+    public async Task HandleAsync(ThinkingUpdateNotification eventModel, CancellationToken ct)
     {
         await _hubContext.Clients
-            .Group(notification.ChatSessionId.ToString())
-            .SendAsync("ThinkingUpdate", notification.MessageId, notification.ThinkingContent, cancellationToken);
+            .Group(eventModel.ChatSessionId.ToString())
+            .SendAsync("ThinkingUpdate", eventModel.MessageId, eventModel.ThinkingContent, ct);
     }
 } 

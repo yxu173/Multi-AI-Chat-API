@@ -1,11 +1,12 @@
 using Application.Notifications;
+using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Web.Api.Hubs;
 
 namespace Web.Api.NotificationHandlers;
 
-public class ResponseStoppedNotificationHandler : INotificationHandler<ResponseStoppedNotification>
+public class ResponseStoppedNotificationHandler : IEventHandler<ResponseStoppedNotification>
 {
     private readonly IHubContext<ChatHub> _hubContext;
 
@@ -14,9 +15,9 @@ public class ResponseStoppedNotificationHandler : INotificationHandler<ResponseS
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
     }
 
-    public async Task Handle(ResponseStoppedNotification notification, CancellationToken cancellationToken)
+    public async Task HandleAsync(ResponseStoppedNotification eventModel, CancellationToken ct)
     {
-        await _hubContext.Clients.Group(notification.ChatSessionId.ToString())
-            .SendAsync("ResponseStopped", notification.MessageId, cancellationToken);
+        await _hubContext.Clients.Group(eventModel.ChatSessionId.ToString())
+            .SendAsync("ResponseStopped", eventModel.MessageId, ct);
     }
 }

@@ -5,6 +5,7 @@ using Application.Services.AI;
 using Application.Services.Messaging;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
+using FastEndpoints;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 namespace Application.Services.Chat;
@@ -122,8 +123,7 @@ public class ChatService
 
         await _messageService.UpdateMessageContentAsync(messageToEdit, contentToUse, fileAttachments,
             cancellationToken);
-        await _mediator.Publish(new MessageEditedNotification(chatSessionId, messageId, contentToUse),
-            cancellationToken);
+        await new MessageEditedNotification(chatSessionId, messageId, contentToUse).PublishAsync(cancellation: cancellationToken);
 
         var subsequentAiMessages = chatSession.Messages
             .Where(m => m.IsFromAi && m.CreatedAt > messageToEdit.CreatedAt)
@@ -182,8 +182,7 @@ public class ChatService
         {
             chatSession.RemoveMessage(aiMessageToDelete);
             await _messageService.DeleteMessageAsync(aiMessageToDelete.Id, cancellationToken);
-            await _mediator.Publish(new MessageDeletedNotification(chatSessionId, aiMessageToDelete.Id),
-                cancellationToken);
+            await new MessageDeletedNotification(chatSessionId, aiMessageToDelete.Id).PublishAsync(cancellation: cancellationToken);
         }
 
         var newAiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);

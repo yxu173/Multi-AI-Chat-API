@@ -9,6 +9,7 @@ using Application.Services.Utilities;
 using Domain.Aggregates.Chats;
 using Domain.Enums;
 using Domain.Repositories;
+using FastEndpoints;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -184,9 +185,7 @@ public class MessageStreamer
         {
             aiMessage.UpdateContent(markdownResult);
             aiMessage.CompleteMessage();
-            await _mediator.Publish(
-                new MessageChunkReceivedNotification(requestContext.ChatSession.Id, aiMessage.Id, markdownResult),
-                cancellationToken);
+            await new MessageChunkReceivedNotification(requestContext.ChatSession.Id, aiMessage.Id, markdownResult).PublishAsync(cancellation: cancellationToken);
         }
         else
         {
@@ -341,18 +340,15 @@ public class MessageStreamer
 
         if (aiMessage.Status == MessageStatus.Completed)
         {
-            await _mediator.Publish(new ResponseCompletedNotification(aiMessage.ChatSessionId, aiMessage.Id),
-                cancellationToken);
+            await new ResponseCompletedNotification(aiMessage.ChatSessionId, aiMessage.Id).PublishAsync(cancellation: cancellationToken);
         }
         else if (aiMessage.Status == MessageStatus.Interrupted && !cancellationToken.IsCancellationRequested)
         {
-            await _mediator.Publish(new ResponseStoppedNotification(aiMessage.ChatSessionId, aiMessage.Id),
-                cancellationToken);
+            await new ResponseStoppedNotification(aiMessage.ChatSessionId, aiMessage.Id).PublishAsync(cancellation: cancellationToken);
         }
         else if (aiMessage.Status == MessageStatus.Failed)
         {
-            await _mediator.Publish(new ResponseStoppedNotification(aiMessage.ChatSessionId, aiMessage.Id),
-                cancellationToken);
+            await new ResponseStoppedNotification(aiMessage.ChatSessionId, aiMessage.Id).PublishAsync(cancellation: cancellationToken);
         }
     }
 
@@ -362,7 +358,7 @@ public class MessageStreamer
             chatSessionId, userCancelled ? "User Request" : "Internal Stop");
 
         var stopReason = userCancelled ? "Cancelled by user" : "Stopped internally";
-        await _mediator.Publish(new ResponseStoppedNotification(chatSessionId, aiMessage.Id), CancellationToken.None);
+        await new ResponseStoppedNotification(chatSessionId, aiMessage.Id).PublishAsync();
 
         if (aiMessage.Status != MessageStatus.Completed && aiMessage.Status != MessageStatus.Interrupted)
         {
