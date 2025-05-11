@@ -2,19 +2,16 @@ using Application.Notifications;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using FastEndpoints;
-using MediatR;
 
 namespace Application.Services.TokenUsage;
 
 public class TokenUsageService
 {
     private readonly IChatTokenUsageRepository _tokenUsageRepository;
-    private readonly IMediator _mediator;
 
-    public TokenUsageService(IChatTokenUsageRepository tokenUsageRepository, IMediator mediator)
+    public TokenUsageService(IChatTokenUsageRepository tokenUsageRepository)
     {
         _tokenUsageRepository = tokenUsageRepository ?? throw new ArgumentNullException(nameof(tokenUsageRepository));
-        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
 
     public async Task<ChatTokenUsage> GetOrCreateTokenUsageAsync(Guid chatSessionId,

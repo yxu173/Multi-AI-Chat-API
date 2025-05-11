@@ -10,14 +10,12 @@ using Domain.Aggregates.Chats;
 using Domain.Enums;
 using Domain.Repositories;
 using FastEndpoints;
-using MediatR;
 using Microsoft.Extensions.Logging;
 
 namespace Application.Services.Messaging;
 
 public class MessageStreamer
 {
-    private readonly IMediator _mediator;
     private readonly IMessageRepository _messageRepository;
     private readonly StreamingOperationManager _streamingOperationManager;
     private readonly ILogger<MessageStreamer> _logger;
@@ -28,7 +26,6 @@ public class MessageStreamer
     private readonly MessageService _messageService;
 
     public MessageStreamer(
-        IMediator mediator,
         IMessageRepository messageRepository,
         StreamingOperationManager streamingOperationManager,
         ILogger<MessageStreamer> logger,
@@ -39,7 +36,6 @@ public class MessageStreamer
         MessageService messageService
     )
     {
-        _mediator = mediator;
         _messageRepository = messageRepository;
         _streamingOperationManager = streamingOperationManager;
         _logger = logger;
@@ -379,7 +375,7 @@ public class MessageStreamer
             await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
         }
 
-        await _mediator.Publish(new ResponseStoppedNotification(chatSessionId, aiMessage.Id), CancellationToken.None);
+        await new ResponseStoppedNotification(chatSessionId, aiMessage.Id).PublishAsync();
     }
 
     private ResponseType MapModelTypeToResponse(ModelType modelType) =>

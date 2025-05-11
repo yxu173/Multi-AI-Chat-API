@@ -4,7 +4,6 @@ using Application.Notifications;
 using Domain.Aggregates.Chats;
 using Domain.Enums;
 using FastEndpoints;
-using MediatR;
 using Microsoft.Extensions.Logging;
 
 namespace Application.Services.AI.Streaming;
@@ -21,16 +20,13 @@ public record ParsedToolCall(string Id, string Name, string Arguments);
 public class StreamProcessor
 {
     private readonly ILogger<StreamProcessor> _logger;
-    private readonly IMediator _mediator;
     private readonly IEnumerable<IStreamChunkParser> _parsers;
 
     public StreamProcessor(
         ILogger<StreamProcessor> logger,
-        IMediator mediator,
         IEnumerable<IStreamChunkParser> parsers)
     {
         _logger = logger;
-        _mediator = mediator;
         _parsers = parsers;
     }
 

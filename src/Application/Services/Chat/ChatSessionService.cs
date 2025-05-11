@@ -1,21 +1,18 @@
 using Application.Notifications;
 using Domain.Repositories;
 using FastEndpoints;
-using MediatR;
 
 namespace Application.Services.Chat;
 
 public class ChatSessionService
 {
     private readonly IChatSessionRepository _chatSessionRepository;
-    private readonly IMediator _mediator;
     private const int MaxTitleLength = 50;
 
-    public ChatSessionService(IChatSessionRepository chatSessionRepository, IMediator mediator)
+    public ChatSessionService(IChatSessionRepository chatSessionRepository)
     {
         _chatSessionRepository =
             chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
-        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
 
     public async Task<ChatSession> GetChatSessionAsync(Guid chatSessionId,

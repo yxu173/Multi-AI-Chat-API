@@ -2,7 +2,6 @@ using Application.Notifications;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using FastEndpoints;
-using MediatR;
 
 namespace Application.Services.Messaging;
 
@@ -10,16 +9,13 @@ public class MessageService
 {
     private readonly IMessageRepository _messageRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
-    private readonly IMediator _mediator;
 
     public MessageService(
         IMessageRepository messageRepository, 
-        IFileAttachmentRepository fileAttachmentRepository,
-        IMediator mediator)
+        IFileAttachmentRepository fileAttachmentRepository)
     {
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
-        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
 
     public async Task<Message> CreateAndSaveUserMessageAsync(

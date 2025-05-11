@@ -6,6 +6,7 @@ using Application.Services.AI;
 using Application.Services.AI.PayloadBuilders;
 using Application.Services.AI.Streaming;
 using Application.Services.Chat;
+using Application.Services.Chat.Commands;
 using Application.Services.Files;
 using Application.Services.Helpers;
 using Application.Services.Infrastructure;
@@ -52,12 +53,16 @@ public static class DependencyInjection
 
         services.AddScoped<IPayloadBuilder, ImagenPayloadBuilder>();
 
+        // Chat commands
+        services.AddScoped<SendUserMessageCommand>();
+        services.AddScoped<EditUserMessageCommand>();
+        services.AddScoped<RegenerateAiResponseCommand>();
 
         services.AddScoped<ChatService>();
         services.AddScoped<ChatSessionService>();
         services.AddScoped<MessageService>();
-        services.AddScoped<PluginService>();
         services.AddScoped<TokenUsageService>();
+        services.AddScoped<PluginService>();
         services.AddScoped<MessageStreamer>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
         services.AddScoped<FileUploadService>(provider =>
