@@ -16,7 +16,7 @@ public sealed class SendUserMessageCommand
 {
     private readonly ChatSessionService _chatSessionService;
     private readonly MessageService _messageService;
-    private readonly MessageStreamer _messageStreamer;
+    private readonly IMessageStreamer _messageStreamer;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IAiAgentRepository _aiAgentRepository;
     private readonly IUserAiModelSettingsRepository _userAiModelSettingsRepository;
@@ -24,7 +24,7 @@ public sealed class SendUserMessageCommand
     public SendUserMessageCommand(
         ChatSessionService chatSessionService,
         MessageService messageService,
-        MessageStreamer messageStreamer,
+        IMessageStreamer messageStreamer,
         IAiModelServiceFactory aiModelServiceFactory,
         IAiAgentRepository aiAgentRepository,
         IUserAiModelSettingsRepository userAiModelSettingsRepository)

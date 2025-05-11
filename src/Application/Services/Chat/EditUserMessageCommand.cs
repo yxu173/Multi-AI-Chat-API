@@ -17,7 +17,7 @@ public sealed class EditUserMessageCommand
 {
     private readonly ChatSessionService _chatSessionService;
     private readonly MessageService _messageService;
-    private readonly MessageStreamer _messageStreamer;
+    private readonly IMessageStreamer _messageStreamer;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IAiAgentRepository _aiAgentRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
@@ -26,7 +26,7 @@ public sealed class EditUserMessageCommand
     public EditUserMessageCommand(
         ChatSessionService chatSessionService,
         MessageService messageService,
-        MessageStreamer messageStreamer,
+        IMessageStreamer messageStreamer,
         IAiModelServiceFactory aiModelServiceFactory,
         IAiAgentRepository aiAgentRepository,
         IFileAttachmentRepository fileAttachmentRepository,

@@ -43,6 +43,9 @@ public interface IAiRequestHandler
 
 public class AiRequestHandler : IAiRequestHandler
 {
+    private static readonly Regex _imageTagRegex = new(@"<image:([0-9a-fA-F-]{36})>", RegexOptions.Compiled);
+    private static readonly Regex _fileTagRegex = new(@"<file:([0-9a-fA-F-]{36}):([^>]*)>", RegexOptions.Compiled);
+
     private readonly ILogger<AiRequestHandler> _logger;
     private readonly IPayloadBuilderFactory _payloadBuilderFactory;
     private readonly IPluginExecutorFactory _pluginExecutorFactory;
@@ -310,8 +313,7 @@ public class AiRequestHandler : IAiRequestHandler
 
         try
         {
-            var imageTagRegex = new Regex(@"<image:([0-9a-fA-F-]{36})>");
-            var imageMatches = imageTagRegex.Matches(content);
+            var imageMatches = _imageTagRegex.Matches(content);
             foreach (Match match in imageMatches)
             {
                 if (Guid.TryParse(match.Groups[1].Value, out Guid fileId))
@@ -329,8 +331,7 @@ public class AiRequestHandler : IAiRequestHandler
                 }
             }
 
-            var fileTagRegex = new Regex(@"<file:([0-9a-fA-F-]{36}):([^>]*)>");
-            var fileMatches = fileTagRegex.Matches(content);
+            var fileMatches = _fileTagRegex.Matches(content);
             foreach (Match match in fileMatches)
             {
                 if (Guid.TryParse(match.Groups[1].Value, out Guid fileId))

@@ -8,7 +8,7 @@ public static class Utilities
     {
         var fileIds = new List<Guid>();
         var imageMatches = Regex.Matches(content, @"<(image|file):[^>]*?/api/file/([0-9a-fA-F-]{36})",
-            RegexOptions.IgnoreCase);
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
         foreach (Match match in imageMatches)
         {
             if (Guid.TryParse(match.Groups[2].Value, out Guid fileId))

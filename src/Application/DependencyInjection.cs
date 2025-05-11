@@ -1,3 +1,4 @@
+using Application.Abstractions.Interfaces;
 using Application.Abstractions.PreProcessors;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,7 +64,11 @@ public static class DependencyInjection
         services.AddScoped<MessageService>();
         services.AddScoped<TokenUsageService>();
         services.AddScoped<PluginService>();
-        services.AddScoped<MessageStreamer>();
+        // Register response handlers (Strategy pattern for AI responses)
+        services.AddScoped<IResponseHandler, ImageResponseHandler>();
+        services.AddScoped<IResponseHandler, ToolCallStreamingResponseHandler>();
+        services.AddScoped<IResponseHandler, TextStreamingResponseHandler>();
+        services.AddScoped<IMessageStreamer, MessageStreamer>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
         services.AddScoped<FileUploadService>(provider =>
             new FileUploadService(
