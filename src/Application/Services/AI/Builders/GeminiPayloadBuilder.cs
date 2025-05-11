@@ -2,10 +2,12 @@ using Application.Abstractions.Interfaces;
 using Application.Services.Helpers;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
+using Application.Services.AI.Interfaces;
+using Application.Services.AI.PayloadBuilders;
 
-namespace Application.Services.AI.PayloadBuilders;
+namespace Application.Services.AI.Builders;
 
-public class GeminiPayloadBuilder : BasePayloadBuilder, IGeminiPayloadBuilder
+public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 {
     private readonly MultimodalContentParser _multimodalContentParser;
     private readonly IAiModelServiceFactory _serviceFactory;
@@ -22,8 +24,8 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IGeminiPayloadBuilder
 
     public async Task<AiRequestPayload> PreparePayloadAsync(
         AiRequestContext context,
-        List<object>? toolDefinitions,
-        CancellationToken cancellationToken)
+        List<object>? tools = null,
+        CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var generationConfig = new Dictionary<string, object>();
@@ -38,15 +40,15 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IGeminiPayloadBuilder
         requestObj["generationConfig"] = generationConfig;
         requestObj["safetySettings"] = safetySettings;
 
-        if (toolDefinitions?.Any() == true && IsParameterSupported("tools", context.SpecificModel.ModelType, isTopLevelParam: true)) // Base method, check top-level
+        if (tools?.Any() == true && IsParameterSupported("tools", context.SpecificModel.ModelType, isTopLevelParam: true)) // Base method, check top-level
         {
             Logger?.LogInformation("Adding {ToolCount} tool declarations to Gemini payload for model {ModelCode}",
-                 toolDefinitions.Count, context.SpecificModel.ModelCode);
-            requestObj["tools"] = new[] { new { functionDeclarations = toolDefinitions } };
+                 tools.Count, context.SpecificModel.ModelCode);
+            requestObj["tools"] = new[] { new { functionDeclarations = tools } };
         }
         else
         {
-             if (toolDefinitions?.Any() == true)
+             if (tools?.Any() == true)
              {
                  Logger?.LogWarning("Tools definitions provided but 'tools' parameter not marked as supported for Gemini model {ModelCode}", context.SpecificModel.ModelCode);
              }

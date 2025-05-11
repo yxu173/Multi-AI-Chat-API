@@ -1,16 +1,21 @@
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Application.Services.AI.Interfaces;
+using Application.Services.AI.PayloadBuilders;
 
-namespace Application.Services.AI.PayloadBuilders;
+namespace Application.Services.AI.Builders;
 
-public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAimlFluxPayloadBuilder
+public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 {
     public AimlFluxPayloadBuilder(ILogger<AimlFluxPayloadBuilder> logger)
         : base(logger)
     {
     }
 
-    public AiRequestPayload PreparePayload(AiRequestContext context)
+    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
     {
         Logger?.LogInformation("Preparing payload for AIMLAPI Flux model {ModelCode}", context.SpecificModel.ModelCode);
 
@@ -52,7 +57,7 @@ public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAimlFluxPayloadBuilde
             requestObj.GetValueOrDefault("enable_safety_checker", "N/A"),
             requestObj.GetValueOrDefault("safety_tolerance", "N/A"));
 
-        return new AiRequestPayload(requestObj);
+        return Task.FromResult(new AiRequestPayload(requestObj)); 
     }
 
     private string ExtractTextFromMessage(string? messageContent)

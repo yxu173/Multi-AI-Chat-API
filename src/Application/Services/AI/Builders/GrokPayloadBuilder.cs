@@ -3,10 +3,15 @@ using Application.Services.Messaging;
 using Domain.Aggregates.Chats;
 using Domain.Aggregates.Users;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Application.Services.AI.Interfaces;
+using Application.Services.AI.PayloadBuilders;
 
-namespace Application.Services.AI.PayloadBuilders;
+namespace Application.Services.AI.Builders;
 
-public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
+public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 {
     private readonly MultimodalContentParser _multimodalContentParser;
 
@@ -19,7 +24,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public AiRequestPayload PreparePayload(AiRequestContext context)
+    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -38,12 +43,10 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
         var processedMessages = ProcessMessagesForGrokInput(context.History, context.AiAgent, context.UserSettings);
         requestObj["messages"] = processedMessages;
 
-        // Add function definitions if available
-        if (context.Functions != null && context.Functions.Any())
+        if (tools != null && tools.Any())
         {
-            requestObj["tools"] = PrepareFunctionDefinitions(context.Functions);
-            
-            // Set function calling behavior if specified
+            requestObj["tools"] = tools;
+
             if (!string.IsNullOrEmpty(context.FunctionCall))
             {
                 if (context.FunctionCall == "auto")
@@ -56,7 +59,6 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
                 }
                 else
                 {
-                    // Specify a particular function to call
                     requestObj["tool_choice"] = new
                     {
                         type = "function",
@@ -69,13 +71,13 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
             }
         }
 
-        return new AiRequestPayload(requestObj);
+        return Task.FromResult(new AiRequestPayload(requestObj));
     }
 
     private object[] PrepareFunctionDefinitions(List<FunctionDefinitionDto> functions)
     {
         var tools = new List<object>();
-        
+
         foreach (var function in functions)
         {
             var functionDef = new Dictionary<string, object>
@@ -88,7 +90,6 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
                 }
             };
 
-            // Add parameters if available
             if (function.Parameters != null)
             {
                 ((Dictionary<string, object>)functionDef["function"])["parameters"] = function.Parameters;
@@ -126,7 +127,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
             {
                 var contentParts = _multimodalContentParser.Parse(rawContent);
                 var contentArray = new List<object>();
-                
+
                 foreach (var part in contentParts)
                 {
                     switch (part)
@@ -134,10 +135,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
                         case TextPart textPart:
                             var txt = textPart.Text?.Trim();
                             if (!string.IsNullOrEmpty(txt))
-                                contentArray.Add(new { 
-                                    type = "text", 
-                                    text = txt 
-                                });
+                                contentArray.Add(new { type = "text", text = txt });
                             break;
                         case ImagePart imagePart:
                             contentArray.Add(new
@@ -151,51 +149,35 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
                             });
                             break;
                         case FilePart filePart:
-                            // Special handling for CSV files
                             if (filePart.MimeType == "text/csv" || filePart.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
                             {
-                                Logger?.LogWarning("CSV file {FileName} detected - Grok doesn't support CSV files directly. " +
-                                    "Using the csv_reader plugin is recommended instead.", filePart.FileName);
-                                
-                                contentArray.Add(new { 
-                                    type = "text", 
-                                    text = $"Note: The CSV file '{filePart.FileName}' can't be processed directly by Grok. " +
-                                           $"Please use the csv_reader tool to analyze this file. Example usage:\n\n" +
-                                           $"{{\n  \"name\": \"csv_reader\",\n  \"arguments\": {{\n    \"file_name\": \"{filePart.FileName}\",\n    \"max_rows\": 100,\n    \"analyze\": true\n  }}\n}}" 
-                                });
+                                Logger?.LogWarning("CSV file {FileName} detected - Grok doesn't support CSV files directly. Using the csv_reader plugin is recommended instead.", filePart.FileName);
+
+                                contentArray.Add(new { type = "text", text = $"Note: The CSV file '{filePart.FileName}' can't be processed directly by Grok. Please use the csv_reader tool to analyze this file. Example usage:\n\n{{\n  \"name\": \"csv_reader\",\n  \"arguments\": {{\n    \"file_name\": \"{filePart.FileName}\",\n    \"max_rows\": 100,\n    \"analyze\": true\n  }}\n}}" });
                             }
                             else
                             {
-                                // Handle other file types with a simple text reference
-                                contentArray.Add(new { 
-                                    type = "text", 
-                                    text = $"[Attached file: {filePart.FileName} ({filePart.MimeType}) - Not supported by Grok directly]" 
-                                });
+                                contentArray.Add(new { type = "text", text = $"[Attached file: {filePart.FileName} ({filePart.MimeType}) - Not supported by Grok directly]" });
                             }
                             break;
                     }
                 }
-                
+
                 if (contentArray.Count > 0)
                 {
-                    processedMessages.Add(new { 
-                        role = role, 
-                        content = contentArray 
-                    });
+                    processedMessages.Add(new { role = role, content = contentArray });
                 }
             }
             else
             {
-                // Handle AI messages based on their content
                 if (message.FunctionCall != null)
                 {
-                    // For assistant messages with function calls
-                    processedMessages.Add(new 
-                    { 
+                    processedMessages.Add(new
+                    {
                         role = "assistant",
-                        tool_calls = new[] 
+                        tool_calls = new[]
                         {
-                            new 
+                            new
                             {
                                 type = "function",
                                 function = new
@@ -209,9 +191,8 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
                 }
                 else if (message.FunctionResponse != null)
                 {
-                    // For function response messages
-                    processedMessages.Add(new 
-                    { 
+                    processedMessages.Add(new
+                    {
                         role = "tool",
                         tool_call_id = message.FunctionResponse.FunctionCallId,
                         name = message.FunctionResponse.Name,
@@ -220,7 +201,6 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IGrokPayloadBuilder
                 }
                 else
                 {
-                    // For regular assistant messages
                     processedMessages.Add(new { role = "assistant", content = rawContent });
                 }
             }

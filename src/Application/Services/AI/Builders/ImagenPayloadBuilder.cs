@@ -1,4 +1,11 @@
-namespace Application.Services.AI.PayloadBuilders;
+using Application.Services.AI.Interfaces;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Application.Services.AI.Builders;
 
 public class ImagenInstance
 {
@@ -12,9 +19,9 @@ public class ImagenPayload
     public ImagenInstance[] Instances { get; set; } = [];
 }
 
-public class ImagenPayloadBuilder : IPayloadBuilder
+public class ImagenPayloadBuilder : IAiRequestBuilder
 {
-    public AiRequestPayload PreparePayload(AiRequestContext context, List<object>? tools = null)
+    private AiRequestPayload PreparePayload(AiRequestContext context, List<object>? tools = null)
     {
         if (context == null) throw new ArgumentNullException(nameof(context));
         if (context.History == null || !context.History.Any()) throw new ArgumentException("History cannot be null or empty", nameof(context.History));
@@ -49,9 +56,4 @@ public class ImagenPayloadBuilder : IPayloadBuilder
     {
         return Task.FromResult(PreparePayload(context, tools));
     }
-}
-
-public interface IPayloadBuilder
-{
-    AiRequestPayload PreparePayload(AiRequestContext context, List<object>? tools = null);
 }

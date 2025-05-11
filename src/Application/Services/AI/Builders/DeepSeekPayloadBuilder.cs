@@ -1,10 +1,15 @@
 using Application.Services.Helpers;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic; 
+using System.Threading; 
+using System.Threading.Tasks; 
+using Application.Services.AI.Interfaces;
+using Application.Services.AI.PayloadBuilders;
 
-namespace Application.Services.AI.PayloadBuilders;
+namespace Application.Services.AI.Builders; 
 
-public class DeepSeekPayloadBuilder : BasePayloadBuilder, IDeepSeekPayloadBuilder
+public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 {
     private readonly MultimodalContentParser _multimodalContentParser;
 
@@ -19,8 +24,8 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IDeepSeekPayloadBuilde
 
     public async Task<AiRequestPayload> PreparePayloadAsync(
         AiRequestContext context,
-        List<object>? toolDefinitions,
-        CancellationToken cancellationToken)
+        List<object>? tools = null, 
+        CancellationToken cancellationToken = default) 
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -34,14 +39,14 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IDeepSeekPayloadBuilde
         var processedMessages = await ProcessMessagesForDeepSeekAsync(context, cancellationToken);
         requestObj["messages"] = processedMessages;
 
-        if (toolDefinitions?.Any() == true)
+        if (tools?.Any() == true)
         {
             Logger?.LogWarning(
                 "Tool definitions were provided for DeepSeek model {ModelCode}, but tool calling is not currently implemented/supported in this builder.",
                 model.ModelCode);
             if (IsParameterSupported("tools", model.ModelType))
             {
-                requestObj["tools"] = toolDefinitions;
+                requestObj["tools"] = tools; 
                 if (IsParameterSupported("tool_choice", model.ModelType))
                 {
                     requestObj["tool_choice"] = "auto";
@@ -55,7 +60,7 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IDeepSeekPayloadBuilde
     }
 
     private async Task<List<object>> ProcessMessagesForDeepSeekAsync(AiRequestContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) 
     {
         var processedMessages = new List<object>();
         bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
@@ -66,7 +71,6 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IDeepSeekPayloadBuilde
             processedMessages.Add(new { role = "system", content = systemMessage.Trim() });
         }
 
-        // Add thinking prompt via system message if enabled (and not handled by parameters)
         if (useEffectiveThinking && !context.SpecificModel.ModelCode.ToLower().Contains("reasoner"))
         {
             var parameters = GetMergedParameters(context);
@@ -114,7 +118,6 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IDeepSeekPayloadBuilde
                 }
                 else if (part is FilePart fp)
                 {
-                    // Special handling for CSV files
                     if (fp.MimeType == "text/csv" || fp.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
                     {
                         Logger?.LogWarning("CSV file {FileName} detected - DeepSeek doesn't support CSV files directly. Using the csv_reader plugin is recommended instead.", fp.FileName);
@@ -151,7 +154,7 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IDeepSeekPayloadBuilde
             {
                 int insertIndex = firstNonSystemIndex == -1 ? processedMessages.Count : firstNonSystemIndex;
                 processedMessages.Insert(insertIndex,
-                    new { role = "user", content = "Proceed." }); // Simple placeholder
+                    new { role = "user", content = "Proceed." }); 
                 Logger?.LogWarning(
                     "Inserted placeholder user message for DeepSeek reasoner model {ModelCode} as the first non-system message was not 'user'.",
                     context.SpecificModel.ModelCode);

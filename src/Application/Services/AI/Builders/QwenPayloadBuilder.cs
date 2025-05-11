@@ -3,10 +3,15 @@ using Application.Services.Messaging;
 using Domain.Aggregates.Chats;
 using Domain.Aggregates.Users;
 using Microsoft.Extensions.Logging;
+using Application.Services.AI.Interfaces;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Application.Services.AI.PayloadBuilders;
 
-namespace Application.Services.AI.PayloadBuilders;
+namespace Application.Services.AI.Builders;
 
-public class QwenPayloadBuilder : BasePayloadBuilder, IQwenPayloadBuilder
+public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 {
     private readonly MultimodalContentParser _multimodalContentParser;
 
@@ -19,15 +24,15 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IQwenPayloadBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public AiRequestPayload PreparePayload(AiRequestContext context)
+    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
 
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
-        requestObj["stream_options"] = new { include_usage = true }; // Include usage in the stream response
-        requestObj["enable_thinking"] = true; // Enable thinking for the model
+        requestObj["stream_options"] = new { include_usage = true }; 
+        requestObj["enable_thinking"] = true; 
 
         var parameters = GetMergedParameters(context);
         foreach (var param in parameters)
@@ -41,9 +46,9 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IQwenPayloadBuilder
         var processedMessages = ProcessMessagesForQwenInput(context.History, context.AiAgent, context.UserSettings);
         requestObj["messages"] = processedMessages;
 
-        if (context.Functions != null && context.Functions.Any())
+        if (tools != null && tools.Any())
         {
-            requestObj["tools"] = PrepareFunctionDefinitions(context.Functions);
+            requestObj["tools"] = tools;
 
             if (!string.IsNullOrEmpty(context.FunctionCall))
             {
@@ -69,7 +74,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IQwenPayloadBuilder
             }
         }
 
-        return new AiRequestPayload(requestObj);
+        return Task.FromResult(new AiRequestPayload(requestObj));
     }
 
     private object[] PrepareFunctionDefinitions(List<FunctionDefinitionDto> functions)
@@ -187,7 +192,6 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IQwenPayloadBuilder
                                     });
                                     break;
                                 case FilePart filePart:
-                                    // Special handling for CSV files
                                     if (filePart.MimeType == "text/csv" || filePart.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
                                     {
                                         Logger?.LogWarning("CSV file {FileName} detected - Qwen doesn't support CSV files directly. " +
@@ -203,7 +207,6 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IQwenPayloadBuilder
                                     }
                                     else
                                     {
-                                        // Handle other files by converting to text reference
                                         contentArray.Add(new
                                         {
                                             type = "text",

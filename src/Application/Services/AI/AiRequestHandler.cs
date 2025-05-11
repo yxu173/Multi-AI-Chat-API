@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Application.Abstractions.Interfaces;
+using Application.Services.AI.Builders;
+using Application.Services.AI.Interfaces;
 using Application.Services.AI.PayloadBuilders;
 using Application.Services.Messaging;
 using Domain.Aggregates.Chats;
@@ -33,13 +35,6 @@ public record AiRequestContext(
     List<FunctionDefinitionDto>? Functions = null,
     string? FunctionCall = null
 );
-
-public interface IAiRequestHandler
-{
-    Task<AiRequestPayload> PrepareRequestPayloadAsync(
-        AiRequestContext context,
-        CancellationToken cancellationToken = default);
-}
 
 public class AiRequestHandler : IAiRequestHandler
 {
@@ -172,14 +167,14 @@ public class AiRequestHandler : IAiRequestHandler
         {
             AiRequestPayload payload = modelType switch
             {
-                ModelType.OpenAi => _payloadBuilderFactory.CreateOpenAiBuilder().PreparePayload(updatedContext, toolDefinitions),
-                ModelType.Anthropic => _payloadBuilderFactory.CreateAnthropicBuilder().PreparePayload(updatedContext, toolDefinitions),
+                ModelType.OpenAi => await _payloadBuilderFactory.CreateOpenAiBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
+                ModelType.Anthropic => await _payloadBuilderFactory.CreateAnthropicBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
                 ModelType.Gemini => await _payloadBuilderFactory.CreateGeminiBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
                 ModelType.DeepSeek => await _payloadBuilderFactory.CreateDeepSeekBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
-                ModelType.AimlFlux => _payloadBuilderFactory.CreateAimlFluxBuilder().PreparePayload(updatedContext),
-                ModelType.Imagen => _payloadBuilderFactory.CreateImagenBuilder().PreparePayload(updatedContext),
-                ModelType.Grok => _payloadBuilderFactory.CreateGrokBuilder().PreparePayload(updatedContext),
-                ModelType.Qwen => _payloadBuilderFactory.CreateQwenBuilder().PreparePayload(updatedContext),
+                ModelType.AimlFlux => await _payloadBuilderFactory.CreateAimlFluxBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
+                ModelType.Imagen => await _payloadBuilderFactory.CreateImagenBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
+                ModelType.Grok => await _payloadBuilderFactory.CreateGrokBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
+                ModelType.Qwen => await _payloadBuilderFactory.CreateQwenBuilder().PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken),
                 _ => throw new NotSupportedException($"Model type {modelType} is not supported for request preparation."),
             };
             return payload;

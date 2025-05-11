@@ -20,6 +20,7 @@ public class MessageStreamer : IMessageStreamer
     private readonly TokenUsageService _tokenUsageService;
     private readonly MessageService _messageService;
     private readonly Dictionary<ResponseType, IResponseHandler> _responseHandlers;
+    private readonly IAiMessageFinalizer _aiMessageFinalizer;
 
     public MessageStreamer(
         IMessageRepository messageRepository,
@@ -27,7 +28,8 @@ public class MessageStreamer : IMessageStreamer
         ILogger<MessageStreamer> logger,
         TokenUsageService tokenUsageService,
         MessageService messageService,
-        IEnumerable<IResponseHandler> responseHandlers
+        IEnumerable<IResponseHandler> responseHandlers,
+        IAiMessageFinalizer aiMessageFinalizer
     )
     {
         _messageRepository = messageRepository;
@@ -36,6 +38,7 @@ public class MessageStreamer : IMessageStreamer
         _tokenUsageService = tokenUsageService;
         _messageService = messageService;
         _responseHandlers = responseHandlers.ToDictionary(h => h.ResponseType);
+        _aiMessageFinalizer = aiMessageFinalizer;
     }
 
     /// <summary>
@@ -50,7 +53,6 @@ public class MessageStreamer : IMessageStreamer
         var chatSessionId = requestContext.ChatSession.Id;
         var aiModel = requestContext.SpecificModel;
         var modelType = aiModel.ModelType;
-        var userId = requestContext.UserId;
 
         var cts = new CancellationTokenSource();
         _streamingOperationManager.RegisterOperation(aiMessage.Id, cts);
@@ -60,9 +62,8 @@ public class MessageStreamer : IMessageStreamer
 
         int totalInputTokens = 0;
         int totalOutputTokens = 0;
-        List<MessageDto> originalHistory = new List<MessageDto>(requestContext.History);
 
-        bool aiResponseCompleted = false;
+        bool aiResponseCompletedSuccessfully = false;
 
         try
         {
@@ -77,7 +78,7 @@ public class MessageStreamer : IMessageStreamer
 
             totalInputTokens = handlerResult.TotalInputTokens;
             totalOutputTokens = handlerResult.TotalOutputTokens;
-            aiResponseCompleted = handlerResult.AiResponseCompleted;
+            aiResponseCompletedSuccessfully = handlerResult.AiResponseCompleted;
 
             if (!string.IsNullOrEmpty(handlerResult.AccumulatedThinkingContent))
             {
@@ -97,17 +98,17 @@ public class MessageStreamer : IMessageStreamer
                     finalCost, CancellationToken.None);
             }
 
-            var finalUpdateToken =
-                cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
-            await FinalizeMessageState(aiMessage, aiResponseCompleted, finalUpdateToken);
+            var persistenceToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
+            await _aiMessageFinalizer.FinalizeProgressingMessageAsync(aiMessage, aiResponseCompletedSuccessfully, persistenceToken);
         }
         catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
         {
-            await HandleCancellation(chatSessionId, aiMessage, cancellationToken.IsCancellationRequested);
+            bool wasDirectUserCancellation = cancellationToken.IsCancellationRequested;
+            await _aiMessageFinalizer.FinalizeAfterCancellationAsync(aiMessage, wasDirectUserCancellation, CancellationToken.None);
         }
         catch (Exception ex)
         {
-            await HandleError(chatSessionId, aiMessage, ex);
+            await _aiMessageFinalizer.FinalizeAfterErrorAsync(aiMessage, ex, CancellationToken.None);
         }
         finally
         {
@@ -116,67 +117,6 @@ public class MessageStreamer : IMessageStreamer
             cts.Dispose();
             _logger.LogInformation("Streaming operation finished or cleaned up for message {MessageId}", aiMessage.Id);
         }
-    }
-
-    private async Task FinalizeMessageState(Message aiMessage, bool wasCancelled, CancellationToken cancellationToken)
-    {
-        if (aiMessage.Status == MessageStatus.Streaming)
-        {
-            if (wasCancelled)
-            {
-                aiMessage.InterruptMessage();
-            }
-            else
-            {
-                aiMessage.CompleteMessage();
-            }
-        }
-
-        await _messageRepository.UpdateAsync(aiMessage, cancellationToken);
-        _logger.LogInformation("Saved final state for message {MessageId} with status {Status}", aiMessage.Id,
-            aiMessage.Status);
-
-        if (aiMessage.Status == MessageStatus.Completed)
-        {
-            await new ResponseCompletedNotification(aiMessage.ChatSessionId, aiMessage.Id).PublishAsync(cancellation: cancellationToken);
-        }
-        else if (aiMessage.Status == MessageStatus.Interrupted && !cancellationToken.IsCancellationRequested)
-        {
-            await new ResponseStoppedNotification(aiMessage.ChatSessionId, aiMessage.Id).PublishAsync(cancellation: cancellationToken);
-        }
-        else if (aiMessage.Status == MessageStatus.Failed)
-        {
-            await new ResponseStoppedNotification(aiMessage.ChatSessionId, aiMessage.Id).PublishAsync(cancellation: cancellationToken);
-        }
-    }
-
-    private async Task HandleCancellation(Guid chatSessionId, Message aiMessage, bool userCancelled)
-    {
-        _logger.LogInformation("Streaming operation cancelled for chat session {ChatSessionId}. Reason: {Reason}",
-            chatSessionId, userCancelled ? "User Request" : "Internal Stop");
-
-        var stopReason = userCancelled ? "Cancelled by user" : "Stopped internally";
-        await new ResponseStoppedNotification(chatSessionId, aiMessage.Id).PublishAsync();
-
-        if (!aiMessage.IsTerminal())
-        {
-            aiMessage.AppendContent($"\n[{stopReason}]");
-            aiMessage.InterruptMessage();
-            await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
-        }
-    }
-
-    private async Task HandleError(Guid chatSessionId, Message aiMessage, Exception ex)
-    {
-        _logger.LogError(ex, "Error during AI response streaming for chat session {ChatSessionId}.", chatSessionId);
-        if (!aiMessage.IsTerminal())
-        {
-            aiMessage.AppendContent($"\n[Error: {ex.Message}]");
-            aiMessage.FailMessage();
-            await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
-        }
-
-        await new ResponseStoppedNotification(chatSessionId, aiMessage.Id).PublishAsync();
     }
 
     private ResponseType MapModelTypeToResponse(ModelType modelType) =>

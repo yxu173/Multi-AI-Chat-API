@@ -4,6 +4,8 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Application.Services.AI;
+using Application.Services.AI.Builders;
+using Application.Services.AI.Interfaces;
 using Application.Services.AI.PayloadBuilders;
 using Application.Services.AI.Streaming;
 using Application.Services.Chat;
@@ -12,6 +14,7 @@ using Application.Services.Files;
 using Application.Services.Helpers;
 using Application.Services.Infrastructure;
 using Application.Services.Messaging;
+using Application.Services.Messaging.Handlers;
 using Application.Services.Plugins;
 using Application.Services.TokenUsage;
 
@@ -42,19 +45,26 @@ public static class DependencyInjection
 
         services.AddScoped<MultimodalContentParser>();
 
-        services.AddScoped<IOpenAiPayloadBuilder, OpenAiPayloadBuilder>();
-        services.AddScoped<IAnthropicPayloadBuilder, AnthropicPayloadBuilder>();
-        services.AddScoped<IGeminiPayloadBuilder, GeminiPayloadBuilder>();
-        services.AddScoped<IDeepSeekPayloadBuilder, DeepSeekPayloadBuilder>();
-        services.AddScoped<IAimlFluxPayloadBuilder, AimlFluxPayloadBuilder>();
-        services.AddScoped<IGrokPayloadBuilder, GrokPayloadBuilder>();
-        services.AddScoped<IQwenPayloadBuilder, QwenPayloadBuilder>();
+        services.AddScoped<OpenAiPayloadBuilder>();
+        services.AddScoped<AnthropicPayloadBuilder>();
+        services.AddScoped<GeminiPayloadBuilder>();
+        services.AddScoped<DeepSeekPayloadBuilder>();
+        services.AddScoped<AimlFluxPayloadBuilder>();
+        services.AddScoped<GrokPayloadBuilder>();
+        services.AddScoped<QwenPayloadBuilder>();
+        services.AddScoped<ImagenPayloadBuilder>();
+
+        services.AddScoped<IAiRequestBuilder, OpenAiPayloadBuilder>();
+        services.AddScoped<IAiRequestBuilder, AnthropicPayloadBuilder>();
+        services.AddScoped<IAiRequestBuilder, GeminiPayloadBuilder>();
+        services.AddScoped<IAiRequestBuilder, DeepSeekPayloadBuilder>();
+        services.AddScoped<IAiRequestBuilder, AimlFluxPayloadBuilder>();
+        services.AddScoped<IAiRequestBuilder, GrokPayloadBuilder>();
+        services.AddScoped<IAiRequestBuilder, QwenPayloadBuilder>();
+        services.AddScoped<IAiRequestBuilder, ImagenPayloadBuilder>();
+
         services.AddScoped<IPayloadBuilderFactory, PayloadBuilderFactory>();
-        services.AddTransient<ImagenPayloadBuilder>();
 
-        services.AddScoped<IPayloadBuilder, ImagenPayloadBuilder>();
-
-        // Chat commands
         services.AddScoped<SendUserMessageCommand>();
         services.AddScoped<EditUserMessageCommand>();
         services.AddScoped<RegenerateAiResponseCommand>();
@@ -64,11 +74,13 @@ public static class DependencyInjection
         services.AddScoped<MessageService>();
         services.AddScoped<TokenUsageService>();
         services.AddScoped<PluginService>();
-        // Register response handlers (Strategy pattern for AI responses)
+        
+        
         services.AddScoped<IResponseHandler, ImageResponseHandler>();
         services.AddScoped<IResponseHandler, ToolCallStreamingResponseHandler>();
         services.AddScoped<IResponseHandler, TextStreamingResponseHandler>();
         services.AddScoped<IMessageStreamer, MessageStreamer>();
+        services.AddScoped<IAiMessageFinalizer, AiMessageFinalizer>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
         services.AddScoped<FileUploadService>(provider =>
             new FileUploadService(

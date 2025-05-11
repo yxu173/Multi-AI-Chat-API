@@ -2,10 +2,15 @@ using Application.Services.Helpers;
 using Application.Services.Messaging;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Application.Services.AI.Interfaces;
+using Application.Services.AI.PayloadBuilders;
 
-namespace Application.Services.AI.PayloadBuilders;
+namespace Application.Services.AI.Builders;
 
-public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
+public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 {
     private readonly MultimodalContentParser _multimodalContentParser;
 
@@ -18,7 +23,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public AiRequestPayload PreparePayload(AiRequestContext context, List<object>? toolDefinitions)
+    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -41,11 +46,11 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
         requestObj["input"] = processedMessages;
 
 
-        if (toolDefinitions?.Any() == true && IsParameterSupported("tools", model.ModelType))
+        if (tools?.Any() == true && IsParameterSupported("tools", model.ModelType))
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
-                toolDefinitions.Count, model.ModelCode);
-            requestObj["tools"] = toolDefinitions;
+                tools.Count, model.ModelCode);
+            requestObj["tools"] = tools;
             if (IsParameterSupported("tool_choice", model.ModelType))
             {
                 requestObj["tool_choice"] = "auto";
@@ -58,7 +63,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IOpenAiPayloadBuilder
 
         AddOpenAiSpecificParameters(requestObj, context, parameter);
 
-        return new AiRequestPayload(requestObj);
+        return Task.FromResult(new AiRequestPayload(requestObj));
     }
 
     private List<object> ProcessMessagesForOpenAIInput(List<MessageDto> history)
