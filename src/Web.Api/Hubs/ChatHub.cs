@@ -1,15 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
-using Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using Domain.Repositories;
-using MediatR;
 using Domain.Aggregates.Chats;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Formats.Gif;
 using Application.Features.Chats.GetChatById;
 using Application.Services.Chat;
 using Application.Services.Messaging;
@@ -23,21 +16,18 @@ public class ChatHub : Hub
     private readonly ChatService _chatService;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly MessageService _messageService;
-    private readonly IMediator _mediator;
 
     private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024;
 
     public ChatHub(
         ChatService chatService,
         IFileAttachmentRepository fileAttachmentRepository,
-        MessageService messageService,
-        IMediator mediator)
+        MessageService messageService)
     {
         _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
         _fileAttachmentRepository = fileAttachmentRepository ??
                                     throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
-        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
 
 

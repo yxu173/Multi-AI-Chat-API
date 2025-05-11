@@ -1,6 +1,5 @@
 using Application.Notifications;
 using FastEndpoints;
-using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Web.Api.Hubs;
 

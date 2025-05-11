@@ -14,8 +14,6 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddPresentation(this IServiceCollection services)
     {
-        services.AddMediatR(cfg =>
-            cfg.RegisterServicesFromAssembly(typeof(MessageSentNotificationHandler).Assembly));
         services.Configure<JsonOptions>(options =>
         {
             options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;

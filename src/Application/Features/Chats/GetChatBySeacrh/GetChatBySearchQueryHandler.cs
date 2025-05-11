@@ -1,8 +1,5 @@
 using Application.Abstractions.Messaging;
-using Application.Features.Chats.GetAllChatsByUserId;
-using Application.Features.Chats.GetChatById;
 using Domain.Repositories;
-using MediatR;
 using SharedKernel;
 
 namespace Application.Features.Chats.GetChatBySeacrh;
