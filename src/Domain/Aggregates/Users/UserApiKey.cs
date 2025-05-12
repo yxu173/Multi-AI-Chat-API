@@ -1,8 +1,11 @@
 using System;
+using System.ComponentModel;
 using Domain.Aggregates.Chats;
 
 namespace Domain.Aggregates.Users;
 
+[Obsolete("Use ProviderApiKey instead. This class will be removed in a future version.")]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class UserApiKey
 {
     public Guid Id { get; private set; }

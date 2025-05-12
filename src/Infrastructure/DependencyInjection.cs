@@ -12,6 +12,7 @@ using Infrastructure.Repositories;
 using Infrastructure.Services.Caching;
 using Infrastructure.Services.Plugins;
 using Infrastructure.Services.Resilience;
+using Infrastructure.Services.Subscription;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
@@ -53,9 +54,17 @@ public static class DependencyInjection
         services.AddScoped<IChatFolderRepository, ChatFolderRepository>();
         services.AddScoped<IUserAiModelSettingsRepository, UserAiModelSettingsRepository>();
         services.AddScoped<IAiAgentRepository, AiAgentRepository>();
+        
+        services.AddScoped<IProviderApiKeyRepository, ProviderApiKeyRepository>();
+        services.AddScoped<ISubscriptionPlanRepository, SubscriptionPlanRepository>();
+        services.AddScoped<IUserSubscriptionRepository, UserSubscriptionRepository>();
 
+        services.AddScoped<ISubscriptionService, SubscriptionService>();
+        services.AddScoped<IProviderKeyManagementService, ProviderKeyManagementService>();
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
+        
+        services.AddHostedService<DailyQuotaResetService>();
 
         services.AddHttpClient();
 

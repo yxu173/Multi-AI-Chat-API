@@ -1,4 +1,5 @@
 using Application.Abstractions.Data;
+using Domain.Aggregates.Admin;
 using Domain.Aggregates.Chats;
 using Domain.Aggregates.Prompts;
 using Domain.Aggregates.Users;
@@ -32,6 +33,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<UserAiModelSettings> UserAiModelSettings { get; set; }
     public DbSet<AiAgent> AiAgents { get; set; }
     public DbSet<AiAgentPlugin> AiAgentPlugins { get; set; }
+    
+    public DbSet<ProviderApiKey> ProviderApiKeys { get; set; }
+    public DbSet<SubscriptionPlan> SubscriptionPlans { get; set; }
+    public DbSet<UserSubscription> UserSubscriptions { get; set; }
 
 
     protected override void OnModelCreating(ModelBuilder builder)

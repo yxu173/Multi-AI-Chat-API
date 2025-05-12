@@ -3,6 +3,7 @@ using Application.Abstractions.Interfaces;
 using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.Services.AiProvidersServices;
+using Infrastructure.Services.Subscription;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,27 +16,39 @@ public class AiModelServiceFactory : IAiModelServiceFactory
     private readonly IServiceProvider _serviceProvider;
     private readonly IApplicationDbContext _dbContext;
     private readonly IConfiguration _configuration;
+    private readonly ISubscriptionService _subscriptionService;
+    private readonly IProviderKeyManagementService _keyManagementService;
+    private readonly ILogger<AiModelServiceFactory> _logger;
 
-    public AiModelServiceFactory(IServiceProvider serviceProvider, IApplicationDbContext dbContext, IConfiguration configuration)
+    public AiModelServiceFactory(
+        IServiceProvider serviceProvider, 
+        IApplicationDbContext dbContext, 
+        IConfiguration configuration,
+        ISubscriptionService subscriptionService,
+        IProviderKeyManagementService keyManagementService,
+        ILogger<AiModelServiceFactory> logger)
     {
         _serviceProvider = serviceProvider;
         _dbContext = dbContext;
         _configuration = configuration;
+        _subscriptionService = subscriptionService;
+        _keyManagementService = keyManagementService;
+        _logger = logger;
     }
 
     public IAiModelService GetService(Guid userId, Guid modelId, string? customApiKey = null, Guid? aiAgentId = null)
     {
-        return GetServiceAsync(userId, modelId, customApiKey, aiAgentId).GetAwaiter().GetResult();
+        return GetServiceAsync(userId, modelId, customApiKey, aiAgentId, CancellationToken.None).GetAwaiter().GetResult();
     }
 
-    private async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string? customApiKey, Guid? aiAgentId)
+    private async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string? customApiKey, Guid? aiAgentId, CancellationToken cancellationToken = default)
     {
         var aiModel = await _dbContext.AiModels
                           .Include(m => m.AiProvider)
-                          .FirstOrDefaultAsync(m => m.Id == modelId) 
+                          .FirstOrDefaultAsync(m => m.Id == modelId, cancellationToken) 
                       ?? throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
         
-        var apiKey = await GetApiKeyAsync(userId, aiModel.AiProviderId, customApiKey);
+        var apiKey = await GetApiKeyAsync(userId, aiModel.AiProviderId, customApiKey, cancellationToken);
         
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
         
@@ -70,24 +83,33 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         return new ImagenService(httpClientFactory, projectId, region, modelCode, logger);
     }
 
-    private async Task<string> GetApiKeyAsync(Guid userId, Guid providerId, string? customApiKey)
+    private async Task<string> GetApiKeyAsync(Guid userId, Guid providerId, string? customApiKey, CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrEmpty(customApiKey)) return customApiKey;
-        
-        var userApiKey = await _dbContext.UserApiKeys
-            .FirstOrDefaultAsync(k => k.UserId == userId && k.AiProviderId == providerId);
-            
-        if (userApiKey != null)
+        // If a custom API key is provided for this request, use it
+        if (!string.IsNullOrEmpty(customApiKey)) 
         {
-            userApiKey.UpdateLastUsed();
-            await _dbContext.SaveChangesAsync();
-            return userApiKey.ApiKey;
+            return customApiKey;
+        }
+        
+        // Check user quota before proceeding
+        var (hasQuota, errorMessage) = await _subscriptionService.CheckUserQuotaAsync(userId, cancellationToken: cancellationToken);
+        if (!hasQuota)
+        {
+            throw new QuotaExceededException(errorMessage ?? "Quota exceeded for user subscription.");
         }
 
-        var provider = await _dbContext.AiProviders.FindAsync(providerId) 
+        // Get an API key from the admin-managed key pool
+        var apiKey = await _keyManagementService.GetAvailableApiKeyAsync(providerId, cancellationToken);
+        if (!string.IsNullOrEmpty(apiKey))
+        {
+            return apiKey;
+        }
+
+        // If all else fails, check if there's a default key configured for the provider
+        var provider = await _dbContext.AiProviders.FindAsync(new object[] { providerId }, cancellationToken) 
             ?? throw new Exception($"AI Provider with ID {providerId} not found.");
             
         return provider.DefaultApiKey 
-            ?? throw new Exception($"No API key configured for user {userId} or provider {provider.Name}, and no default key available.");
+            ?? throw new Exception($"No API keys available for provider {provider.Name}. Please try again later or contact support.");
     }
 }

@@ -97,6 +97,139 @@ namespace Infrastructure.Database.Migrations
                     b.ToTable("ChatSessions", (string)null);
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Admin.ProviderApiKey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AiProviderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DailyQuota")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DailyUsage")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("LastUsed")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Secret")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AiProviderId");
+
+                    b.ToTable("ProviderApiKeys", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Admin.SubscriptionPlan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime?>("LastModified")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("MaxRequestsPerDay")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MaxTokensPerRequest")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("MonthlyPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SubscriptionPlans", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Admin.UserSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("CurrentDayUsage")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime>("ExpiryDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime?>("LastUsageReset")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SubscriptionPlanId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubscriptionPlanId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserSubscriptions", (string)null);
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Chats.AiAgent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -779,6 +912,36 @@ namespace Infrastructure.Database.Migrations
                     b.Navigation("Folder");
                 });
 
+            modelBuilder.Entity("Domain.Aggregates.Admin.ProviderApiKey", b =>
+                {
+                    b.HasOne("AiProvider", "AiProvider")
+                        .WithMany()
+                        .HasForeignKey("AiProviderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AiProvider");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Admin.UserSubscription", b =>
+                {
+                    b.HasOne("Domain.Aggregates.Admin.SubscriptionPlan", "SubscriptionPlan")
+                        .WithMany("UserSubscriptions")
+                        .HasForeignKey("SubscriptionPlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Aggregates.Users.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("SubscriptionPlan");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Domain.Aggregates.Chats.AiAgent", b =>
                 {
                     b.HasOne("Domain.Aggregates.Chats.AiModel", "AiModel")
@@ -1171,6 +1334,11 @@ namespace Infrastructure.Database.Migrations
                     b.Navigation("ChatSessionPlugins");
 
                     b.Navigation("Messages");
+                });
+
+            modelBuilder.Entity("Domain.Aggregates.Admin.SubscriptionPlan", b =>
+                {
+                    b.Navigation("UserSubscriptions");
                 });
 
             modelBuilder.Entity("Domain.Aggregates.Chats.AiAgent", b =>

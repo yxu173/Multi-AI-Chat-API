@@ -46,7 +46,6 @@ public class AiRequestHandler : IAiRequestHandler
     private readonly IPluginExecutorFactory _pluginExecutorFactory;
     private readonly IChatSessionPluginRepository _chatSessionPluginRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
-    private readonly string _apiBaseUrl;
 
     public AiRequestHandler(
         IPayloadBuilderFactory payloadBuilderFactory,

@@ -8,6 +8,7 @@ using System.Runtime;
 using FastEndpoints;
 using Application.Abstractions.PreProcessors;
 using FastEndpoints.Swagger;
+using Web.Api.Extensions;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
@@ -55,8 +56,9 @@ builder.Services.AddHttpClient();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+await app.UseAdminManagedApiKeysAsync();
 
-// Ensure file uploads directory exists with proper permissions
+
 var uploadsPath = builder.Configuration["FilesStorage:BasePath"] ?? 
     Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 
@@ -70,7 +72,6 @@ else
     Console.WriteLine($"Using existing file uploads directory at: {uploadsPath}");
 }
 
-// Test write permissions on the uploads directory
 try
 {
     var testFilePath = Path.Combine(uploadsPath, ".write_test");
@@ -98,7 +99,6 @@ app.UseSerilogRequestLogging();
 
 app.UseCors("CorsPolicy");
 
-// Serve static files from wwwroot
 app.UseStaticFiles();
 
 app.UseExceptionHandler();
