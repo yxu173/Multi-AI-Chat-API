@@ -44,19 +44,19 @@ public class AiRequestHandler : IAiRequestHandler
     private readonly ILogger<AiRequestHandler> _logger;
     private readonly IPayloadBuilderFactory _payloadBuilderFactory;
     private readonly IPluginExecutorFactory _pluginExecutorFactory;
-    private readonly IChatSessionPluginRepository _chatSessionPluginRepository;
+    private readonly IUserPluginRepository _userPluginRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
 
     public AiRequestHandler(
         IPayloadBuilderFactory payloadBuilderFactory,
         IPluginExecutorFactory pluginExecutorFactory,
-        IChatSessionPluginRepository chatSessionPluginRepository,
+        IUserPluginRepository userPluginRepository,
         IFileAttachmentRepository fileAttachmentRepository,
         ILogger<AiRequestHandler> logger)
     {
         _payloadBuilderFactory = payloadBuilderFactory ?? throw new ArgumentNullException(nameof(payloadBuilderFactory));
         _pluginExecutorFactory = pluginExecutorFactory ?? throw new ArgumentNullException(nameof(pluginExecutorFactory));
-        _chatSessionPluginRepository = chatSessionPluginRepository ?? throw new ArgumentNullException(nameof(chatSessionPluginRepository));
+        _userPluginRepository = userPluginRepository ?? throw new ArgumentNullException(nameof(userPluginRepository));
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -90,19 +90,25 @@ public class AiRequestHandler : IAiRequestHandler
         var updatedContext = context with { History = processedHistory };
 
         var modelType = updatedContext.SpecificModel.ModelType;
-        var chatId = updatedContext.ChatSession.Id;
+        var userId = updatedContext.UserId;
         
         bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or ModelType.Gemini or ModelType.DeepSeek or ModelType.Grok or ModelType.Qwen;
         List<object>? toolDefinitions = null;
 
         if (modelMightSupportTools)
         {
-            var activePlugins = await _chatSessionPluginRepository.GetActivatedPluginsAsync(chatId, cancellationToken);
-            var activePluginIds = activePlugins.Select(p => p.PluginId).ToList();
+            // Determine disabled plugins for this user; by default all plugins are available unless explicitly disabled.
+            var disabledPluginIds = (await _userPluginRepository.GetAllByUserIdAsync(userId))
+                .Where(up => !up.IsEnabled)
+                .Select(up => up.PluginId)
+                .ToHashSet();
+
+            var allPluginIds = _pluginExecutorFactory.GetAllPluginDefinitions().Select(d => d.Id);
+            var activePluginIds = allPluginIds.Where(id => !disabledPluginIds.Contains(id)).ToList();
 
             if (activePluginIds.Any())
             {
-                _logger?.LogInformation("Found {Count} active plugins for ChatSession {ChatId}", activePluginIds.Count, chatId);
+                _logger?.LogInformation("Found {Count} active plugins after user preferences for User {UserId}", activePluginIds.Count, userId);
                 toolDefinitions = GetToolDefinitionsForPayload(modelType, activePluginIds);
                 
                 if ((modelType == ModelType.Grok || modelType == ModelType.Qwen) && toolDefinitions != null && toolDefinitions.Any())
@@ -154,7 +160,7 @@ public class AiRequestHandler : IAiRequestHandler
             }
             else
             {
-                _logger?.LogInformation("No active plugins found for ChatSession {ChatId}", chatId);
+                _logger?.LogInformation("No active plugins found for User {UserId}", userId);
             }
         }
         else
