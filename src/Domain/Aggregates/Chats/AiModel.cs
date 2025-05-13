@@ -17,15 +17,12 @@ public sealed class AiModel
     [JsonIgnore]
     public AiProvider AiProvider { get; private set; }
     public string ModelCode { get; private set; }
-    public int? MaxInputTokens { get; private set; }
     public int? MaxOutputTokens { get; private set; }
     public bool IsEnabled { get; private set; } = true;
     public bool SupportsThinking { get; private set; }
     public bool SupportsVision { get; private set; }
     public int ContextLength { get; private set; }
-    public string ApiType { get; private set; }
     public bool PluginsSupported { get; private set; }
-    public bool StreamingOutputSupported { get; private set; }
     public bool SystemRoleSupported { get; private set; }
     public bool PromptCachingSupported { get; private set; }
 
@@ -38,9 +35,9 @@ public sealed class AiModel
 
     [JsonConstructor]
     public AiModel(Guid id, string name, ModelType modelType, Guid aiProviderId, double inputTokenPricePer1M,
-        double outputTokenPricePer1M, string modelCode, int? maxInputTokens, int? maxOutputTokens,
-        bool isEnabled, bool supportsThinking, bool supportsVision, int contextLength, string apiType,
-        bool pluginsSupported, bool streamingOutputSupported, bool systemRoleSupported, bool promptCachingSupported)
+        double outputTokenPricePer1M, string modelCode, int? maxOutputTokens,
+        bool isEnabled, bool supportsThinking, bool supportsVision, int contextLength,
+        bool pluginsSupported, bool systemRoleSupported, bool promptCachingSupported)
     {
         Id = id;
         Name = name;
@@ -49,24 +46,21 @@ public sealed class AiModel
         InputTokenPricePer1M = inputTokenPricePer1M;
         OutputTokenPricePer1M = outputTokenPricePer1M;
         ModelCode = modelCode;
-        MaxInputTokens = maxInputTokens;
         MaxOutputTokens = maxOutputTokens;
         IsEnabled = isEnabled;
         SupportsThinking = supportsThinking;
         SupportsVision = supportsVision;
         ContextLength = contextLength;
-        ApiType = apiType;
         PluginsSupported = pluginsSupported;
-        StreamingOutputSupported = streamingOutputSupported;
         SystemRoleSupported = systemRoleSupported;
         PromptCachingSupported = promptCachingSupported;
     }
 
     public static AiModel Create(string name, string modelType, Guid aiProviderId, double inputTokenPricePer1M,
-        double outputTokenPricePer1M, string modelCode, int contextLength,int? maxInputTokens = null, int? maxOutputTokens = null,
+        double outputTokenPricePer1M, string modelCode, int contextLength, int? maxOutputTokens = null,
         bool isEnabled = true, bool supportsThinking = false, bool supportsVision = false,
-         string apiType = null, bool pluginsSupported = false,
-        bool streamingOutputSupported = false, bool systemRoleSupported = false, bool promptCachingSupported = false)
+          bool pluginsSupported = false,
+         bool systemRoleSupported = false, bool promptCachingSupported = false)
     {
         var modelTypeEnum = Enum.Parse<ModelType>(modelType);
         return new AiModel
@@ -78,15 +72,12 @@ public sealed class AiModel
             InputTokenPricePer1M = inputTokenPricePer1M,
             OutputTokenPricePer1M = outputTokenPricePer1M,
             ModelCode = modelCode,
-            MaxInputTokens = maxInputTokens,
             MaxOutputTokens = maxOutputTokens,
             IsEnabled = isEnabled,
             SupportsThinking = supportsThinking,
             SupportsVision = supportsVision,
             ContextLength = contextLength,
-            ApiType = apiType,
             PluginsSupported = pluginsSupported,
-            StreamingOutputSupported = streamingOutputSupported,
             SystemRoleSupported = systemRoleSupported,
             PromptCachingSupported = promptCachingSupported
         };

@@ -13,9 +13,7 @@ public sealed record DetailedAiModelDto(
     bool SupportsThinking,
     bool SupportsVision,
     int? ContextLength,
-    string ApiType,
     bool PluginsSupported,
-    bool StreamingOutputSupported,
     bool SystemRoleSupported,
     bool PromptCachingSupported
 );

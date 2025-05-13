@@ -39,9 +39,7 @@ public sealed class GetAiModelByIdQueryHandler : IQueryHandler<GetAiModelByIdQue
             aiModel.SupportsThinking,
             aiModel.SupportsVision,
             aiModel.ContextLength,
-            aiModel.ApiType,
             aiModel.PluginsSupported,
-            aiModel.StreamingOutputSupported,
             aiModel.SystemRoleSupported,
             aiModel.PromptCachingSupported
         );

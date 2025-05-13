@@ -28,15 +28,12 @@ public class AiModelController : BaseController
             request.InputTokenPricePer1M,
             request.OutputTokenPricePer1M,
             request.ModelCode,
-            request.MaxInputTokens,
             request.MaxOutputTokens,
             request.IsEnabled,
             request.SupportsThinking,
             request.SupportsVision,
             request.ContextLength,
-            request.ApiType,
             request.PluginsSupported,
-            request.StreamingOutputSupported,
             request.SystemRoleSupported,
             request.PromptCachingSupported
         ).ExecuteAsync();

@@ -24,14 +24,11 @@ public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelC
             request.OutputTokenPricePer1M,
             request.ModelCode,
             request.ContextLength,
-            request.MaxInputTokens,
             request.MaxOutputTokens,
             request.IsEnabled,
             request.SupportsThinking,
             request.SupportsVision,
-            request.ApiType,
             request.PluginsSupported,
-            request.StreamingOutputSupported,
             request.SystemRoleSupported,
             request.PromptCachingSupported
         );

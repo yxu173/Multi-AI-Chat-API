@@ -35,7 +35,7 @@ namespace Infrastructure.UnitTests.Repositories
             var prov = AiProvider.Create("Prov1", "Desc1");
             context.AiProviders.Add(prov);
             await context.SaveChangesAsync();
-            var model = AiModel.Create("M1", ModelType.OpenAi.ToString(), prov.Id, 1, 2, "code", 128000,apiType: "testApi");
+            var model = AiModel.Create("M1", ModelType.OpenAi.ToString(), prov.Id, 1, 2, "code", 128000);
             context.AiModels.Add(model);
             await context.SaveChangesAsync();
             var repo = new AiAgentRepository(context);
@@ -62,7 +62,7 @@ namespace Infrastructure.UnitTests.Repositories
             var prov = AiProvider.Create("Prov2", "Desc2");
             context.AiProviders.Add(prov);
             await context.SaveChangesAsync();
-            var model = AiModel.Create("M2", ModelType.Gemini.ToString(), prov.Id, 1, 2, "c",128000, apiType: "testApi");
+            var model = AiModel.Create("M2", ModelType.Gemini.ToString(), prov.Id, 1, 2, "c",128000);
             context.AiModels.Add(model);
             await context.SaveChangesAsync();
             var repo = new AiAgentRepository(context);
@@ -89,7 +89,7 @@ namespace Infrastructure.UnitTests.Repositories
             var prov = AiProvider.Create("Prov3", "Desc3");
             context.AiProviders.Add(prov);
             await context.SaveChangesAsync();
-            var model = AiModel.Create("M3", ModelType.AimlFlux.ToString(), prov.Id, 1, 2, "mc", 128000,apiType: "testApi");
+            var model = AiModel.Create("M3", ModelType.AimlFlux.ToString(), prov.Id, 1, 2, "mc", 128000);
             context.AiModels.Add(model);
             await context.SaveChangesAsync();
             var repo = new AiAgentRepository(context);
@@ -116,7 +116,7 @@ namespace Infrastructure.UnitTests.Repositories
             var prov = AiProvider.Create("Prov4", "Desc4");
             context.AiProviders.Add(prov);
             await context.SaveChangesAsync();
-            var model = AiModel.Create("M4", ModelType.AimlFlux.ToString(), prov.Id, 1, 2, "m4", 128000,apiType: "testApi");
+            var model = AiModel.Create("M4", ModelType.AimlFlux.ToString(), prov.Id, 1, 2, "m4", 128000);
             context.AiModels.Add(model);
             await context.SaveChangesAsync();
             var repo = new AiAgentRepository(context);
