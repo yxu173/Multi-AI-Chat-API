@@ -18,40 +18,38 @@ public class AiModelServiceFactory : IAiModelServiceFactory
     private readonly IConfiguration _configuration;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IProviderKeyManagementService _keyManagementService;
-    private readonly ILogger<AiModelServiceFactory> _logger;
 
     public AiModelServiceFactory(
-        IServiceProvider serviceProvider, 
-        IApplicationDbContext dbContext, 
+        IServiceProvider serviceProvider,
+        IApplicationDbContext dbContext,
         IConfiguration configuration,
         ISubscriptionService subscriptionService,
-        IProviderKeyManagementService keyManagementService,
-        ILogger<AiModelServiceFactory> logger)
+        IProviderKeyManagementService keyManagementService)
     {
         _serviceProvider = serviceProvider;
         _dbContext = dbContext;
         _configuration = configuration;
         _subscriptionService = subscriptionService;
         _keyManagementService = keyManagementService;
-        _logger = logger;
     }
 
-    public IAiModelService GetService(Guid userId, Guid modelId, string? customApiKey = null, Guid? aiAgentId = null)
+    public IAiModelService GetService(Guid userId, Guid modelId, Guid? aiAgentId = null)
     {
-        return GetServiceAsync(userId, modelId, customApiKey, aiAgentId, CancellationToken.None).GetAwaiter().GetResult();
+        return GetServiceAsync(userId, modelId, aiAgentId, CancellationToken.None).GetAwaiter().GetResult();
     }
 
-    private async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, string? customApiKey, Guid? aiAgentId, CancellationToken cancellationToken = default)
+    private async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, Guid? aiAgentId,
+        CancellationToken cancellationToken = default)
     {
         var aiModel = await _dbContext.AiModels
                           .Include(m => m.AiProvider)
-                          .FirstOrDefaultAsync(m => m.Id == modelId, cancellationToken) 
+                          .FirstOrDefaultAsync(m => m.Id == modelId, cancellationToken)
                       ?? throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
-        
-        var apiKey = await GetApiKeyAsync(userId, aiModel.AiProviderId, customApiKey, cancellationToken);
-        
+
+        var apiKey = await GetApiKeyAsync(userId, aiModel.AiProviderId, cancellationToken);
+
         var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
-        
+
         var openAiLogger = _serviceProvider.GetService<ILogger<OpenAiService>>();
         var anthropicLogger = _serviceProvider.GetService<ILogger<AnthropicService>>();
         var deepSeekLogger = _serviceProvider.GetService<ILogger<DeepSeekService>>();
@@ -60,7 +58,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var imagenLogger = _serviceProvider.GetService<ILogger<ImagenService>>();
         var grokLogger = _serviceProvider.GetService<ILogger<GrokService>>();
         var qwenLogger = _serviceProvider.GetService<ILogger<QwenService>>();
-        
+
         return aiModel.ModelType switch
         {
             ModelType.OpenAi => new OpenAiService(httpClientFactory, apiKey, aiModel.ModelCode),
@@ -75,24 +73,23 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         };
     }
 
-    private ImagenService CreateImagenService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode, ILogger<ImagenService>? logger)
+    private ImagenService CreateImagenService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
+        ILogger<ImagenService>? logger)
     {
-        var projectId = _configuration["AI:Imagen:ProjectId"] ?? throw new InvalidOperationException("Imagen ProjectId not configured.");
-        var region = _configuration["AI:Imagen:Region"] ?? throw new InvalidOperationException("Imagen Region not configured.");
-        
+        var projectId = _configuration["AI:Imagen:ProjectId"] ??
+                        throw new InvalidOperationException("Imagen ProjectId not configured.");
+        var region = _configuration["AI:Imagen:Region"] ??
+                     throw new InvalidOperationException("Imagen Region not configured.");
+
         return new ImagenService(httpClientFactory, projectId, region, modelCode, logger);
     }
 
-    private async Task<string> GetApiKeyAsync(Guid userId, Guid providerId, string? customApiKey, CancellationToken cancellationToken = default)
+    private async Task<string> GetApiKeyAsync(Guid userId, Guid providerId,
+        CancellationToken cancellationToken = default)
     {
-        // If a custom API key is provided for this request, use it
-        if (!string.IsNullOrEmpty(customApiKey)) 
-        {
-            return customApiKey;
-        }
-        
         // Check user quota before proceeding
-        var (hasQuota, errorMessage) = await _subscriptionService.CheckUserQuotaAsync(userId, cancellationToken: cancellationToken);
+        var (hasQuota, errorMessage) =
+            await _subscriptionService.CheckUserQuotaAsync(userId, cancellationToken: cancellationToken);
         if (!hasQuota)
         {
             throw new QuotaExceededException(errorMessage ?? "Quota exceeded for user subscription.");
@@ -106,10 +103,11 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         }
 
         // If all else fails, check if there's a default key configured for the provider
-        var provider = await _dbContext.AiProviders.FindAsync(new object[] { providerId }, cancellationToken) 
-            ?? throw new Exception($"AI Provider with ID {providerId} not found.");
-            
-        return provider.DefaultApiKey 
-            ?? throw new Exception($"No API keys available for provider {provider.Name}. Please try again later or contact support.");
+        var provider = await _dbContext.AiProviders.FindAsync(new object[] { providerId }, cancellationToken)
+                       ?? throw new Exception($"AI Provider with ID {providerId} not found.");
+
+        return provider.DefaultApiKey
+               ?? throw new Exception(
+                   $"No API keys available for provider {provider.Name}. Please try again later or contact support.");
     }
 }

@@ -1,7 +1,5 @@
-using Application.Features.Plugins.AddPluginToChat;
 using Application.Features.Plugins.AddUserPlugin;
 using Application.Features.Plugins.CreatePlugin;
-using Application.Features.Plugins.DeleteChatSessionPlugin;
 using Application.Features.Plugins.GetAllPlugins;
 using FastEndpoints;
 using Microsoft.AspNetCore.Mvc;
@@ -27,25 +25,10 @@ public class PluginController : BaseController
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
-    [Microsoft.AspNetCore.Mvc.HttpPost("AddChatPlugin")]
-    public async Task<IResult> AddChatPlugin([Microsoft.AspNetCore.Mvc.FromBody] AddChatPluginRequest request)
-    {
-        var result = await new AddPluginToChatCommand(request.ChatId, request.PluginId).ExecuteAsync();
-        return result.Match(Results.Ok, CustomResults.Problem);
-    }
-
     [Microsoft.AspNetCore.Mvc.HttpGet]
     public async Task<IResult> GetAllPlugins()
     {
         var result = await new GetAllPluginsQuery().ExecuteAsync();
-        return result.Match(Results.Ok, CustomResults.Problem);
-    }
-
-    [Microsoft.AspNetCore.Mvc.HttpDelete("{id}/DeletePlugin")]
-    public async Task<IResult> DeletePluginFromChat([FromRoute] Guid id)
-    {
-        var result = await new DeleteChatSessionPluginCommand(id)
-            .ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

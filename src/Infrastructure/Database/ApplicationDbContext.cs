@@ -28,7 +28,6 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<UserAiModel> UserAiModels { get; set; }
     public DbSet<UserPlugin> UserPlugins { get; set; }
     public DbSet<Plugin> Plugins { get; set; }
-    public DbSet<ChatSessionPlugin> ChatSessionPlugins { get; set; }
     public DbSet<ChatFolder> ChatFolders { get; set; }
     public DbSet<UserAiModelSettings> UserAiModelSettings { get; set; }
     public DbSet<AiAgent> AiAgents { get; set; }

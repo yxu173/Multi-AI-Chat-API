@@ -24,7 +24,6 @@ public interface IApplicationDbContext
 
     DbSet<UserPlugin> UserPlugins { get; }
     DbSet<Plugin> Plugins { get; }
-    DbSet<ChatSessionPlugin> ChatSessionPlugins { get; }
 
     DbSet<ChatFolder> ChatFolders { get; }
 

@@ -50,7 +50,6 @@ public static class DependencyInjection
         services.AddScoped<IAiProviderRepository, AiProviderRepository>();
         services.AddScoped<IPluginRepository, PluginRepository>();
         services.AddScoped<IUserPluginRepository, UserPluginRepository>();
-        services.AddScoped<IChatSessionPluginRepository, ChatSessionPluginRepository>();
         services.AddScoped<IChatFolderRepository, ChatFolderRepository>();
         services.AddScoped<IUserAiModelSettingsRepository, UserAiModelSettingsRepository>();
         services.AddScoped<IAiAgentRepository, AiAgentRepository>();

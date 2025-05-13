@@ -124,7 +124,6 @@ public sealed class EditUserMessageCommand
         var aiService = _aiModelServiceFactory.GetService(
             userId,
             chatSession.AiModelId,
-            chatSession.CustomApiKey ?? string.Empty,
             chatSession.AiAgentId);
 
         return (aiService, aiAgent);

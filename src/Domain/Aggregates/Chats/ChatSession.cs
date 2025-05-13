@@ -6,14 +6,11 @@ public sealed class ChatSession : BaseAuditableEntity
     public Guid UserId { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public Guid AiModelId { get; private set; }
-    public string? CustomApiKey { get; private set; }
     public Guid? FolderId { get; private set; }
     public Guid? AiAgentId { get; private set; }
     public bool EnableThinking { get; private set; }
     private readonly List<Message> _messages = new();
-    private readonly List<ChatSessionPlugin> _chatSessionPlugins = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
-    public IReadOnlyList<ChatSessionPlugin> ChatSessionPlugins => _chatSessionPlugins.AsReadOnly();
 
     public AiModel AiModel { get; private set; } = null!;
     public ChatFolder? Folder { get; private set; }
@@ -24,7 +21,6 @@ public sealed class ChatSession : BaseAuditableEntity
 
     public static ChatSession Create(Guid userId, Guid aiModelId,
         Guid? folderId = null,
-        string? customApiKey = null,
         Guid? aiAgent = null,
         bool enableThinking = false)
     {
@@ -37,7 +33,6 @@ public sealed class ChatSession : BaseAuditableEntity
             UserId = userId,
             Title = "New Chat",
             AiModelId = aiModelId,
-            CustomApiKey = customApiKey,
             FolderId = folderId,
             AiAgentId = aiAgent,
             EnableThinking = enableThinking,
@@ -57,25 +52,10 @@ public sealed class ChatSession : BaseAuditableEntity
         Title = newTitle;
         LastModifiedAt = DateTime.UtcNow;
     }
-    
-    public int GetMessageIndex(Message message)
-    {
-        return _messages.IndexOf(message);
-    }
 
     public void RemoveMessage(Message message)
     {
         _messages.Remove(message);
-    }
-    public void UpdateApiKey(string apiKey)
-    {
-        CustomApiKey = apiKey;
-        LastModifiedAt = DateTime.UtcNow;
-    }
-
-    public void AddPlugin(Guid pluginId)
-    {
-        _chatSessionPlugins.Add(ChatSessionPlugin.Create(Id, pluginId));
     }
 
     public void MoveToFolder(Guid? folderId)

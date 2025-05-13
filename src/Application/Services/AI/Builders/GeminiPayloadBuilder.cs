@@ -101,7 +101,7 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         {
             try
             {
-                var modelService = _serviceFactory.GetService(context.UserId, context.SpecificModel.Id, context.ChatSession.CustomApiKey);
+                var modelService = _serviceFactory.GetService(context.UserId, context.SpecificModel.Id);
                 if (modelService is IAiFileUploader uploader)
                 {
                     fileUploader = uploader;

@@ -10,8 +10,6 @@ public class Plugin : BaseEntity
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
     
-    public IReadOnlyCollection<ChatSessionPlugin> ChatSessionPlugins => _chatSessionPlugins;
-    private readonly List<ChatSessionPlugin> _chatSessionPlugins = new();
 
     private Plugin()
     {
