@@ -85,7 +85,9 @@ public class MessageStreamer : IMessageStreamer
                 await _messageService.UpdateMessageThinkingContentAsync(aiMessage,
                     handlerResult.AccumulatedThinkingContent,
                     CancellationToken.None);
-                //TODO: SignalR stream here
+                
+                await PublishThinkingContentUpdatedAsync(requestContext.ChatSession.Id, aiMessage.Id, 
+                    handlerResult.AccumulatedThinkingContent);
             }
 
             if (totalInputTokens > 0 || totalOutputTokens > 0)
@@ -128,4 +130,19 @@ public class MessageStreamer : IMessageStreamer
                 or ModelType.Grok => ResponseType.ToolCall,
             _ => ResponseType.Text
         };
+    
+    private async Task PublishThinkingContentUpdatedAsync(Guid chatSessionId, Guid messageId, string thinkingContent)
+    {
+        try
+        {
+            await new ThinkingChunkReceivedNotification(chatSessionId, messageId, thinkingContent)
+                .PublishAsync();
+
+            _logger.LogDebug("Published thinking content update via SignalR for message {MessageId}", messageId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error publishing thinking content update via SignalR for message {MessageId}", messageId);
+        }
+    }
 }

@@ -38,7 +38,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             requestObj["temperature"] = 0;
         }
 
-    //    requestObj["reasoning_effort"] = "high";
+        requestObj["reasoning_effort"] = "high";
 
         var processedMessages = ProcessMessagesForGrokInput(context.History, context.AiAgent, context.UserSettings);
         requestObj["messages"] = processedMessages;

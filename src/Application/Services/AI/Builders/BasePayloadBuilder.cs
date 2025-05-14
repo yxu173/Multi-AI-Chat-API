@@ -224,18 +224,14 @@ public abstract class BasePayloadBuilder
                     }
                     else if (modelRole == "model" && currentRole == modelRole)
                     {
-                        Logger?.LogWarning("Attempting to merge consecutive '{ModelRole}' role content for Gemini.",
+                        Logger?.LogWarning("Merging consecutive '{ModelRole}' role content for Gemini.",
                             modelRole);
                         var lastMsg = cleanedMessages.Last();
                         var currentMsg = messages[i];
-                        // TODO: Implement robust merging of Gemini 'parts' array. For now, log and skip.
-                        Logger?.LogError(
-                            "Consecutive '{ModelRole}' role merging not fully implemented for Gemini structure. Skipping message at index {Index}.",
-                            modelRole, i);
-                        // cleanedMessages.RemoveAt(cleanedMessages.Count - 1); // Remove previous model message
-                        // object mergedMessage = MergeGeminiMessages(lastMsg, currentMsg); // Hypothetical merge function
-                        // cleanedMessages.Add(mergedMessage);
-                        // handled = true;
+                        object mergedMessage = MergeGeminiMessages(lastMsg, currentMsg);
+                        cleanedMessages.RemoveAt(cleanedMessages.Count - 1); // Remove previous model message
+                        cleanedMessages.Add(mergedMessage);
+                        handled = true;
                     }
 
                     if (!handled)
@@ -250,6 +246,65 @@ public abstract class BasePayloadBuilder
 
         messages.Clear();
         messages.AddRange(cleanedMessages);
+    }
+
+    /// <summary>
+    /// Merges two Gemini messages with the same role by concatenating their content parts.
+    /// </summary>
+    /// <param name="lastMessage">The previous message in the sequence</param>
+    /// <param name="currentMessage">The current message to merge</param>
+    /// <returns>A new merged message object</returns>
+    protected object MergeGeminiMessages(dynamic lastMessage, dynamic currentMessage)
+    {
+        try
+        {
+            // Create a copy of the dictionary structure
+            var result = new Dictionary<string, object>();
+            if (lastMessage is IDictionary<string, object> lastDict)
+            {
+                foreach (var key in lastDict.Keys)
+                {
+                    result[key] = lastDict[key];
+                }
+            }
+            
+            // Handle the parts array which contains the content
+            if (result.TryGetValue("parts", out var lastPartsObj) && lastPartsObj is List<object> lastParts &&
+                currentMessage is IDictionary<string, object> currentDict &&
+                currentDict.TryGetValue("parts", out var currentPartsObj) && currentPartsObj is List<object> currentParts)
+            {
+                // Combine the parts arrays
+                var mergedParts = new List<object>(lastParts);
+                mergedParts.AddRange(currentParts);
+                result["parts"] = mergedParts;
+                
+                Logger?.LogInformation("Successfully merged {Count} parts from consecutive model messages", 
+                    currentParts.Count);
+                
+                return result;
+            }
+            
+            // Handle the content field for simpler message formats
+            if (result.TryGetValue("content", out var lastContent) && lastContent is string lastContentStr &&
+                currentMessage is IDictionary<string, object> currentMsgDict &&
+                currentMsgDict.TryGetValue("content", out var currentContent) && currentContent is string currentContentStr)
+            {
+                // Concatenate the content strings
+                result["content"] = lastContentStr + "\n" + currentContentStr;
+                
+                Logger?.LogInformation("Successfully merged content from consecutive model messages");
+                
+                return result;
+            }
+            
+            
+            return lastMessage;
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogError(ex, "Error merging Gemini messages");
+            return lastMessage;
+        }
     }
 
     protected string GetRoleFromDynamicMessage(dynamic message)
