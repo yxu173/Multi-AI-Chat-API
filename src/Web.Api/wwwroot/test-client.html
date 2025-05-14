@@ -540,6 +540,112 @@
         .btn-stop.hidden {
             display: none !important;
         }
+        
+        /* Thinking toggle switch styles */
+        .thinking-toggle-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            justify-content: flex-start;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+            margin-right: 8px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--secondary-color);
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .toggle-slider {
+            background-color: var(--primary-color);
+        }
+        
+        input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+        
+        .toggle-label {
+            font-size: 0.85em;
+            color: var(--text-color);
+        }
+        
+        /* Thinking content styles */
+        .message.ai.thinking {
+            background-color: #f0f7ff;
+            border-left: 3px solid #4a7bff;
+            margin-bottom: 10px;
+            animation: fade-in 0.3s ease-in-out;
+        }
+        
+        .thinking-content {
+            font-size: 0.95em;
+            color: #444;
+            white-space: pre-wrap;
+        }
+        
+        .thinking-label {
+            color: #4a7bff;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e1e4e8;
+            padding-bottom: 5px;
+            margin-bottom: 8px;
+        }
+        
+        .thinking-toggle-btn {
+            background: transparent;
+            border: none;
+            color: var(--primary-color);
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+        
+        .thinking-toggle-btn:hover {
+            background-color: rgba(74, 123, 255, 0.1);
+        }
+        
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -589,6 +695,13 @@
             <div class="status-message">Connect to start chatting</div>
         </div>
         <div class="message-input-area">
+            <div class="thinking-toggle-container">
+                <label class="toggle-switch" for="showThinkingToggle">
+                    <input type="checkbox" id="showThinkingToggle" checked title="Toggle AI reasoning visibility">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label for="showThinkingToggle" class="toggle-label">Show AI Reasoning Process</label>
+            </div>
             <div class="message-input">
                 <textarea id="messageInput" placeholder="Type your message..." rows="3" disabled></textarea>
                 <div class="input-buttons">
@@ -825,6 +938,20 @@
         
         // --- Message Handlers ---
         
+        // Thinking content chunks (AI's reasoning process)
+        connection.on("ReceiveThinkingChunk", (messageId, chunk) => {
+            console.log("ReceiveThinkingChunk for message:", messageId);
+            updateThinkingChunk(messageId, chunk);
+            scrollToBottom();
+        });
+        
+        // Real-time thinking updates from the AI
+        connection.on("ThinkingUpdate", (messageId, chunk) => {
+            console.log("ThinkingUpdate for message:", messageId);
+            updateThinkingChunk(messageId, chunk);
+            scrollToBottom();
+        });
+        
         // Complete messages (not streaming)
         connection.on("ReceiveMessage", (message) => {
             console.log("ReceiveMessage:", message);
@@ -855,10 +982,22 @@
                     // Show stop button
                     stopBtn.classList.remove('hidden');
                     stopBtn.disabled = false;
+                    
+                    // Force create a new message element if it doesn't exist yet
+                    findOrCreateMessageElement(messageId, true);
                 }
                 
-                // Update the message with the new content chunk
+                // Update the message with the new content chunk immediately
+                // This is the key fix - ensure immediate visual feedback
                 updateStreamingMessage(messageId, content);
+                
+                // Clear any debounce timers and force scroll to bottom
+                if (streamUpdateTimeout) {
+                    clearTimeout(streamUpdateTimeout);
+                }
+                streamUpdateTimeout = setTimeout(() => {
+                    scrollToBottom();
+                }, 50); // Short delay to batch UI updates
             } catch (error) {
                 console.error("Error handling message chunk:", error);
                 showToast("Error updating message stream", "error");
@@ -1255,20 +1394,33 @@
                 return;
             }
             
+            // Create or find message element, ensure it exists in DOM
             const messageElement = findOrCreateMessageElement(messageId, true); // AI messages stream
             if (messageElement) {
-                // Append raw chunk to dataset for full content
+                // Initialize raw content if needed
                 if (messageElement.dataset.rawContent === undefined) {
                     messageElement.dataset.rawContent = "";
                 }
                 
+                // Append new chunk
                 messageElement.dataset.rawContent += contentChunk;
                 
-                // Render immediately
-                renderStreamedContent(messageId);
-                
-                // Scroll as chunks arrive
-                scrollToBottom();
+                // Force immediate DOM update with current content
+                const contentElement = messageElement.querySelector('.message-content');
+                if (contentElement) {
+                    // Format the content with markdown in real-time
+                    contentElement.innerHTML = formatMessageContent(messageElement.dataset.rawContent);
+                    
+                    // Apply syntax highlighting to any code blocks
+                    if (window.hljs) {
+                        contentElement.querySelectorAll('pre code').forEach((block) => {
+                            hljs.highlightElement(block);
+                        });
+                    }
+                    
+                    // Add copy buttons to code blocks in real-time
+                    addCodeBlockActions(messageElement);
+                }
             } else {
                 console.error(`Failed to find or create message element for ${messageId}`);
             }
@@ -1298,44 +1450,22 @@
             thinkingElement.id = `thinking-${messageId}`;
             thinkingElement.setAttribute('data-message-id', `thinking-${messageId}`);
             
-            // Enhanced styling for thinking content - add a different background color and border
+            // Set initial visibility based on toggle state
+            thinkingElement.style.display = showThinkingToggle.checked ? 'block' : 'none';
+            
+            // Enhanced styling for thinking content with collapsible header
             thinkingElement.innerHTML = `
                 <div class="message-header">
-                    <span class="thinking-label"><i class="fa fa-brain"></i> AI's Reasoning Process</span>
+                    <span class="thinking-label"><i class="fas fa-brain"></i> AI's Reasoning Process</span>
+                    <button class="thinking-toggle-btn" title="Expand/Collapse reasoning" aria-label="Toggle reasoning visibility">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
                 </div>
                 <div class="message-content thinking-content"></div>
             `;
             
-            // Add custom styles for thinking content
-            const style = document.createElement('style');
-            style.textContent = `
-                .message.ai.thinking {
-                    background-color: #f0f7ff;
-                    border-left: 3px solid #4a7bff;
-                    margin-bottom: 10px;
-                    animation: fade-in 0.3s ease-in-out;
-                }
-                .thinking-content {
-                    font-size: 0.95em;
-                    color: #444;
-                    white-space: pre-wrap;
-                }
-                .thinking-label {
-                    color: #4a7bff;
-                    font-weight: bold;
-                    font-size: 0.9em;
-                }
-                .message-header {
-                    border-bottom: 1px solid #e1e4e8;
-                    padding-bottom: 5px;
-                    margin-bottom: 8px;
-                }
-                @keyframes fade-in {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
-                }
-            `;
-            document.head.appendChild(style);
+            // Track content for better performance
+            thinkingElement.thinkingContent = '';
             
             // Insert thinking bubble before the actual AI message bubble if it exists
             const aiMessageElement = document.querySelector(`.message.ai[data-message-id="${messageId}"]`);
@@ -1345,14 +1475,36 @@
                 messageList.appendChild(thinkingElement);
             }
             
+            // Add click handler to toggle button
+            const toggleBtn = thinkingElement.querySelector('.thinking-toggle-btn');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', function() {
+                    const content = thinkingElement.querySelector('.thinking-content');
+                    const isVisible = content.style.display !== 'none';
+                    content.style.display = isVisible ? 'none' : 'block';
+                    this.querySelector('i').className = isVisible ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+                });
+            }
+            
             // Make sure we have a currentThinkingMessageId set
             currentThinkingMessageId = messageId;
         }
 
         const contentElement = thinkingElement.querySelector('.thinking-content');
         if (contentElement) {
-            // Process for markdown and highlight as code if it looks like code
-            contentElement.innerHTML += formatMessageContent(chunk);
+            // Append to the tracked content for better performance
+            thinkingElement.thinkingContent += chunk;
+            
+            // Format all content in one operation for better performance
+            contentElement.innerHTML = formatMessageContent(thinkingElement.thinkingContent);
+            
+            // Re-apply code highlighting to any code blocks
+            if (window.hljs) {
+                contentElement.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
+            
             scrollToBottom();
         }
     }
@@ -1684,10 +1836,36 @@
         }
     }
 
+    // --- Thinking Content Toggle ---
+    const showThinkingToggle = document.getElementById('showThinkingToggle');
+    
+    // Handler for showing/hiding thinking content
+    function toggleThinkingVisibility() {
+        const thinkingElements = document.querySelectorAll('.message.ai.thinking');
+        const isVisible = showThinkingToggle.checked;
+        
+        thinkingElements.forEach(element => {
+            element.style.display = isVisible ? 'block' : 'none';
+        });
+        
+        // Save preference to localStorage
+        localStorage.setItem('showThinkingContent', isVisible);
+    }
+    
+    // Add event listener to toggle switch
+    showThinkingToggle.addEventListener('change', toggleThinkingVisibility);
+    
     // --- Initialization & Local Storage ---
     window.addEventListener('load', () => {
         const savedToken = localStorage.getItem('authToken');
         const savedChatId = localStorage.getItem('chatId');
+        
+        // Load thinking content visibility preference
+        const showThinking = localStorage.getItem('showThinkingContent');
+        if (showThinking !== null) {
+            showThinkingToggle.checked = showThinking === 'true';
+            toggleThinkingVisibility();
+        }
         if (savedToken) tokenInput.value = savedToken;
         if (savedChatId) chatIdInput.value = savedChatId;
         
