@@ -9,6 +9,7 @@ using Infrastructure.Authentication;
 using Infrastructure.Authentication.Options;
 using Infrastructure.Database;
 using Infrastructure.Repositories;
+using Infrastructure.Services.AiProvidersServices;
 using Infrastructure.Services.Caching;
 using Infrastructure.Services.Plugins;
 using Infrastructure.Services.Resilience;
@@ -65,8 +66,77 @@ public static class DependencyInjection
         
         services.AddHostedService<DailyQuotaResetService>();
 
+        // Register typed HttpClients for each AI provider with appropriate configuration
+        
+        // OpenAI client
+        services.AddHttpClient<OpenAiService>(client => {
+            client.BaseAddress = new Uri("https://api.openai.com/");
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        }).AddPolicyHandler(GetRetryPolicy());
+        
+        // Anthropic client
+        services.AddHttpClient<AnthropicService>(client => {
+            client.BaseAddress = new Uri("https://api.anthropic.com/");
+            client.Timeout = TimeSpan.FromSeconds(120); // Longer timeout for larger models
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+            client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+        }).AddPolicyHandler(GetRetryPolicy());
+        
+        // Gemini client
+        services.AddHttpClient<GeminiService>(client => {
+            client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+            client.Timeout = TimeSpan.FromSeconds(90);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        }).AddPolicyHandler(GetRetryPolicy());
+        
+        // DeepSeek client
+        services.AddHttpClient<DeepSeekService>(client => {
+            client.BaseAddress = new Uri("https://api.deepseek.com/");
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        }).AddPolicyHandler(GetRetryPolicy());
+        
+        // AimlFlux client
+        services.AddHttpClient<AimlApiService>(client => {
+            client.BaseAddress = new Uri("https://api.aiml.flux.com/");
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        }).AddPolicyHandler(GetRetryPolicy());
+        
+        // Grok client
+        services.AddHttpClient<GrokService>(client => {
+            client.BaseAddress = new Uri("https://api.grok.ai/");
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        }).AddPolicyHandler(GetRetryPolicy());
+        
+        // Qwen client
+        services.AddHttpClient<QwenService>(client => {
+            client.BaseAddress = new Uri("https://api.qwen.ai/");
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        }).AddPolicyHandler(GetRetryPolicy());
+        
+        // Imagen client
+        services.AddHttpClient<ImagenService>(client => {
+            client.BaseAddress = new Uri("https://api.imagen.ai/");
+            client.Timeout = TimeSpan.FromSeconds(120); // Image generation needs longer timeout
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        }).AddPolicyHandler(GetRetryPolicy());
+        
+        // Default HTTP client for backward compatibility
         services.AddHttpClient();
 
+        // Add retry and resilience policy helper method
+        static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+        {
+            return HttpPolicyExtensions
+                .HandleTransientHttpError()
+                .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+        }
+        
         var webSearchConfig = configuration.GetSection("PluginSettings:WebSearch");
         services.AddScoped<WebSearchPlugin>(sp =>
             new WebSearchPlugin(

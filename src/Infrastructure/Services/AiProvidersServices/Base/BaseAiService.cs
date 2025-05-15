@@ -35,8 +35,38 @@ public abstract class BaseAiService : IAiModelService
     #region Constructor
 
     /// <summary>
-    /// Creates a new instance of the AI service adapter.
+    /// Creates a new instance of the AI service adapter with proper HttpClient injection.
     /// </summary>
+    protected BaseAiService(
+        HttpClient httpClient,
+        string? apiKey,
+        string modelCode,
+        string baseUrl)
+    {
+        HttpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        
+        // Only set base address if not already set by typed client registration
+        if (HttpClient.BaseAddress == null)
+        {
+            HttpClient.BaseAddress = new Uri(baseUrl);
+        }
+        
+        ApiKey = apiKey;
+        ModelCode = modelCode;
+        
+        // Set default timeout if not set by typed client
+        if (HttpClient.Timeout == TimeSpan.Zero || HttpClient.Timeout == Timeout.InfiniteTimeSpan)
+        {
+            HttpClient.Timeout = TimeSpan.FromSeconds(60);
+        }
+        
+        ConfigureHttpClient();
+    }
+    
+    /// <summary>
+    /// Legacy constructor for backward compatibility
+    /// </summary>
+    [Obsolete("Use the constructor with direct HttpClient injection for better performance and reliability")]
     protected BaseAiService(
         IHttpClientFactory httpClientFactory,
         string? apiKey,
@@ -47,6 +77,10 @@ public abstract class BaseAiService : IAiModelService
         HttpClient.BaseAddress = new Uri(baseUrl);
         ApiKey = apiKey;
         ModelCode = modelCode;
+        
+        // Set default timeout
+        HttpClient.Timeout = TimeSpan.FromSeconds(60);
+        
         ConfigureHttpClient();
     }
 

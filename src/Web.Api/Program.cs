@@ -4,11 +4,16 @@ using Infrastructure;
 using Infrastructure.Database;
 using Web.Api;
 using Web.Api.Hubs;
+using Web.Api.Middleware;
 using System.Runtime;
+using System.Threading.RateLimiting;
 using FastEndpoints;
-using Application.Abstractions.PreProcessors;
 using FastEndpoints.Swagger;
+using Microsoft.AspNetCore.RateLimiting;
+using Application.Abstractions.PreProcessors;
 using Web.Api.Extensions;
+using Polly;
+using Polly.Extensions.Http;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
@@ -28,6 +33,9 @@ builder.Services.AddFastEndpoints()
 builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(RequestLoggingPreProcessor<>));
 builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(ValidationPreProcessor<>));
 builder.Services.AddSingleton(typeof(IPostProcessor<,>), typeof(RequestLoggingPostProcessor<,>));
+
+// Add security features: Rate limiting
+builder.Services.AddApplicationRateLimiting();
 
 builder.Services.AddSignalR(options =>
 {
@@ -84,9 +92,19 @@ catch (Exception ex)
     Console.WriteLine($"Warning: File uploads directory does not have proper write permissions: {ex.Message}");
 }
 
+// Apply security headers for all responses
+//app.UseSecurityHeaders();
+
+// Enable rate limiting middleware
+app.UseRateLimiter();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+}
+else 
+{
+    //app.UseHsts();
 }
 
 using (var scope = app.Services.CreateScope())
