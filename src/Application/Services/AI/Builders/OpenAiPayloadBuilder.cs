@@ -23,7 +23,8 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
+    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null,
+        CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -31,11 +32,11 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         // Set base model information
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
-        
+
         AddParameters(requestObj, context);
 
         string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ??
-                               context.UserSettings?.ModelParameters.SystemInstructions;
+                                context.UserSettings?.ModelParameters.SystemInstructions;
         if (!string.IsNullOrWhiteSpace(systemMessage))
         {
             requestObj["instructions"] = systemMessage.Trim();
@@ -45,7 +46,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var processedMessages = ProcessMessagesForOpenAIInput(context.History);
         requestObj["input"] = processedMessages;
 
-        if ( tools?.Any() == true)
+        if (tools?.Any() == true)
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
                 tools.Count, model.ModelCode);
@@ -97,20 +98,22 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                             break;
                         case FilePart filePart:
                             // Check if the file is a CSV, which OpenAI doesn't support directly
-                            if (filePart.MimeType == "text/csv" || 
+                            if (filePart.MimeType == "text/csv" ||
                                 filePart.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
                             {
                                 // Log that CSV files should be handled by our plugin instead of direct upload
-                                Logger?.LogWarning("CSV file {FileName} detected - OpenAI doesn't support CSV files directly. " +
+                                Logger?.LogWarning(
+                                    "CSV file {FileName} detected - OpenAI doesn't support CSV files directly. " +
                                     "Using the csv_reader plugin is recommended instead.", filePart.FileName);
-                                
+
                                 // Add a text content explaining why the file can't be used directly
                                 openAiContentItems.Add(new
                                 {
                                     type = "input_text",
-                                    text = $"Note: The CSV file '{filePart.FileName}' can't be processed directly by OpenAI. " +
-                                           $"Please use the csv_reader tool to analyze this file. Example usage:\n\n" +
-                                           $"```json\n{{\n  \"type\": \"function\",\n  \"function\": {{\n    \"name\": \"csv_reader\",\n    \"arguments\": {{\n      \"file_name\": \"{filePart.FileName}\",\n      \"max_rows\": 100,\n      \"analyze\": true\n    }}\n  }}\n}}\n```"
+                                    text =
+                                        $"Note: The CSV file '{filePart.FileName}' can't be processed directly by OpenAI. " +
+                                        $"Please use the csv_reader tool to analyze this file. Example usage:\n\n" +
+                                        $"```json\n{{\n  \"type\": \"function\",\n  \"function\": {{\n    \"name\": \"csv_reader\",\n    \"arguments\": {{\n      \"file_name\": \"{filePart.FileName}\",\n      \"max_rows\": 100,\n      \"analyze\": true\n    }}\n  }}\n}}\n```"
                                 });
                             }
                             else
@@ -125,6 +128,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                                 });
                                 hasNonTextContent = true;
                             }
+
                             break;
                     }
                 }
@@ -154,11 +158,12 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         return processedMessages;
     }
-    
+
     private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        bool useEffectiveThinking = context.RequestSpecificThinking == true || 
-                                   context.SpecificModel.SupportsThinking;
+        // Only enable thinking if both the model supports it and it's compatible with reasoning parameters
+        bool useEffectiveThinking =
+            (context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking);
 
         if (useEffectiveThinking)
         {
@@ -172,7 +177,13 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
             Logger?.LogDebug("Removed potentially conflicting parameters due to reasoning effort.");
         }
-        
+        else if (context.SpecificModel.SupportsThinking)
+        {
+            // Model is marked as supporting thinking but doesn't support the reasoning parameter
+            Logger?.LogDebug("Model {ModelCode} is marked as supporting thinking but doesn't support reasoning.effort parameter",
+                context.SpecificModel.ModelCode);
+        }
+
         if (requestObj.TryGetValue("max_tokens", out var maxTokensValue) && !requestObj.ContainsKey("reasoning"))
         {
             requestObj.Remove("max_tokens");

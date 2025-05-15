@@ -111,7 +111,7 @@ public abstract class BasePayloadBuilder
     /// <param name="requestObj">The target dictionary for the formatted parameters</param>
     /// <param name="context">The AI request context</param>
     /// <param name="isThinking">Whether the request is for a thinking operation</param>
-    protected void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context, bool isThinking = false)
+    protected void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         // Create base parameters dictionary
         var parameters = new Dictionary<string, object>();
@@ -168,7 +168,7 @@ public abstract class BasePayloadBuilder
                 continue;
             }
             
-            if (isThinking && ThinkingIgnoredKeys.Contains(providerName))
+            if (ThinkingIgnoredKeys.Contains(providerName))
             {
                 Logger?.LogDebug(
                     "Omitting parameter '{ProviderName}' in thinking mode for model type {ModelType}", 
