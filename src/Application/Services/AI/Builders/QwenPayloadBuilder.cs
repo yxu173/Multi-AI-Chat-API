@@ -31,22 +31,16 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
-        requestObj["stream_options"] = new { include_usage = true }; 
-        requestObj["enable_thinking"] = true; 
-
-        var parameters = GetMergedParameters(context);
-        foreach (var param in parameters)
-        {
-            if (IsParameterSupported(param.Key, model.ModelType))
-            {
-                requestObj[param.Key] = param.Value;
-            }
-        }
+        requestObj["stream_options"] = new { include_usage = true };
+        
+        AddParameters(requestObj, context, context.IsThinking);
+        
+        CustomizePayload(requestObj, context);
 
         var processedMessages = ProcessMessagesForQwenInput(context.History, context.AiAgent, context.UserSettings);
         requestObj["messages"] = processedMessages;
 
-        if (tools != null && tools.Any())
+        if (!context.IsThinking && tools != null && tools.Any())
         {
             requestObj["tools"] = tools;
 
@@ -240,15 +234,23 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         return processedMessages;
     }
-
-    bool IsParameterSupported(string paramName, Domain.Enums.ModelType modelType, bool isTopLevelParam = false)
+    
+    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        var supportedParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        
+        requestObj["enable_thinking"] = useThinking;
+        
+        if (useThinking)
         {
-            "temperature", "top_p", "frequency_penalty", "presence_penalty",
-            "max_tokens", "stream", "stop", "logit_bias"
-        };
-
-        return supportedParams.Contains(paramName) || base.IsParameterSupported(paramName, modelType);
+            Logger?.LogDebug("Enabled Qwen native 'enable_thinking' parameter for model {ModelCode}", 
+                context.SpecificModel.ModelCode);
+            
+            if (requestObj.ContainsKey("temperature") && requestObj["temperature"] is double temp && temp < 0.7)
+            {
+                requestObj["temperature"] = 0.7;
+                Logger?.LogDebug("Increased temperature for thinking mode");
+            }
+        }
     }
 }

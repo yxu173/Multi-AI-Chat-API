@@ -29,45 +29,36 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
     {
         var requestObj = new Dictionary<string, object>();
         var generationConfig = new Dictionary<string, object>();
-        var safetySettings = GetGeminiSafetySettings(); 
-
-        var parameters = GetMergedParameters(context); 
-        ApplyGeminiParametersToConfig(generationConfig, parameters, context.SpecificModel.ModelType); 
-
+        var safetySettings = GetGeminiSafetySettings();
+        
+        AddParameters(generationConfig, context, context.IsThinking); 
+        
         var geminiContents = await ProcessMessagesForGeminiAsync(context, cancellationToken);
 
+        // Build the complete request
         requestObj["contents"] = geminiContents;
         requestObj["generationConfig"] = generationConfig;
         requestObj["safetySettings"] = safetySettings;
 
-        if (tools?.Any() == true && IsParameterSupported("tools", context.SpecificModel.ModelType, isTopLevelParam: true)) // Base method, check top-level
+        // Add tools only if not in thinking mode
+        if (!context.IsThinking && tools?.Any() == true)
         {
             Logger?.LogInformation("Adding {ToolCount} tool declarations to Gemini payload for model {ModelCode}",
                  tools.Count, context.SpecificModel.ModelCode);
             requestObj["tools"] = new[] { new { functionDeclarations = tools } };
         }
-        else
-        {
-             if (tools?.Any() == true)
-             {
-                 Logger?.LogWarning("Tools definitions provided but 'tools' parameter not marked as supported for Gemini model {ModelCode}", context.SpecificModel.ModelCode);
-             }
-        }
-
+        
         return new AiRequestPayload(requestObj);
     }
 
     private async Task<List<object>> ProcessMessagesForGeminiAsync(AiRequestContext context, CancellationToken cancellationToken)
     {
-        bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
+        bool useThinking =  context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
         string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ?? context.UserSettings?.ModelParameters.SystemInstructions;
         var geminiContents = new List<object>();
 
         var systemPrompts = new List<string>();
         if (!string.IsNullOrWhiteSpace(systemMessage)) systemPrompts.Add(systemMessage.Trim());
-        if (useEffectiveThinking)
-            systemPrompts.Add(
-                "When solving complex problems, show your step-by-step thinking process marked as '### Thinking:' before the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly.");
         string combinedSystem = string.Join("\n\n", systemPrompts);
 
         var historyToProcess = new List<(string Role, string Content)>();
@@ -198,25 +189,6 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return geminiContents;
     }
 
-    private void ApplyGeminiParametersToConfig(Dictionary<string, object> generationConfig, Dictionary<string, object> parameters, ModelType modelType)
-    {
-        foreach (var kvp in parameters)
-        {
-            string geminiName = GetProviderParameterName(kvp.Key, modelType); 
-            if (IsParameterSupported(geminiName, modelType, isTopLevelParam: false))
-            {
-                generationConfig[geminiName] = kvp.Value;
-                 Logger?.LogDebug("Applied parameter {Key} as {GeminiName} to Gemini generationConfig", kvp.Key, geminiName);
-            }
-            else
-            {
-                 if (!IsParameterSupported(geminiName, modelType, isTopLevelParam: true))
-                 {
-                     Logger?.LogDebug("Skipping unsupported or non-GenerationConfig parameter '{StandardName}' (mapped to '{GeminiName}') for Gemini", kvp.Key, geminiName);
-                 }
-            }
-        }
-    }
 
     private List<object> GetGeminiSafetySettings()
     {
@@ -263,26 +235,4 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return isValid; 
     }
 
-    protected new bool IsParameterSupported(string providerParamName, ModelType modelType, bool isTopLevelParam = false)
-    {
-        if (modelType != ModelType.Gemini) {
-             return base.IsParameterSupported(providerParamName, modelType);
-        }
-
-        if (isTopLevelParam)
-        {
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                 "contents", "tools", "safetySettings", "generationConfig" 
-            }.Contains(providerParamName);
-        }
-        else
-        {
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "temperature", "topP", "topK", "maxOutputTokens", "stopSequences", "candidateCount",
-                "response_mime_type", "response_schema"
-            }.Contains(providerParamName);
-        }
-    }
 } 

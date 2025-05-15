@@ -27,34 +27,32 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         List<object>? tools = null, 
         CancellationToken cancellationToken = default) 
     {
+        // Create the base request object
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
 
+        // Set required model properties
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
 
-        var parameters = GetMergedParameters(context);
-        ApplyParametersToRequest(requestObj, parameters, model.ModelType);
+        // Apply parameters using simplified method with thinking mode support
+        AddParameters(requestObj, context, context.IsThinking);
 
+        // Process messages with system prompt
         var processedMessages = await ProcessMessagesForDeepSeekAsync(context, cancellationToken);
         requestObj["messages"] = processedMessages;
 
-        if (tools?.Any() == true)
+        // Add tools only if not in thinking mode
+        if (!context.IsThinking && tools?.Any() == true)
         {
-            Logger?.LogWarning(
-                "Tool definitions were provided for DeepSeek model {ModelCode}, but tool calling is not currently implemented/supported in this builder.",
-                model.ModelCode);
-            if (IsParameterSupported("tools", model.ModelType))
-            {
-                requestObj["tools"] = tools; 
-                if (IsParameterSupported("tool_choice", model.ModelType))
-                {
-                    requestObj["tool_choice"] = "auto";
-                }
-            }
+            requestObj["tools"] = tools;
+            requestObj["tool_choice"] = "auto";
+            Logger?.LogInformation("Adding {ToolCount} tool definitions to DeepSeek payload for model {ModelCode}",
+                tools.Count, model.ModelCode);
         }
 
-        AddDeepSeekSpecificParameters(requestObj, context);
+        // Apply DeepSeek-specific thinking parameters
+        CustomizePayload(requestObj, context);
 
         return new AiRequestPayload(requestObj);
     }
@@ -63,37 +61,13 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         CancellationToken cancellationToken) 
     {
         var processedMessages = new List<object>();
-        bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
         string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ?? context.UserSettings?.ModelParameters.SystemInstructions;
 
         if (!string.IsNullOrWhiteSpace(systemMessage))
         {
             processedMessages.Add(new { role = "system", content = systemMessage.Trim() });
         }
-
-        if (useEffectiveThinking && !context.SpecificModel.ModelCode.ToLower().Contains("reasoner"))
-        {
-            var parameters = GetMergedParameters(context);
-            bool cotEnabled = parameters.TryGetValue("enable_cot", out var cotVal) && cotVal is true;
-            bool reasoningEnabled = parameters.TryGetValue("enable_reasoning", out var reaVal) && reaVal is true;
-
-            if (!cotEnabled && !reasoningEnabled)
-            {
-                processedMessages.Add(new
-                {
-                    role = "system",
-                    content =
-                        "When solving complex problems, please show your step-by-step thinking process marked as '### Thinking:' before the final answer marked as '### Answer:'. Analyze all relevant aspects of the problem thoroughly."
-                });
-                Logger?.LogDebug("Added thinking system prompt for DeepSeek model {ModelCode}",
-                    context.SpecificModel.ModelCode);
-            }
-            else
-            {
-                Logger?.LogDebug("DeepSeek thinking likely handled by enable_cot/enable_reasoning parameters.");
-            }
-        }
-
+        
         var mergedHistory = MergeConsecutiveRoles(
             context.History.Select(m => (m.IsFromAi ? "assistant" : "user", m.Content?.Trim() ?? "")).ToList());
 
@@ -166,26 +140,33 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return processedMessages;
     }
 
-    private void AddDeepSeekSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context)
+    /// <summary>
+    /// Customize the payload with DeepSeek-specific parameters, particularly for thinking mode
+    /// </summary>
+    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
-        if (useEffectiveThinking)
+        bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        
+        if (useThinking)
         {
-            if (IsParameterSupported("enable_cot", ModelType.DeepSeek) && !requestObj.ContainsKey("enable_cot"))
+            if (!requestObj.ContainsKey("enable_cot"))
             {
                 requestObj["enable_cot"] = true;
-                Logger?.LogDebug(
-                    "Enabled DeepSeek 'enable_cot' parameter (Effective: {UseThinking}) for model {ModelCode}",
-                    useEffectiveThinking, context.SpecificModel.ModelCode);
+                Logger?.LogDebug("Enabled DeepSeek 'enable_cot' parameter for model {ModelCode}", 
+                    context.SpecificModel.ModelCode);
             }
 
-            if (IsParameterSupported("enable_reasoning", ModelType.DeepSeek) &&
-                !requestObj.ContainsKey("enable_reasoning"))
+            if (!requestObj.ContainsKey("enable_reasoning"))
             {
                 requestObj["enable_reasoning"] = true;
-                Logger?.LogDebug(
-                    "Enabled DeepSeek 'enable_reasoning' parameter (Effective: {UseThinking}) for model {ModelCode}",
-                    useEffectiveThinking, context.SpecificModel.ModelCode);
+                Logger?.LogDebug("Enabled DeepSeek 'enable_reasoning' parameter for model {ModelCode}", 
+                    context.SpecificModel.ModelCode);
+            }
+            
+            if (!requestObj.ContainsKey("reasoning_mode"))
+            {
+                requestObj["reasoning_mode"] = "detailed";
+                Logger?.LogDebug("Set DeepSeek 'reasoning_mode' to 'detailed' for thinking");
             }
         }
     }

@@ -22,11 +22,11 @@ public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
 
-        requestObj["model"] = model.ModelCode; 
+        requestObj["model"] = model.ModelCode;
 
         var latestUserMessageText = context.History
             .Where(m => !m.IsFromAi && !string.IsNullOrWhiteSpace(m.Content))
-            .Select(m => ExtractTextFromMessage(m.Content)) 
+            .Select(m => ExtractTextFromMessage(m.Content))
             .LastOrDefault(text => !string.IsNullOrWhiteSpace(text));
 
         if (string.IsNullOrWhiteSpace(latestUserMessageText))
@@ -36,17 +36,13 @@ public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         }
         requestObj["prompt"] = latestUserMessageText.Trim();
 
-        if (IsParameterSupported("image_size", ModelType.AimlFlux))
-            requestObj["image_size"] = context.ImageSize ?? "landscape_16_9"; 
-        if (IsParameterSupported("num_images", ModelType.AimlFlux))
-             requestObj["num_images"] = context.NumImages ?? 1; 
-        if (IsParameterSupported("output_format", ModelType.AimlFlux))
-            requestObj["output_format"] = context.OutputFormat ?? "jpeg"; 
-        if (IsParameterSupported("enable_safety_checker", ModelType.AimlFlux))
-            requestObj["enable_safety_checker"] = context.EnableSafetyChecker ?? true; 
-        if (IsParameterSupported("safety_tolerance", ModelType.AimlFlux))
-             requestObj["safety_tolerance"] = context.SafetyTolerance ?? "2";
+        AddParameters(requestObj, context, context.IsThinking);
         
+        requestObj["image_size"] = context.ImageSize ?? "landscape_16_9";
+        requestObj["num_images"] = context.NumImages ?? 1;
+        requestObj["output_format"] = context.OutputFormat ?? "jpeg";
+        requestObj["enable_safety_checker"] = context.EnableSafetyChecker ?? true;
+        requestObj["safety_tolerance"] = context.SafetyTolerance ?? "2";
 
         Logger?.LogDebug("AIMLAPI Payload Prepared: Model={Model}, Prompt='{Prompt}', Size={ImageSize}, Num={NumImages}, Format={Format}, Safety={Safety}, Tolerance={Tolerance}",
             requestObj.GetValueOrDefault("model", "N/A"),

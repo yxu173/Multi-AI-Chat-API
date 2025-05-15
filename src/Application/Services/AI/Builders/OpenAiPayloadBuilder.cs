@@ -28,14 +28,14 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
 
+        // Set base model information
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
-
-        var parameter = GetMergedParameters(context);
-        ApplyParametersToRequest(requestObj, parameter, model.ModelType);
+        
+        AddParameters(requestObj, context, context.IsThinking);
 
         string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ??
-                                context.UserSettings?.ModelParameters.SystemInstructions;
+                               context.UserSettings?.ModelParameters.SystemInstructions;
         if (!string.IsNullOrWhiteSpace(systemMessage))
         {
             requestObj["instructions"] = systemMessage.Trim();
@@ -45,23 +45,19 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var processedMessages = ProcessMessagesForOpenAIInput(context.History);
         requestObj["input"] = processedMessages;
 
-
-        if (tools?.Any() == true && IsParameterSupported("tools", model.ModelType))
+        if (!context.IsThinking && tools?.Any() == true)
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
                 tools.Count, model.ModelCode);
             requestObj["tools"] = tools;
-            if (IsParameterSupported("tool_choice", model.ModelType))
-            {
-                requestObj["tool_choice"] = "auto";
-            }
+            requestObj["tool_choice"] = "auto";
         }
 
         requestObj.Remove("frequency_penalty");
         requestObj.Remove("presence_penalty");
         requestObj.Remove("stop");
 
-        AddOpenAiSpecificParameters(requestObj, context, parameter);
+        CustomizePayload(requestObj, context);
 
         return Task.FromResult(new AiRequestPayload(requestObj));
     }
@@ -119,7 +115,6 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                             }
                             else
                             {
-                                // Process other file types normally
                                 Logger?.LogInformation("Adding file {FileName} using 'input_file' type.",
                                     filePart.FileName);
                                 openAiContentItems.Add(new
@@ -159,59 +154,32 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         return processedMessages;
     }
-
-    private void AddOpenAiSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context,
-        Dictionary<string, object> appliedParameters)
+    
+    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
+        bool useEffectiveThinking = context.RequestSpecificThinking == true || 
+                                   context.SpecificModel.SupportsThinking;
 
-        if (useEffectiveThinking && IsParameterSupported("reasoning", context.SpecificModel.ModelType))
+        if (useEffectiveThinking)
         {
             requestObj["reasoning"] = new { effort = "medium", summary = "detailed" };
             Logger?.LogDebug("Adding reasoning effort for OpenAI model {ModelCode}", context.SpecificModel.ModelCode);
 
-            if (appliedParameters.ContainsKey("temperature")) requestObj.Remove("temperature");
-            if (appliedParameters.ContainsKey("top_p")) requestObj.Remove("top_p");
-            if (appliedParameters.ContainsKey("max_output_tokens")) requestObj.Remove("max_output_tokens");
-            if (appliedParameters.ContainsKey("max_tokens")) requestObj.Remove("max_tokens");
+            requestObj.Remove("temperature");
+            requestObj.Remove("top_p");
+            requestObj.Remove("max_output_tokens");
+            requestObj.Remove("max_tokens");
 
-            Logger?.LogDebug(
-                "Removed potentially conflicting parameters (temp, top_p, max_tokens) due to reasoning effort.");
+            Logger?.LogDebug("Removed potentially conflicting parameters due to reasoning effort.");
         }
-
-        if (appliedParameters.TryGetValue("max_tokens", out var maxTokensValue) && !requestObj.ContainsKey("reasoning"))
+        
+        if (requestObj.TryGetValue("max_tokens", out var maxTokensValue) && !requestObj.ContainsKey("reasoning"))
         {
-            if (requestObj.ContainsKey("max_tokens")) requestObj.Remove("max_tokens");
+            requestObj.Remove("max_tokens");
             if (!requestObj.ContainsKey("max_output_tokens"))
             {
                 requestObj["max_output_tokens"] = maxTokensValue;
                 Logger?.LogDebug("Mapped 'max_tokens' to 'max_output_tokens'.");
-            }
-        }
-    }
-
-    protected void ApplyParametersToRequest(Dictionary<string, object> requestObj,
-        Dictionary<string, object> parameters, ModelType modelType)
-    {
-        foreach (var kvp in parameters)
-        {
-            string key = kvp.Key;
-            object value = kvp.Value;
-
-            if (key == "max_tokens")
-            {
-                key = "max_output_tokens";
-            }
-
-            if (IsParameterSupported(key, modelType))
-            {
-                requestObj[key] = value;
-                Logger?.LogTrace("Applied parameter {ParameterKey}={ParameterValue}", key, value);
-            }
-            else
-            {
-                Logger?.LogWarning("Parameter {ParameterKey} is not supported for {ModelType} and was skipped.", key,
-                    modelType);
             }
         }
     }

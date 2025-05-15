@@ -30,8 +30,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
 
-        var parameters = GetMergedParameters(context);
-        ApplyParametersToRequest(requestObj, parameters, model.ModelType); 
+        AddParameters(requestObj, context, context.IsThinking);
 
         var (systemPrompt, processedMessages) = ProcessMessagesForAnthropic(context.History, context);
         if (!string.IsNullOrWhiteSpace(systemPrompt))
@@ -40,19 +39,17 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         }
         requestObj["messages"] = processedMessages;
 
-        if (tools?.Any() == true && IsParameterSupported("tools", model.ModelType)) 
+        if (!context.IsThinking && tools?.Any() == true) 
         {
-             Logger?.LogInformation("Adding {ToolCount} tool definitions to Anthropic payload for model {ModelCode}",
+            Logger?.LogInformation("Adding {ToolCount} tool definitions to Anthropic payload for model {ModelCode}",
                 tools.Count, model.ModelCode);
             requestObj["tools"] = tools;
-            if (IsParameterSupported("tool_choice", model.ModelType)) 
-            {
-                requestObj["tool_choice"] = new { type = "auto" };
-            }
+            requestObj["tool_choice"] = new { type = "auto" };
         }
 
-        AddAnthropicSpecificParameters(requestObj, context);
+        CustomizePayload(requestObj, context);
 
+        // Ensure max_tokens is set
         if (!requestObj.ContainsKey("max_tokens"))
         {
             const int defaultMaxTokens = 4096; 
@@ -89,7 +86,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                     {
                         case TextPart tp: anthropicContentItems.Add(new { type = "text", text = tp.Text }); break;
                         case ImagePart ip:
-                            if (IsValidAnthropicImageType(ip.MimeType, out var mediaType)) 
+                            if (Validators.IsValidAnthropicImageType(ip.MimeType, out var mediaType)) 
                             {
                                 anthropicContentItems.Add(new
                                 {
@@ -117,7 +114,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                                            $"{{\n  \"name\": \"csv_reader\",\n  \"input\": {{\n    \"file_name\": \"{fp.FileName}\",\n    \"max_rows\": 100,\n    \"analyze\": true\n  }}\n}}" 
                                 });
                             }
-                            else if (IsValidAnthropicDocumentType(fp.MimeType, out var docMediaType))
+                            else if (Validators.IsValidAnthropicDocumentType(fp.MimeType, out var docMediaType))
                             {
                                 Logger?.LogInformation("Adding document {FileName} ({MediaType}) to Anthropic message using 'document' type.", fp.FileName, docMediaType);
                                 var mediaTypeValue = docMediaType;
@@ -148,24 +145,25 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return (finalSystemPrompt?.Trim(), otherMessages);
     }
 
-    private void AddAnthropicSpecificParameters(Dictionary<string, object> requestObj, AiRequestContext context)
+
+    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        bool useEffectiveThinking = context.RequestSpecificThinking ?? context.SpecificModel.SupportsThinking;
-        if (useEffectiveThinking && !requestObj.ContainsKey("thinking"))
+        bool useThinking =  context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        
+        if (useThinking && !requestObj.ContainsKey("thinking"))
         {
-            if (IsParameterSupported("thinking", ModelType.Anthropic))
-            {
-                 const int defaultThinkingBudget = 1024; 
-                 requestObj["thinking"] = new { type = "enabled", budget_tokens = defaultThinkingBudget };
-                 requestObj["temperature"] = 1.0;
-                 requestObj.Remove("top_k");
-                 requestObj.Remove("top_p");
-                 Logger?.LogDebug("Enabled Anthropic 'thinking' parameter with budget {Budget} (Effective: {UseThinking})", defaultThinkingBudget, useEffectiveThinking);
-            }
-            else
-            {
-                Logger?.LogWarning("Requested thinking for Anthropic model {ModelCode}, but 'thinking' parameter is not marked as supported.", context.SpecificModel.ModelCode);
-            }
+            const int defaultThinkingBudget = 1024;
+            requestObj["thinking"] = new { type = "enabled", budget_tokens = defaultThinkingBudget };
+            
+            requestObj["temperature"] = 1.0;
+            requestObj.Remove("top_k");
+            requestObj.Remove("top_p");
+            Logger?.LogDebug("Enabled Anthropic native 'thinking' parameter with budget {Budget}", defaultThinkingBudget);
+        }
+        
+        if (!requestObj.ContainsKey("anthropic_version"))
+        {
+            requestObj["anthropic_version"] = "2023-06-01";
         }
     }
 } 

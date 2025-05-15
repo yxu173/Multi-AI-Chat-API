@@ -32,18 +32,14 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
 
-        var parameter = GetMergedParameters(context);
-        if (parameter.TryGetValue("temperature", out var temperature))
-        {
-            requestObj["temperature"] = 0;
-        }
-
-        requestObj["reasoning_effort"] = "high";
+        AddParameters(requestObj, context, context.IsThinking);
+        
+        CustomizePayload(requestObj, context);
 
         var processedMessages = ProcessMessagesForGrokInput(context.History, context.AiAgent, context.UserSettings);
         requestObj["messages"] = processedMessages;
 
-        if (tools != null && tools.Any())
+        if (!context.IsThinking && tools != null && tools.Any())
         {
             requestObj["tools"] = tools;
 
@@ -72,6 +68,24 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         }
 
         return Task.FromResult(new AiRequestPayload(requestObj));
+    }
+
+
+    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        requestObj["temperature"] = 0.0;
+        
+        bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        
+        if (useThinking)
+        {
+            requestObj["reasoning_effort"] = "maximum";
+            Logger?.LogDebug("Set Grok 'reasoning_effort' to 'maximum' for thinking mode");
+        }
+        else
+        {
+            requestObj["reasoning_effort"] = "high";
+        }
     }
 
     private object[] PrepareFunctionDefinitions(List<FunctionDefinitionDto> functions)

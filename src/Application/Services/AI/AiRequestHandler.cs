@@ -33,7 +33,8 @@ public record AiRequestContext(
     bool? EnableSafetyChecker = null,
     string? SafetyTolerance = null,
     List<FunctionDefinitionDto>? Functions = null,
-    string? FunctionCall = null
+    string? FunctionCall = null,
+    bool IsThinking = false
 );
 
 public class AiRequestHandler : IAiRequestHandler
