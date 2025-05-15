@@ -31,7 +31,7 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var generationConfig = new Dictionary<string, object>();
         var safetySettings = GetGeminiSafetySettings();
         
-        AddParameters(generationConfig, context, context.IsThinking); 
+        AddParameters(generationConfig, context); 
         
         var geminiContents = await ProcessMessagesForGeminiAsync(context, cancellationToken);
 

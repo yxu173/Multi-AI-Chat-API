@@ -33,7 +33,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["stream"] = true;
         requestObj["stream_options"] = new { include_usage = true };
         
-        AddParameters(requestObj, context, context.IsThinking);
+        AddParameters(requestObj, context);
         
         CustomizePayload(requestObj, context);
 

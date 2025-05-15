@@ -30,7 +30,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
 
-        AddParameters(requestObj, context, context.IsThinking);
+        AddParameters(requestObj, context);
 
         var (systemPrompt, processedMessages) = ProcessMessagesForAnthropic(context.History, context);
         if (!string.IsNullOrWhiteSpace(systemPrompt))

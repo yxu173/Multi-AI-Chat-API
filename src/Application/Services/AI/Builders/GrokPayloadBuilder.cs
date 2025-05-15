@@ -32,7 +32,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
 
-        AddParameters(requestObj, context, context.IsThinking);
+        AddParameters(requestObj, context);
         
         CustomizePayload(requestObj, context);
 

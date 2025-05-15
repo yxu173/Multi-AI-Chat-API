@@ -36,7 +36,7 @@ public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         }
         requestObj["prompt"] = latestUserMessageText.Trim();
 
-        AddParameters(requestObj, context, context.IsThinking);
+        AddParameters(requestObj, context);
         
         requestObj["image_size"] = context.ImageSize ?? "landscape_16_9";
         requestObj["num_images"] = context.NumImages ?? 1;

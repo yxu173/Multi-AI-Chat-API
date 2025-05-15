@@ -36,7 +36,7 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["stream"] = true;
 
         // Apply parameters using simplified method with thinking mode support
-        AddParameters(requestObj, context, context.IsThinking);
+        AddParameters(requestObj, context);
 
         // Process messages with system prompt
         var processedMessages = await ProcessMessagesForDeepSeekAsync(context, cancellationToken);

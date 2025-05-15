@@ -32,7 +32,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
         
-        AddParameters(requestObj, context, context.IsThinking);
+        AddParameters(requestObj, context);
 
         string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ??
                                context.UserSettings?.ModelParameters.SystemInstructions;
