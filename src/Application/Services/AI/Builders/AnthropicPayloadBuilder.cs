@@ -39,7 +39,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         }
         requestObj["messages"] = processedMessages;
 
-        if (!context.IsThinking && tools?.Any() == true) 
+        if ( tools?.Any() == true) 
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to Anthropic payload for model {ModelCode}",
                 tools.Count, model.ModelCode);

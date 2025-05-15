@@ -43,7 +43,7 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["messages"] = processedMessages;
 
         // Add tools only if not in thinking mode
-        if (!context.IsThinking && tools?.Any() == true)
+        if ( tools?.Any() == true)
         {
             requestObj["tools"] = tools;
             requestObj["tool_choice"] = "auto";

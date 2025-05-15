@@ -7,6 +7,8 @@ using Application.Services.AI;
 using Application.Services.AI.Builders;
 using Application.Services.AI.Interfaces;
 using Application.Services.AI.PayloadBuilders;
+using Application.Services.AI.RequestHandling;
+using Application.Services.AI.RequestHandling.Interfaces;
 using Application.Services.AI.Streaming;
 using Application.Services.Chat;
 using Application.Services.Chat.Commands;
@@ -31,6 +33,13 @@ public static class DependencyInjection
         {
             Directory.CreateDirectory(uploadsBasePath);
         }
+
+
+
+        services.AddScoped<IHistoryProcessor, HistoryProcessor>();
+        services.AddScoped<IFileAttachmentService, FileAttachmentService>();
+        services.AddScoped<IToolDefinitionService, ToolDefinitionService>();
+        services.AddScoped<IAiRequestHandler, AiRequestHandler>();
 
 
         services.AddScoped<StreamProcessor>();

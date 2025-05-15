@@ -45,7 +45,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var processedMessages = ProcessMessagesForOpenAIInput(context.History);
         requestObj["input"] = processedMessages;
 
-        if (!context.IsThinking && tools?.Any() == true)
+        if ( tools?.Any() == true)
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
                 tools.Count, model.ModelCode);

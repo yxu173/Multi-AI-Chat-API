@@ -41,7 +41,7 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["safetySettings"] = safetySettings;
 
         // Add tools only if not in thinking mode
-        if (!context.IsThinking && tools?.Any() == true)
+        if ( tools?.Any() == true)
         {
             Logger?.LogInformation("Adding {ToolCount} tool declarations to Gemini payload for model {ModelCode}",
                  tools.Count, context.SpecificModel.ModelCode);

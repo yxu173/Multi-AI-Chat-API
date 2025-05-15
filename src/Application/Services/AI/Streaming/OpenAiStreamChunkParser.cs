@@ -32,6 +32,7 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
 
             var eventType = typeElement.GetString();
             string? textDelta = null;
+            string? thinkingDelta = null;
             ToolCallChunk? toolCallInfo = null;
             int? inputTokens = null;
             int? outputTokens = null;
@@ -142,6 +143,14 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
                 case "response.in_progress":
                     _logger?.LogTrace("[OpenAiParser] Received meta event: {EventType}", eventType);
                     break;
+                
+                case "response.reasoning_summary_text.delta":
+                    if (root.TryGetProperty("delta", out var reasoningDelta) && reasoningDelta.ValueKind == JsonValueKind.String)
+                    {
+                        thinkingDelta = reasoningDelta.GetString();
+                        _logger?.LogTrace("Parsed OpenAI reasoning delta: '{ThinkingDelta}'", thinkingDelta);
+                    }
+                    break;
 
                 default:
                     _logger?.LogWarning("Unhandled OpenAI event type: {EventType}", eventType);
@@ -150,6 +159,7 @@ public class OpenAiStreamChunkParser : IStreamChunkParser
 
             return new ParsedChunkInfo(
                 TextDelta: textDelta,
+                ThinkingDelta: thinkingDelta,
                 ToolCallInfo: toolCallInfo,
                 InputTokens: inputTokens,
                 OutputTokens: outputTokens,

@@ -39,7 +39,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var processedMessages = ProcessMessagesForGrokInput(context.History, context.AiAgent, context.UserSettings);
         requestObj["messages"] = processedMessages;
 
-        if (!context.IsThinking && tools != null && tools.Any())
+        if ( tools != null && tools.Any())
         {
             requestObj["tools"] = tools;
 
@@ -79,12 +79,8 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         
         if (useThinking)
         {
-            requestObj["reasoning_effort"] = "maximum";
-            Logger?.LogDebug("Set Grok 'reasoning_effort' to 'maximum' for thinking mode");
-        }
-        else
-        {
             requestObj["reasoning_effort"] = "high";
+            Logger?.LogDebug("Set Grok 'reasoning_effort' to 'maximum' for thinking mode");
         }
     }
 

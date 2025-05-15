@@ -40,7 +40,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var processedMessages = ProcessMessagesForQwenInput(context.History, context.AiAgent, context.UserSettings);
         requestObj["messages"] = processedMessages;
 
-        if (!context.IsThinking && tools != null && tools.Any())
+        if ( tools != null && tools.Any())
         {
             requestObj["tools"] = tools;
 
