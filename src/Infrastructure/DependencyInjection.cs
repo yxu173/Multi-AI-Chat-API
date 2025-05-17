@@ -318,6 +318,18 @@ public static class DependencyInjection
         services.AddScoped<IChatPlugin, CsvReaderPlugin>(sp =>
             sp.GetRequiredService<CsvReaderPlugin>()
         );
+        
+        // Register Jina DeepSearch Plugin - user activatable
+        services.AddScoped<JinaDeepSearchPlugin>(sp =>
+            new JinaDeepSearchPlugin(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                configuration["PluginSettings:Jina:ApiKey"],
+                sp.GetRequiredService<ILogger<JinaDeepSearchPlugin>>()
+            )
+        );
+        services.AddScoped<IChatPlugin, JinaDeepSearchPlugin>(sp =>
+            sp.GetRequiredService<JinaDeepSearchPlugin>()
+        );
 
         return services;
     }

@@ -69,13 +69,28 @@ public class AiRequestHandler : IAiRequestHandler
                                               ModelType.Gemini or ModelType.DeepSeek or 
                                               ModelType.Grok or ModelType.Qwen;
         
-        if (modelMightSupportTools && (updatedContext.Functions?.Any() == true || updatedContext.FunctionCall != null))
+        // Always check for available tools when the model supports them
+        if (modelMightSupportTools)
         {
             _logger.LogDebug("Model {ModelType} supports tools and functions are defined", modelType);
             toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(
                 updatedContext.UserId, modelType, cancellationToken);
                 
           
+            // If we have tool definitions, make sure we set FunctionCall to "auto" to enable them
+            if (toolDefinitions != null && toolDefinitions.Any())
+            {
+                _logger.LogInformation("Found {Count} plugin tools available for this request", toolDefinitions.Count);
+                
+                // Initialize Functions if not already set and set FunctionCall
+                if (updatedContext.Functions == null)
+                {
+                    _logger.LogDebug("Initializing Functions property in context");
+                    updatedContext = updatedContext with { Functions = new List<FunctionDefinitionDto>(), FunctionCall = "auto" };
+                }
+            }
+            
+            // Special handling for Grok and Qwen models
             if ((modelType == ModelType.Grok || modelType == ModelType.Qwen) && 
                 toolDefinitions != null && toolDefinitions.Any())
             {

@@ -24,6 +24,13 @@ public class ToolDefinitionService : IToolDefinitionService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    // Define a list of plugins that require explicit user activation
+    private static readonly HashSet<Guid> _requiresExplicitActivation = new HashSet<Guid>
+    {
+        // Jina DeepSearch plugin requires user activation
+        new Guid("b8d00934-726c-4cc2-8198-ee25ab2f3154")
+    };
+
     public async Task<List<object>?> GetToolDefinitionsAsync(
         Guid userId, 
         ModelType modelType, 
@@ -31,14 +38,38 @@ public class ToolDefinitionService : IToolDefinitionService
     {
         try
         {
-            // Determine disabled plugins for this user; by default all plugins are available unless explicitly disabled
-            var disabledPluginIds = (await _userPluginRepository.GetAllByUserIdAsync(userId))
+            // Get all user plugin preferences
+            var userPlugins = (await _userPluginRepository.GetAllByUserIdAsync(userId)).ToList();
+            
+            // Get plugins that are explicitly disabled
+            var disabledPluginIds = userPlugins
                 .Where(up => !up.IsEnabled)
                 .Select(up => up.PluginId)
                 .ToHashSet();
+            
+            // Get plugins that are explicitly enabled (needed for plugins requiring activation)
+            var explicitlyEnabledPluginIds = userPlugins
+                .Where(up => up.IsEnabled)
+                .Select(up => up.PluginId)
+                .ToHashSet();
 
-            var allPluginIds = _pluginExecutorFactory.GetAllPluginDefinitions().Select(d => d.Id);
-            var activePluginIds = allPluginIds.Where(id => !disabledPluginIds.Contains(id)).ToList();
+            var allPluginDefinitions = _pluginExecutorFactory.GetAllPluginDefinitions().ToList();
+            var allPluginIds = allPluginDefinitions.Select(d => d.Id);
+            
+            // For normal plugins: active unless disabled
+            // For plugins requiring activation: only active if explicitly enabled
+            var activePluginIds = allPluginIds
+                .Where(id => !disabledPluginIds.Contains(id) && 
+                             (!_requiresExplicitActivation.Contains(id) || explicitlyEnabledPluginIds.Contains(id)))
+                .ToList();
+                
+            _logger.LogInformation(
+                "Plugin activation: Standard plugins: {StandardCount}, Activation-required plugins: {ActivationCount}, User-enabled: {EnabledCount}, User-disabled: {DisabledCount}", 
+                allPluginIds.Count(id => !_requiresExplicitActivation.Contains(id)),
+                _requiresExplicitActivation.Count,
+                explicitlyEnabledPluginIds.Count,
+                disabledPluginIds.Count
+            );
 
             List<object>? toolDefinitions = null;
             
@@ -112,120 +143,139 @@ public class ToolDefinitionService : IToolDefinitionService
 
     private List<object>? GetToolDefinitionsForPayload(ModelType modelType, List<Guid> activePluginIds)
     {
-        if (activePluginIds == null || !activePluginIds.Any()) return null;
-
-        var allDefinitions = _pluginExecutorFactory.GetAllPluginDefinitions().ToList();
-        if (!allDefinitions.Any())
+        try 
         {
-            _logger.LogDebug("No plugin definitions found in the factory.");
-            return null;
-        }
-
-        var activeDefinitions = allDefinitions
-            .Where(def => activePluginIds.Contains(def.Id))
-            .ToList();
-
-        if (!activeDefinitions.Any())
-        {
-            _logger.LogWarning("No matching definitions found in factory for active plugin IDs: {ActiveIds}", string.Join(", ", activePluginIds));
-            return null;
-        }
-
-        _logger.LogInformation("Found {DefinitionCount} active plugin definitions to format for {ModelType}.", activeDefinitions.Count, modelType);
-        var formattedDefinitions = new List<object>();
-
-        foreach (var def in activeDefinitions)
-        {
-            if (def.ParametersSchema == null)
+            if (activePluginIds == null || !activePluginIds.Any())
             {
-                _logger.LogWarning("Skipping tool definition for {ToolName} ({ToolId}) due to missing parameter schema.", def.Name, def.Id);
-                continue;
+                _logger.LogDebug("No active plugin IDs provided");
+                return null;
             }
 
-            try
+            _logger.LogInformation("Getting tool definitions for {Count} active plugin IDs", activePluginIds.Count);
+            
+            var allDefinitions = _pluginExecutorFactory.GetAllPluginDefinitions().ToList();
+            _logger.LogDebug("Found {Count} total plugin definitions in factory", allDefinitions.Count);
+            
+            if (!allDefinitions.Any())
             {
-                switch (modelType)
+                _logger.LogDebug("No plugin definitions found in the factory.");
+                return null;
+            }
+
+            var activeDefinitions = allDefinitions
+                .Where(def => activePluginIds.Contains(def.Id))
+                .ToList();
+
+            if (!activeDefinitions.Any())
+            {
+                _logger.LogWarning("No matching definitions found in factory for active plugin IDs: {ActiveIds}", string.Join(", ", activePluginIds));
+                return null;
+            }
+
+            _logger.LogInformation("Found {DefinitionCount} active plugin definitions to format for {ModelType}.", activeDefinitions.Count, modelType);
+            var formattedDefinitions = new List<object>();
+
+            foreach (var def in activeDefinitions)
+            {
+                if (def.ParametersSchema == null)
                 {
-                    case ModelType.OpenAi:
-                        formattedDefinitions.Add(new
-                        {
-                            type = "function",
-                            function = new
+                    _logger.LogWarning("Skipping tool definition for {ToolName} ({ToolId}) due to missing parameter schema.", def.Name, def.Id);
+                    continue;
+                }
+
+                try
+                {
+                    switch (modelType)
+                    {
+                        case ModelType.OpenAi:
+                            // OpenAI requires the format with type, name, description, and parameters directly
+                            var functionObj = new
+                            {
+                                type = "function",
+                                name = def.Name,
+                                description = def.Description,
+                                parameters = def.ParametersSchema
+                            };
+                            
+                            // Log the function object to debug any issues
+                            _logger.LogDebug("OpenAI function format: {Function}", System.Text.Json.JsonSerializer.Serialize(functionObj));
+                            
+                            formattedDefinitions.Add(functionObj);
+                            break;
+
+                        case ModelType.Anthropic:
+                            formattedDefinitions.Add(new
+                            {
+                                name = def.Name,
+                                description = def.Description,
+                                input_schema = def.ParametersSchema
+                            });
+                            break;
+
+                        case ModelType.Gemini:
+                            formattedDefinitions.Add(new
                             {
                                 name = def.Name,
                                 description = def.Description,
                                 parameters = def.ParametersSchema
-                            }
-                        });
-                        break;
+                            });
+                            break;
+                            
+                        case ModelType.DeepSeek:
+                            _logger.LogWarning("Tool definition formatting for DeepSeek is not yet defined/supported. Skipping tool: {ToolName}", def.Name);
+                            break;
 
-                    case ModelType.Anthropic:
-                        formattedDefinitions.Add(new
-                        {
-                            name = def.Name,
-                            description = def.Description,
-                            input_schema = def.ParametersSchema
-                        });
-                        break;
-
-                    case ModelType.Gemini:
-                        formattedDefinitions.Add(new
-                        {
-                            name = def.Name,
-                            description = def.Description,
-                            parameters = def.ParametersSchema
-                        });
-                        break;
-                        
-                    case ModelType.DeepSeek:
-                        _logger.LogWarning("Tool definition formatting for DeepSeek is not yet defined/supported. Skipping tool: {ToolName}", def.Name);
-                        break;
-
-                    case ModelType.Grok:
-                        formattedDefinitions.Add(new 
-                        {
-                            type = "function",
-                            function = new
+                        case ModelType.Grok:
+                            formattedDefinitions.Add(new 
                             {
-                                name = def.Name,
-                                description = def.Description,
-                                parameters = def.ParametersSchema
-                            }
-                        });
-                        break;
+                                type = "function",
+                                function = new
+                                {
+                                    name = def.Name,
+                                    description = def.Description,
+                                    parameters = def.ParametersSchema
+                                }
+                            });
+                            break;
 
-                    case ModelType.Qwen:
-                        formattedDefinitions.Add(new 
-                        {
-                            type = "function",
-                            function = new
+                        case ModelType.Qwen:
+                            formattedDefinitions.Add(new 
                             {
-                                name = def.Name,
-                                description = def.Description,
-                                parameters = def.ParametersSchema
-                            }
-                        });
-                        break;
-
-                    default:
-                        _logger.LogWarning("Tool definition requested for provider {ModelType} which may not support the standard format or is unknown. Skipping tool: {ToolName}", modelType, def.Name);
-                        break;
+                                type = "function",
+                                function = new
+                                {
+                                    name = def.Name,
+                                    description = def.Description,
+                                    parameters = def.ParametersSchema
+                                }
+                            });
+                            break;
+                            
+                        default:
+                            _logger.LogWarning("Tool definition requested for provider {ModelType} which may not support the standard format or is unknown. Skipping tool: {ToolName}", modelType, def.Name);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error formatting tool definition for {ToolName} ({ToolId}) for provider {ModelType}", def.Name, def.Id, modelType);
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error formatting tool definition for {ToolName} ({ToolId}) for provider {ModelType}", def.Name, def.Id, modelType);
-            }
-        }
 
-        if (!formattedDefinitions.Any())
+            if (!formattedDefinitions.Any())
+            {
+                _logger.LogWarning("No tool definitions could be formatted successfully for {ModelType}.", modelType);
+                return null;
+            }
+
+            _logger.LogInformation("Successfully formatted {FormattedCount} tool definitions for {ModelType}.", formattedDefinitions.Count, modelType);
+            return formattedDefinitions;
+        }
+        catch (Exception ex)
         {
-            _logger.LogWarning("No tool definitions could be formatted successfully for {ModelType}.", modelType);
+            _logger.LogError(ex, "Unexpected error while getting tool definitions for payload: {Error}", ex.Message);
             return null;
         }
-
-        _logger.LogInformation("Successfully formatted {FormattedCount} tool definitions for {ModelType}.", formattedDefinitions.Count, modelType);
-        return formattedDefinitions;
     }
     
     public record FunctionDefinitionDto(

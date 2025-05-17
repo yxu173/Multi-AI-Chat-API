@@ -1,6 +1,7 @@
 using Application.Features.Plugins.AddUserPlugin;
 using Application.Features.Plugins.CreatePlugin;
 using Application.Features.Plugins.GetAllPlugins;
+using Application.Features.Plugins.ToggleUserPlugin;
 using FastEndpoints;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.Plugins;
@@ -29,6 +30,13 @@ public class PluginController : BaseController
     public async Task<IResult> GetAllPlugins()
     {
         var result = await new GetAllPluginsQuery().ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+    
+    [Microsoft.AspNetCore.Mvc.HttpPost("toggle")]
+    public async Task<IResult> TogglePlugin([Microsoft.AspNetCore.Mvc.FromBody] TogglePluginRequest request)
+    {
+        var result = await new ToggleUserPluginCommand(UserId, request.PluginId, request.IsEnabled).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

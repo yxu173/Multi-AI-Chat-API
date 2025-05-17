@@ -163,6 +163,27 @@ public class PluginExecutorFactory : IPluginExecutorFactory
             description: "Read and analyze CSV files that have been uploaded to the chat.",
             parametersSchemaJson: csvReaderSchema
         );
+        
+        string jinaDeepSearchSchema = """
+      {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query to execute with Jina DeepSearch."
+          }
+        },
+        "required": ["query"]
+      }
+      """;
+
+        RegisterPlugin(
+            id: new Guid("b8d00934-726c-4cc2-8198-ee25ab2f3154"),
+            pluginType: typeof(JinaDeepSearchPlugin),
+            name: "jina_deepsearch",
+            description: "Search the web with Jina's DeepSearch for real-time, comprehensive information.",
+            parametersSchemaJson: jinaDeepSearchSchema
+        );
     }
 
     private void RegisterPlugin(Guid id, Type pluginType, string name, string description, string parametersSchemaJson)

@@ -7,6 +7,7 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Mvc;
 using Web.Api.Contracts.Admin;
 using Web.Api.Extensions;
+using Web.Api.Infrastructure;
 
 namespace Web.Api.Controllers.Admin;
 
@@ -18,7 +19,7 @@ public class ProviderApiKeysController : AdminControllerBase
     public async Task<IResult> GetProviderApiKeys([Microsoft.AspNetCore.Mvc.FromQuery] Guid? providerId = null)
     {
         var result = await new GetProviderApiKeysQuery(providerId).ExecuteAsync();
-        
+
         return result.Match(
             apiKeys => Results.Ok(apiKeys.ToApiKeyResponses()),
             error => Results.Problem(statusCode: StatusCodes.Status400BadRequest)
@@ -31,14 +32,16 @@ public class ProviderApiKeysController : AdminControllerBase
     public async Task<IResult> GetProviderApiKeyById([FromRoute] Guid id)
     {
         var result = await new GetProviderApiKeysQuery().ExecuteAsync();
-        
+
         return result.Match(
-            apiKeys => {
+            apiKeys =>
+            {
                 var apiKey = apiKeys.FirstOrDefault(k => k.Id == id);
                 if (apiKey == null)
                 {
                     return Results.NotFound();
                 }
+
                 return Results.Ok(apiKey.ToApiKeyResponse());
             },
             error => Results.Problem(statusCode: StatusCodes.Status400BadRequest)
@@ -57,20 +60,18 @@ public class ProviderApiKeysController : AdminControllerBase
             UserId,
             request.MaxRequestsPerDay
         );
-        
+
         var result = await command.ExecuteAsync();
-        
-        return result.Match(
-            id => Results.Created($"/api/admin/provider-keys/{id}", id),
-            error => Results.Problem(statusCode: StatusCodes.Status400BadRequest)
-        );
+
+        return result.Match(Results.Ok, CustomResults.Problem);
     }
 
     [Microsoft.AspNetCore.Mvc.HttpPut("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IResult> UpdateProviderApiKey([FromRoute] Guid id, [Microsoft.AspNetCore.Mvc.FromBody] UpdateProviderApiKeyRequest request)
+    public async Task<IResult> UpdateProviderApiKey([FromRoute] Guid id,
+        [Microsoft.AspNetCore.Mvc.FromBody] UpdateProviderApiKeyRequest request)
     {
         var command = new UpdateProviderApiKeyCommand(
             id,
@@ -79,9 +80,9 @@ public class ProviderApiKeysController : AdminControllerBase
             request.MaxRequestsPerDay,
             request.IsActive
         );
-        
+
         var result = await command.ExecuteAsync();
-        
+
         return result.Match(
             success => Results.NoContent(),
             error => Results.Problem(statusCode: StatusCodes.Status400BadRequest)

@@ -50,8 +50,25 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
                 tools.Count, model.ModelCode);
+                
+            // Log the actual structure of the first tool to diagnose issues
+            if (tools.Count > 0)
+            {
+                var firstTool = System.Text.Json.JsonSerializer.Serialize(tools[0]);
+                Logger?.LogDebug("First tool structure: {FirstTool}", firstTool);
+            }
+            
             requestObj["tools"] = tools;
-            requestObj["tool_choice"] = "auto";
+            
+            // Set tool_choice to auto if we have functions available
+            if (!string.IsNullOrEmpty(context.FunctionCall))
+            {
+                requestObj["tool_choice"] = context.FunctionCall;
+            }
+            else 
+            {
+                requestObj["tool_choice"] = "auto";
+            }
         }
 
         requestObj.Remove("frequency_penalty");
