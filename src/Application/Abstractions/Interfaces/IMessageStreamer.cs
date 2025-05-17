@@ -9,5 +9,6 @@ public interface IMessageStreamer
         AiRequestContext requestContext,
         Message aiMessage,
         IAiModelService aiService,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null);
 }

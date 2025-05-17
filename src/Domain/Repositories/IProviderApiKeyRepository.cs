@@ -16,4 +16,10 @@ public interface IProviderApiKeyRepository
     Task<ProviderApiKey> UpdateAsync(ProviderApiKey providerApiKey, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task ResetAllDailyUsageAsync(CancellationToken cancellationToken = default);
+
+    // New methods for rate limiting and usage
+    Task MarkAsRateLimitedAsync(Guid apiKeyId, DateTime rateLimitedUntil, CancellationToken cancellationToken = default);
+    Task ClearRateLimitAsync(Guid apiKeyId, CancellationToken cancellationToken = default);
+    Task IncrementUsageAsync(Guid apiKeyId, CancellationToken cancellationToken = default);
+    Task ClearExpiredRateLimitsAsync(CancellationToken cancellationToken = default);
 }

@@ -5,6 +5,9 @@ using System.Runtime.CompilerServices;
 using Application.Abstractions.Interfaces;
 using Application.Services;
 using Application.Services.AI;
+using Application.Exceptions;
+using System.Net;
+using System.Net.Http.Headers;
 
 namespace Infrastructure.Services.AiProvidersServices.Base;
 
@@ -86,7 +89,12 @@ public abstract class BaseAiService : IAiModelService
 
     #endregion
 
-    #region Abstract Methods
+    #region Abstract Properties and Methods
+
+    /// <summary>
+    /// Gets the name of the AI provider (e.g., "OpenAI", "Anthropic").
+    /// </summary>
+    protected abstract string ProviderName { get; }
 
     /// <summary>
     /// Configures the HTTP client with provider-specific headers and settings.
@@ -103,7 +111,8 @@ public abstract class BaseAiService : IAiModelService
     /// </summary>
     public abstract IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
         AiRequestPayload request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null);
 
     #endregion
 
@@ -197,57 +206,78 @@ public abstract class BaseAiService : IAiModelService
     /// <summary>
     /// Handles API errors by reading the response content and throwing a formatted exception.
     /// </summary>
-    protected async Task HandleApiErrorAsync(HttpResponseMessage response, string providerName)
+    protected async Task HandleApiErrorAsync(HttpResponseMessage response, Guid? providerApiKeyId)
     {
-        string errorContent = "Could not read error content.";
+        if (response.StatusCode == HttpStatusCode.TooManyRequests) // 429
+        {
+            TimeSpan? retryAfter = null;
+            RetryConditionHeaderValue? retryAfterHeader = response.Headers.RetryAfter;
+            if (retryAfterHeader != null)
+            {
+                if (retryAfterHeader.Delta.HasValue)
+                {
+                    retryAfter = retryAfterHeader.Delta.Value;
+                }
+                else if (retryAfterHeader.Date.HasValue)
+                { 
+                    retryAfter = retryAfterHeader.Date.Value - DateTimeOffset.UtcNow;
+                }
+            }
+            // Default retry if not specified by header, e.g., 60 seconds
+            retryAfter ??= TimeSpan.FromSeconds(60);
+
+            string rateLimitMessage = $"{ProviderName} API reported a rate limit error (429 Too Many Requests).";
+            try
+            {
+                string errorContent = await response.Content.ReadAsStringAsync();
+                if (!string.IsNullOrWhiteSpace(errorContent)) 
+                {
+                    rateLimitMessage += $" Details: {errorContent.Substring(0, Math.Min(errorContent.Length, 500))}"; 
+                }
+            }
+            catch {}
+            
+            Console.WriteLine($"Rate Limit Error - {rateLimitMessage} - RetryAfter: {retryAfter?.TotalSeconds}s");
+            throw new ProviderRateLimitException(rateLimitMessage, HttpStatusCode.TooManyRequests, retryAfter, providerApiKeyId);
+        }
+
+        // Existing error handling for other status codes
+        string errorContentFallback = "Could not read error content.";
         string detailedError = "Unknown error structure.";
         try
         {
-            errorContent = await response.Content.ReadAsStringAsync();
-            detailedError = errorContent; // Default to raw content
+            errorContentFallback = await response.Content.ReadAsStringAsync();
+            detailedError = errorContentFallback; // Default to raw content
 
-            // Attempt to parse JSON error structure only if it looks like JSON
-            if (!string.IsNullOrWhiteSpace(errorContent) && errorContent.TrimStart().StartsWith("{"))
+            if (!string.IsNullOrWhiteSpace(errorContentFallback) && errorContentFallback.TrimStart().StartsWith("{"))
             {
                 try
                 {
-                    using var errorJson = JsonDocument.Parse(errorContent);
+                    using var errorJson = JsonDocument.Parse(errorContentFallback);
                     if (errorJson.RootElement.TryGetProperty("error", out var errorObj) && errorObj.ValueKind == JsonValueKind.Object)
                     {   
-                        // Try to extract common fields
                         var message = errorObj.TryGetProperty("message", out var msg) ? msg.GetString() : null;
                         var type = errorObj.TryGetProperty("type", out var typ) ? typ.GetString() : null;
-                        var param = errorObj.TryGetProperty("param", out var prm) ? prm.GetString() : null;
-                        var code = errorObj.TryGetProperty("code", out var cd) ? cd.GetString() : null;
-
-                        detailedError = $"Message: {message ?? "N/A"}, Type: {type ?? "N/A"}, Param: {param ?? "N/A"}, Code: {code ?? "N/A"}";
+                        detailedError = $"Message: {message ?? "N/A"}, Type: {type ?? "N/A"}";
                     }
-                    else if (errorJson.RootElement.TryGetProperty("detail", out var detailProp)) // Another common pattern
+                    else if (errorJson.RootElement.TryGetProperty("detail", out var detailProp))
                     {
                         detailedError = $"Detail: {detailProp.ToString()}";
                     }
-                    // Add more specific parsing logic here if needed for different providers
                 }
                 catch (JsonException jsonEx)
                 { 
-                    // Content started like JSON but failed to parse
-                    detailedError = $"Failed to parse JSON error: {jsonEx.Message}. Raw content: {errorContent}";
+                    detailedError = $"Failed to parse JSON error: {jsonEx.Message}. Raw content: {errorContentFallback}";
                 }
             }
-            // If not JSON or parsing failed, detailedError remains the raw content
         }
         catch (Exception readEx)
         {
-            // Error reading the error response itself
-            errorContent = $"Failed to read error response: {readEx.Message}";
-            detailedError = errorContent;
+            detailedError = $"Failed to read error response: {readEx.Message}";
         }
 
-        var errorMessage = $"{providerName} API Error ({(int)response.StatusCode} {response.ReasonPhrase}): {detailedError}";
-        Console.WriteLine($"Error - {errorMessage}"); // Log the detailed error
-        
-        // Throw a standard exception with the formatted message
-        // Pass the original exception if it was a read error (captured in the outer scope if needed, otherwise null)
+        var errorMessage = $"{ProviderName} API Error ({(int)response.StatusCode} {response.ReasonPhrase}): {detailedError}";
+        Console.WriteLine($"Error - {errorMessage}");
         throw new HttpRequestException(errorMessage, null, response.StatusCode);
     }
 

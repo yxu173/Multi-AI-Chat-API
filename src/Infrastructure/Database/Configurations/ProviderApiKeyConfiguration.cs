@@ -27,10 +27,10 @@ public class ProviderApiKeyConfiguration : IEntityTypeConfiguration<ProviderApiK
             .IsRequired()
             .HasDefaultValue(true);
 
-        builder.Property(k => k.DailyQuota)
+        builder.Property(k => k.MaxRequestsPerDay)
             .IsRequired();
 
-        builder.Property(k => k.DailyUsage)
+        builder.Property(k => k.UsageCountToday)
             .IsRequired()
             .HasDefaultValue(0);
 
@@ -40,7 +40,7 @@ public class ProviderApiKeyConfiguration : IEntityTypeConfiguration<ProviderApiK
         builder.Property(k => k.CreatedByUserId)
             .IsRequired();
 
-        builder.Property(k => k.LastUsed);
+        builder.Property(k => k.LastUsedTimestamp);
 
         builder.HasOne(k => k.AiProvider)
             .WithMany()

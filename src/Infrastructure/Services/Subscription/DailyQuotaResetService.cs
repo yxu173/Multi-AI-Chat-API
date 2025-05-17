@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Application.Abstractions.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -44,10 +45,14 @@ public class DailyQuotaResetService : BackgroundService
                     var subscriptionService = scope.ServiceProvider.GetRequiredService<ISubscriptionService>();
                     var keyManagementService = scope.ServiceProvider.GetRequiredService<IProviderKeyManagementService>();
 
+                    _logger.LogInformation("Attempting to reset daily usage for user subscriptions and API keys...");
                     await subscriptionService.ResetDailyUsageAsync(stoppingToken);
                     await keyManagementService.ResetDailyUsageAsync(stoppingToken);
-
                     _logger.LogInformation("Successfully reset all daily usage counters.");
+
+                    _logger.LogInformation("Attempting to clear expired rate limits for API keys...");
+                    await keyManagementService.ClearExpiredRateLimitsAsync(stoppingToken);
+                    _logger.LogInformation("Successfully cleared expired rate limits.");
                 }
 
                 // Calculate delay for the next day

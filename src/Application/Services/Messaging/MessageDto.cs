@@ -23,4 +23,5 @@ public record MessageDto(
     public string? ThinkingContent { get; init; }
     public FunctionCall? FunctionCall { get; init; }
     public FunctionResponse? FunctionResponse { get; init; }
+    public string? Status { get; init; }
 } 

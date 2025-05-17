@@ -1,15 +1,15 @@
 using Application.Abstractions.Data;
 using Application.Abstractions.Interfaces;
+using Application.Exceptions;
 using Domain.Enums;
-using Domain.ValueObjects;
+using Domain.Aggregates.Admin;
 using Infrastructure.Services.AiProvidersServices;
 using Infrastructure.Services.Subscription;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using System.Net.Http;
-using Application.Services;
+using Domain.Aggregates.Chats;
 
 public class AiModelServiceFactory : IAiModelServiceFactory
 {
@@ -18,38 +18,107 @@ public class AiModelServiceFactory : IAiModelServiceFactory
     private readonly IConfiguration _configuration;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IProviderKeyManagementService _keyManagementService;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<AiModelServiceFactory> _logger;
 
     public AiModelServiceFactory(
         IServiceProvider serviceProvider,
         IApplicationDbContext dbContext,
         IConfiguration configuration,
         ISubscriptionService subscriptionService,
-        IProviderKeyManagementService keyManagementService)
+        IProviderKeyManagementService keyManagementService,
+        IHttpClientFactory httpClientFactory,
+        ILogger<AiModelServiceFactory> logger)
     {
-        _serviceProvider = serviceProvider;
-        _dbContext = dbContext;
-        _configuration = configuration;
-        _subscriptionService = subscriptionService;
-        _keyManagementService = keyManagementService;
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
+        _keyManagementService = keyManagementService ?? throw new ArgumentNullException(nameof(keyManagementService));
+        _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    [Obsolete("Use GetServiceContextAsync instead for better error handling and API key management.")]
     public IAiModelService GetService(Guid userId, Guid modelId, Guid? aiAgentId = null)
     {
-        return GetServiceAsync(userId, modelId, aiAgentId, CancellationToken.None).GetAwaiter().GetResult();
+        var contextResult = GetServiceContextAsync(userId, modelId, aiAgentId, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        return contextResult?.Service ??
+               throw new Exception("Failed to get AI service from obsolete GetService method.");
     }
 
-    private async Task<IAiModelService> GetServiceAsync(Guid userId, Guid modelId, Guid? aiAgentId,
+    public async Task<AiServiceContext?> GetServiceContextAsync(
+        Guid userId,
+        Guid modelId,
+        Guid? aiAgentId,
         CancellationToken cancellationToken = default)
     {
+        var (hasQuota, quotaErrorMessage) =
+            await _subscriptionService.CheckUserQuotaAsync(userId, cancellationToken: cancellationToken);
+        if (!hasQuota)
+        {
+            throw new QuotaExceededException(quotaErrorMessage ?? "Quota exceeded for user subscription.");
+        }
+
         var aiModel = await _dbContext.AiModels
                           .Include(m => m.AiProvider)
                           .FirstOrDefaultAsync(m => m.Id == modelId, cancellationToken)
                       ?? throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
 
-        var apiKey = await GetApiKeyAsync(userId, aiModel.AiProviderId, cancellationToken);
+        string? apiKeySecretToUse = null;
+        ProviderApiKey? managedApiKey = null;
 
-        var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
+        managedApiKey =
+            await _keyManagementService.GetProviderApiKeyObjectAsync(aiModel.AiProviderId, cancellationToken);
+        if (managedApiKey != null)
+        {
+            apiKeySecretToUse = managedApiKey.Secret;
+            _logger.LogInformation("Using managed API key {ApiKeyId} for provider {ProviderId}", managedApiKey.Id,
+                aiModel.AiProviderId);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "No managed API key available from pool for provider {ProviderId}. Falling back to provider default key.",
+                aiModel.AiProviderId);
+            apiKeySecretToUse = aiModel.AiProvider.DefaultApiKey;
+            if (!string.IsNullOrEmpty(apiKeySecretToUse))
+            {
+                _logger.LogInformation("Using default API key for provider {ProviderId}", aiModel.AiProviderId);
+            }
+        }
 
+        if (string.IsNullOrEmpty(apiKeySecretToUse) && aiModel.ModelType != ModelType.Imagen &&
+            aiModel.ModelType != ModelType.AimlFlux)
+        {
+            _logger.LogError(
+                "No API key available for provider {ProviderName} (ID: {ProviderId}) and model {ModelName}. Neither managed nor default key found.",
+                aiModel.AiProvider.Name, aiModel.AiProviderId, aiModel.Name);
+            throw new Exception(
+                $"No API keys available for provider {aiModel.AiProvider.Name}. Please configure a managed key or a default key for the provider.");
+        }
+
+        IAiModelService serviceInstance = InstantiateServiceModel(aiModel, apiKeySecretToUse);
+
+        if (managedApiKey != null)
+        {
+            return new AiServiceContext(serviceInstance, managedApiKey);
+        }
+
+        if (!string.IsNullOrEmpty(apiKeySecretToUse) || aiModel.ModelType == ModelType.Imagen ||
+            aiModel.ModelType == ModelType.AimlFlux)
+        {
+            return new AiServiceContext(serviceInstance, apiKeySecretToUse);
+        }
+
+        _logger.LogError(
+            "Failed to create AiServiceContext for model {ModelId}, no valid API key or configuration found.", modelId);
+        return null;
+    }
+
+    private IAiModelService InstantiateServiceModel(AiModel aiModel, string? apiKeySecret)
+    {
         var openAiLogger = _serviceProvider.GetService<ILogger<OpenAiService>>();
         var anthropicLogger = _serviceProvider.GetService<ILogger<AnthropicService>>();
         var deepSeekLogger = _serviceProvider.GetService<ILogger<DeepSeekService>>();
@@ -61,53 +130,27 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => new OpenAiService(httpClientFactory, apiKey, aiModel.ModelCode),
-            ModelType.Anthropic => new AnthropicService(httpClientFactory, apiKey, aiModel.ModelCode),
-            ModelType.DeepSeek => new DeepSeekService(httpClientFactory, apiKey, aiModel.ModelCode),
-            ModelType.Gemini => new GeminiService(httpClientFactory, apiKey, aiModel.ModelCode),
-            ModelType.AimlFlux => new AimlApiService(httpClientFactory, apiKey, aiModel.ModelCode, aimlLogger),
-            ModelType.Imagen => CreateImagenService(httpClientFactory, apiKey, aiModel.ModelCode, imagenLogger),
-            ModelType.Grok => new GrokService(httpClientFactory, apiKey, aiModel.ModelCode),
-            ModelType.Qwen => new QwenService(httpClientFactory, apiKey, aiModel.ModelCode),
-            _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported.")
+            ModelType.OpenAi => new OpenAiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, openAiLogger),
+            ModelType.Anthropic => new AnthropicService(_httpClientFactory, apiKeySecret, aiModel.ModelCode,
+                anthropicLogger),
+            ModelType.DeepSeek => new DeepSeekService(_httpClientFactory, apiKeySecret, aiModel.ModelCode,
+                deepSeekLogger),
+            ModelType.Gemini => new GeminiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, geminiLogger),
+            ModelType.AimlFlux => new AimlApiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, aimlLogger),
+            ModelType.Imagen => CreateImagenService(_httpClientFactory, aiModel.ModelCode, imagenLogger),
+            ModelType.Grok => new GrokService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, grokLogger),
+            ModelType.Qwen => new QwenService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, qwenLogger),
+            _ => throw new NotSupportedException($"Model type {aiModel} not supported.")
         };
     }
 
-    private ImagenService CreateImagenService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode,
+    private ImagenService CreateImagenService(IHttpClientFactory httpClientFactory, string modelCode,
         ILogger<ImagenService>? logger)
     {
         var projectId = _configuration["AI:Imagen:ProjectId"] ??
                         throw new InvalidOperationException("Imagen ProjectId not configured.");
         var region = _configuration["AI:Imagen:Region"] ??
                      throw new InvalidOperationException("Imagen Region not configured.");
-
         return new ImagenService(httpClientFactory, projectId, region, modelCode, logger);
-    }
-
-    private async Task<string> GetApiKeyAsync(Guid userId, Guid providerId,
-        CancellationToken cancellationToken = default)
-    {
-        // Check user quota before proceeding
-        var (hasQuota, errorMessage) =
-            await _subscriptionService.CheckUserQuotaAsync(userId, cancellationToken: cancellationToken);
-        if (!hasQuota)
-        {
-            throw new QuotaExceededException(errorMessage ?? "Quota exceeded for user subscription.");
-        }
-
-        // Get an API key from the admin-managed key pool
-        var apiKey = await _keyManagementService.GetAvailableApiKeyAsync(providerId, cancellationToken);
-        if (!string.IsNullOrEmpty(apiKey))
-        {
-            return apiKey;
-        }
-
-        // If all else fails, check if there's a default key configured for the provider
-        var provider = await _dbContext.AiProviders.FindAsync(new object[] { providerId }, cancellationToken)
-                       ?? throw new Exception($"AI Provider with ID {providerId} not found.");
-
-        return provider.DefaultApiKey
-               ?? throw new Exception(
-                   $"No API keys available for provider {provider.Name}. Please try again later or contact support.");
     }
 }

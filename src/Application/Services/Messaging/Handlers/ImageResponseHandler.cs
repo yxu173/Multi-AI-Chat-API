@@ -25,13 +25,14 @@ public sealed class ImageResponseHandler : IResponseHandler
         Message aiMessage,
         IAiModelService aiService,
         ModelType modelType,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null)
     {
         var payload = await _aiRequestHandler.PrepareRequestPayloadAsync(requestContext, cancellationToken);
         string? markdown = null;
         bool completed = false;
 
-        await foreach (var chunk in aiService.StreamResponseAsync(payload, cancellationToken))
+        await foreach (var chunk in aiService.StreamResponseAsync(payload, cancellationToken, providerApiKeyId))
         {
             if (cancellationToken.IsCancellationRequested) break;
             if (!string.IsNullOrEmpty(chunk.RawContent)) markdown = chunk.RawContent;

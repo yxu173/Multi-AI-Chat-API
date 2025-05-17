@@ -18,7 +18,8 @@ public interface IAiModelService
 {
     IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
         AiRequestPayload request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null);
 }
 
 /// <summary>

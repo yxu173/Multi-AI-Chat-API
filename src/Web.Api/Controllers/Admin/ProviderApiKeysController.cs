@@ -55,7 +55,7 @@ public class ProviderApiKeysController : AdminControllerBase
             request.ApiSecret,
             request.Label,
             UserId,
-            request.DailyQuota
+            request.MaxRequestsPerDay
         );
         
         var result = await command.ExecuteAsync();
@@ -76,7 +76,7 @@ public class ProviderApiKeysController : AdminControllerBase
             id,
             request.ApiSecret,
             request.Label,
-            request.DailyQuota,
+            request.MaxRequestsPerDay,
             request.IsActive
         );
         
@@ -99,10 +99,10 @@ public static class ProviderApiKeyExtensions
             apiKey.Label,
             "••••••••" + apiKey.Secret.Substring(Math.Max(0, apiKey.Secret.Length - 4)),
             apiKey.IsActive,
-            apiKey.DailyQuota,
-            apiKey.DailyUsage,
+            apiKey.MaxRequestsPerDay,
+            apiKey.UsageCountToday,
             apiKey.CreatedAt,
-            apiKey.LastUsed
+            apiKey.LastUsedTimestamp
         );
     }
 

@@ -35,7 +35,8 @@ public abstract class BaseStreamingResponseHandler : IResponseHandler
         Message aiMessage,
         IAiModelService aiService,
         ModelType modelType,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null)
     {
         var finalContent = new StringBuilder();
         var toolResults = new List<MessageDto>();
@@ -63,7 +64,7 @@ public abstract class BaseStreamingResponseHandler : IResponseHandler
             var ctxTurn = requestContext with { History = historyTurn };
             var payload = await _aiRequestHandler.PrepareRequestPayloadAsync(ctxTurn, cancellationToken);
 
-            var rawStream = aiService.StreamResponseAsync(payload, cancellationToken);
+            var rawStream = aiService.StreamResponseAsync(payload, cancellationToken, providerApiKeyId);
             toolResults.Clear();
             toolRequestMsg = null;
 

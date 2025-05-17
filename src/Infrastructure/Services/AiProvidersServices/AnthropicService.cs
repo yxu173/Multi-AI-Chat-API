@@ -12,115 +12,165 @@ using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using Application.Services.AI;
+using Microsoft.Extensions.Logging;
+using System.Net.Http;
+using System;
 
 public class AnthropicService : BaseAiService
 {
-    private const string BaseUrl = "https://api.anthropic.com/v1/";
-    private const string AnthropicVersion = "2023-06-01";
+    private const string AnthropicBaseUrl = "https://api.anthropic.com/v1/";
+    private const string AnthropicApiVersion = "2023-06-01";
+    private readonly ILogger<AnthropicService> _logger;
 
-    public AnthropicService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
+    protected override string ProviderName => "Anthropic";
+
+    public AnthropicService(
+        IHttpClientFactory httpClientFactory, 
+        string? apiKey, 
+        string modelCode, 
+        ILogger<AnthropicService> logger)
+        : base(httpClientFactory, apiKey, modelCode, AnthropicBaseUrl)
     {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     protected override void ConfigureHttpClient()
     {
         HttpClient.DefaultRequestHeaders.Clear();
-        HttpClient.DefaultRequestHeaders.Add("x-api-key", ApiKey);
-        HttpClient.DefaultRequestHeaders.Add("anthropic-version", AnthropicVersion);
-        HttpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+        if (!string.IsNullOrEmpty(ApiKey))
+        {
+            HttpClient.DefaultRequestHeaders.Add("x-api-key", ApiKey);
+        }
+        HttpClient.DefaultRequestHeaders.Add("anthropic-version", AnthropicApiVersion);
+        HttpClient.DefaultRequestHeaders.Add("Content-Type", "application/json");
     }
 
     protected override string GetEndpointPath() => "messages";
 
     protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var reader = new StreamReader(stream, Encoding.UTF8);
-        StringBuilder dataBuffer = new StringBuilder();
+        string? currentEvent = null;
 
         while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
         {
-            var line = await reader.ReadLineAsync(cancellationToken);
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
             if (cancellationToken.IsCancellationRequested) break;
 
             if (string.IsNullOrWhiteSpace(line))
             {
-                // Blank line indicates end of event
-                if (dataBuffer.Length > 0)
+                currentEvent = null;
+                continue;
+            }
+
+            if (line.StartsWith("event: "))
+            {
+                currentEvent = line.Substring("event: ".Length).Trim();
+                _logger.LogTrace("Anthropic stream event type: {EventType}", currentEvent);
+            }
+            else if (line.StartsWith("data: "))
+            {
+                var jsonData = line.Substring("data: ".Length).Trim();
+                if (!string.IsNullOrWhiteSpace(jsonData))
                 {
-                    var completeJsonData = dataBuffer.ToString();
-                    dataBuffer.Clear();
-                    if (!string.IsNullOrWhiteSpace(completeJsonData))
-                    {
-                        yield return completeJsonData;
-                    }
+                    _logger.LogTrace("Anthropic stream data for event '{EventType}': {JsonData}", currentEvent ?? "unknown", jsonData.Substring(0, Math.Min(jsonData.Length, 100)));
+                    yield return jsonData;
                 }
             }
-            else if (line.StartsWith("data:"))
+            else
             {
-                   var dataContent = line.Length > 5 ? line.Substring(5).TrimStart() : string.Empty;
-                dataBuffer.Append(dataContent);
+                _logger.LogTrace("Anthropic stream ignored line: {Line}", line);
             }
         }
-        
-        if (dataBuffer.Length > 0)
-        {
-             var finalJsonData = dataBuffer.ToString();
-             if (!string.IsNullOrWhiteSpace(finalJsonData))
-             {
-                 yield return finalJsonData;
-             }
-        }
+        _logger.LogTrace("Finished reading from Anthropic stream or cancellation requested.");
     }
 
     public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
-        AiRequestPayload requestPayload, 
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        AiRequestPayload requestPayload,
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null)
     {
         var request = CreateRequest(requestPayload);
         HttpResponseMessage? response = null;
+        bool initialRequestSuccess = false;
 
         try
         {
-            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            _logger.LogDebug("Sending request to Anthropic endpoint: {Endpoint}, Model: {Model}", request.RequestUri, ModelCode);
+            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
+                yield break;
+            }
+            _logger.LogDebug("Successfully received stream response header from Anthropic model {ModelCode}", ModelCode);
+            initialRequestSuccess = true;
         }
-        catch (HttpRequestException httpEx)
-        {            
-            await HandleApiErrorAsync(response ?? new HttpResponseMessage(httpEx.StatusCode ?? System.Net.HttpStatusCode.InternalServerError), "Anthropic");
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation(ex, "Anthropic stream request operation was cancelled before/during HTTP send for model {ModelCode}. URI: {Uri}", ModelCode, request.RequestUri);
             yield break;
         }
-        catch (Exception ex)
+        catch (Exception ex) // Catches errors from SendAsync or HandleApiErrorAsync
         {
-            Console.WriteLine($"Error sending request to Anthropic: {ex.Message}");
-            throw;
+            _logger.LogError(ex, "Error during Anthropic API request setup or initial response handling for model {ModelCode}. URI: {Uri}", ModelCode, request.RequestUri);
+            throw; 
+        }
+        
+        if (!initialRequestSuccess || response == null) 
+        {
+            response?.Dispose();
+            yield break;
         }
 
+        // Process the stream
+        _logger.LogDebug("Anthropic request successful (HTTP {StatusCode}), beginning to process stream.", response.StatusCode);
         try
         {
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                                .WithCancellation(cancellationToken))
+                               .WithCancellation(cancellationToken).ConfigureAwait(false))
             {
-                if (cancellationToken.IsCancellationRequested) break;
-
+                // ReadStreamAsync for Anthropic should handle cancellation internally or by WithCancellation.
                 bool isCompletion = false;
+                string? eventTypeWithinJson = null;
                 try
                 {
                     using var doc = JsonDocument.Parse(jsonChunk);
                     if (doc.RootElement.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)
                     {
-                        isCompletion = typeElement.GetString() == "message_stop";
+                        eventTypeWithinJson = typeElement.GetString();
+                        if (eventTypeWithinJson == "message_stop") 
+                        {
+                            isCompletion = true;
+                            _logger.LogDebug("Anthropic message_stop event received.");
+                        }
+                        if (eventTypeWithinJson == "error")
+                        {
+                            _logger.LogError("Error event received in Anthropic stream: {JsonChunk}", jsonChunk);
+                            // Potentially break or handle as a stream-terminating error depending on policy.
+                            // For now, we yield it and let downstream decide. If it means the stream is unusable, consider breaking.
+                        }
                     }
                 }
-                catch (JsonException) { /* Ignore parse errors, yield raw chunk anyway */ }
-
+                catch (JsonException jsonEx)
+                { 
+                    _logger.LogWarning(jsonEx, "JSON parsing error in Anthropic stream chunk. Raw chunk: {JsonChunk}", jsonChunk);
+                }
+                _logger.LogTrace("Yielding Anthropic chunk. Event in JSON: '{EventType}', IsCompletion: {IsCompletion}", eventTypeWithinJson ?? "N/A", isCompletion);
                 yield return new AiRawStreamChunk(jsonChunk, isCompletion);
+                if (isCompletion) break; // Stop processing if it's the final message_stop event.
+            }
+            
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug("Finished reading Anthropic stream for request to {Endpoint}", request.RequestUri);
             }
         }
         finally
-        { 
-            response.Dispose();
+        {
+            response.Dispose(); // response is guaranteed non-null here
         }
     }
 }

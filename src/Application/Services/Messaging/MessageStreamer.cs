@@ -48,7 +48,8 @@ public class MessageStreamer : IMessageStreamer
         AiRequestContext requestContext,
         Message aiMessage,
         IAiModelService aiService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null)
     {
         var chatSessionId = requestContext.ChatSession.Id;
         var aiModel = requestContext.SpecificModel;
@@ -74,7 +75,7 @@ public class MessageStreamer : IMessageStreamer
                 throw new InvalidOperationException($"No response handler registered for {responseType}");
             }
 
-            var handlerResult = await handler.HandleAsync(requestContext, aiMessage, aiService, modelType, linkedToken);
+            var handlerResult = await handler.HandleAsync(requestContext, aiMessage, aiService, modelType, linkedToken, providerApiKeyId);
 
             totalInputTokens = handlerResult.TotalInputTokens;
             totalOutputTokens = handlerResult.TotalOutputTokens;

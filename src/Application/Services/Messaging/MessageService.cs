@@ -104,4 +104,30 @@ public class MessageService
     {
         return await _fileAttachmentRepository.GetByMessageIdAsync(messageId, cancellationToken);
     }
+
+    public async Task FailMessageAsync(Message message, string failureReason, CancellationToken cancellationToken = default)
+    {
+        if (message == null) throw new ArgumentNullException(nameof(message));
+
+        message.FailMessage(); // Sets status to Failed
+        // Prepend or append the failure reason to the content, or set it as content if empty.
+        if (string.IsNullOrWhiteSpace(message.Content))
+        {
+            message.UpdateContent($"[Error: {failureReason}]");
+        }
+        else
+        {
+            message.UpdateContent($"{message.Content}\n[Error: {failureReason}]");
+        }
+        
+        await _messageRepository.UpdateAsync(message, cancellationToken);
+
+        // Notify clients that the message has failed
+        var messageDto = new MessageDto(message.Content, message.IsFromAi, message.Id)
+        {
+            Status = message.Status.ToString(), // Send the updated status
+            FileAttachments = message.FileAttachments.ToList()
+        };
+        await new MessageUpdateNotification(message.ChatSessionId, messageDto).PublishAsync(cancellation: cancellationToken);
+    }
 }

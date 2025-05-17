@@ -21,5 +21,6 @@ public interface IResponseHandler
         Message aiMessage,
         IAiModelService aiService,
         ModelType modelType,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null);
 }

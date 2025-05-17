@@ -8,22 +8,22 @@ public record ProviderApiKeyResponse(
     string Label,
     string MaskedSecret,
     bool IsActive,
-    int DailyQuota,
-    int DailyUsage,
+    int MaxRequestsPerDay,
+    int UsageCountToday,
     DateTime CreatedAt,
-    DateTime? LastUsed
+    DateTime? LastUsedTimestamp
 );
 
 public record AddProviderApiKeyRequest(
     Guid AiProviderId,
     string ApiSecret,
     string Label,
-    int DailyQuota = 1000
+    int MaxRequestsPerDay = 1000
 );
 
 public record UpdateProviderApiKeyRequest(
     string? ApiSecret = null,
     string? Label = null,
-    int? DailyQuota = null,
+    int? MaxRequestsPerDay = null,
     bool? IsActive = null
 );

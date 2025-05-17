@@ -11,11 +11,14 @@ public sealed class ProviderApiKey : BaseEntity
     public string Secret { get; private set; }
     public string Label { get; private set; }
     public bool IsActive { get; private set; }
-    public int DailyQuota { get; private set; }
-    public int DailyUsage { get; private set; }
+    public int MaxRequestsPerDay { get; private set; }
+    public int UsageCountToday { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public Guid CreatedByUserId { get; private set; }
-    public DateTime? LastUsed { get; private set; }
+    public DateTime? LastUsedTimestamp { get; private set; }
+
+    public bool IsRateLimited { get; private set; }
+    public DateTime? RateLimitedUntil { get; private set; }
 
     [JsonIgnore]
     public AiProvider AiProvider { get; private set; }
@@ -29,7 +32,7 @@ public sealed class ProviderApiKey : BaseEntity
         string secret, 
         string label, 
         Guid createdByUserId,
-        int dailyQuota = 1000)
+        int maxRequestsPerDay = 1000)
     {
         if (aiProviderId == Guid.Empty)
             throw new ArgumentException("AiProviderId cannot be empty.", nameof(aiProviderId));
@@ -47,10 +50,12 @@ public sealed class ProviderApiKey : BaseEntity
             Secret = secret,
             Label = string.IsNullOrWhiteSpace(label) ? $"Key created on {DateTime.UtcNow:yyyy-MM-dd}" : label,
             IsActive = true,
-            DailyQuota = dailyQuota,
-            DailyUsage = 0,
+            MaxRequestsPerDay = maxRequestsPerDay,
+            UsageCountToday = 0,
             CreatedAt = DateTime.UtcNow,
-            CreatedByUserId = createdByUserId
+            CreatedByUserId = createdByUserId,
+            IsRateLimited = false,
+            RateLimitedUntil = null
         };
     }
 
@@ -74,13 +79,15 @@ public sealed class ProviderApiKey : BaseEntity
 
     public void UpdateUsage()
     {
-        DailyUsage++;
-        LastUsed = DateTime.UtcNow;
+        UsageCountToday++;
+        LastUsedTimestamp = DateTime.UtcNow;
     }
 
     public void ResetDailyUsage()
     {
-        DailyUsage = 0;
+        UsageCountToday = 0;
+        IsRateLimited = false;
+        RateLimitedUntil = null;
     }
 
     public void SetDailyQuota(int quota)
@@ -88,11 +95,23 @@ public sealed class ProviderApiKey : BaseEntity
         if (quota < 0)
             throw new ArgumentException("Quota cannot be negative.", nameof(quota));
 
-        DailyQuota = quota;
+        MaxRequestsPerDay = quota;
     }
 
     public bool HasAvailableQuota()
     {
-        return DailyUsage < DailyQuota;
+        return UsageCountToday < MaxRequestsPerDay;
+    }
+
+    public void MarkAsRateLimited(DateTime until)
+    {
+        IsRateLimited = true;
+        RateLimitedUntil = until;
+    }
+
+    public void ClearRateLimit()
+    {
+        IsRateLimited = false;
+        RateLimitedUntil = null;
     }
 }

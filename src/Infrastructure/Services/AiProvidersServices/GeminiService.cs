@@ -12,56 +12,97 @@ using System.IO;
 using System.Net.Http.Headers;
 using Application.Services;
 using Application.Services.AI;
-
+using Microsoft.Extensions.Logging;
 
 public class GeminiService : BaseAiService, IAiFileUploader
 {
     private const string BaseUrl = "https://generativelanguage.googleapis.com/";
+    private readonly ILogger<GeminiService> _logger;
 
-    public GeminiService(IHttpClientFactory httpClientFactory, string apiKey, string modelCode)
+    public GeminiService(
+        IHttpClientFactory httpClientFactory, 
+        string? apiKey,
+        string modelCode,
+        ILogger<GeminiService> logger)
         : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    protected override string ProviderName => "Gemini";
 
     protected override void ConfigureHttpClient()
     {
+        // Gemini API key is usually passed in the URL for REST,
+        // or via gRPC metadata. If specific headers are needed for other Gemini scenarios,
+        // they would be configured here. For now, assuming key in URL is primary.
     }
 
     protected override string GetEndpointPath() => $"v1beta/models/{ModelCode}:streamGenerateContent?key={ApiKey}";
 
     protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true };
         
-        await foreach (var jsonElement in JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(stream, options, cancellationToken))
+        // Gemini streams an array of 'GenerateContentResponse' objects.
+        // Each object is a complete JSON.
+        await foreach (var jsonElement in JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(stream, options, cancellationToken).ConfigureAwait(false))
         {
-            if (cancellationToken.IsCancellationRequested) break;
-            yield return jsonElement.GetRawText();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("Gemini stream reading cancelled.");
+                break;
+            }
+            // Extract the text content if needed here, or pass the whole JSON element raw text
+            // For now, passing raw JSON text of the element.
+            string rawJsonChunk = jsonElement.GetRawText();
+             _logger.LogTrace("Gemini stream chunk: {Chunk}", rawJsonChunk);
+            yield return rawJsonChunk;
         }
     }
-
 
     public async Task<AiFileUploadResult?> UploadFileForAiAsync(byte[] fileBytes, string mimeType, string fileName, CancellationToken cancellationToken)
     {
         // 1. Upload the file bytes
         var uploadUrl = $"https://generativelanguage.googleapis.com/upload/v1beta/files?key={ApiKey}";
+        _logger.LogInformation("Uploading file to Gemini: {FileName}, MIME: {MimeType}, Size: {Size} bytes", fileName, mimeType, fileBytes.Length);
+
         var uploadRequest = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
         uploadRequest.Headers.Add("X-Goog-Upload-Protocol", "raw");
         uploadRequest.Content = new ByteArrayContent(fileBytes);
         uploadRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
-        uploadRequest.Content.Headers.ContentLength = fileBytes.Length;
+        // ContentLength is automatically set by ByteArrayContent
 
-        HttpResponseMessage uploadResponse = await HttpClient.SendAsync(uploadRequest, cancellationToken);
+        HttpResponseMessage uploadResponse;
+        try
+        {
+            uploadResponse = await HttpClient.SendAsync(uploadRequest, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HTTP request failed during Gemini file upload for {FileName}.", fileName);
+            throw; // Re-throw to be handled by the caller or a general error handler
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Gemini file upload cancelled for {FileName}.", fileName);
+            throw;
+        }
 
         if (!uploadResponse.IsSuccessStatusCode)
         {
-            await HandleApiErrorAsync(uploadResponse, "Gemini File Upload");
+            _logger.LogWarning("Gemini file upload failed for {FileName} with status {StatusCode}.", fileName, uploadResponse.StatusCode);
+            // Passing null for providerApiKeyId as this is not a streaming content scenario
+            // and might have different rate limits or no specific managed key.
+            await HandleApiErrorAsync(uploadResponse, providerApiKeyId: null).ConfigureAwait(false); 
             return null;
         }
 
         // 2. Extract file metadata from the response
-        string uploadResponseBody = await uploadResponse.Content.ReadAsStringAsync(cancellationToken);
+        string uploadResponseBody = await uploadResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        _logger.LogDebug("Gemini file upload response for {FileName}: {ResponseBody}", fileName, uploadResponseBody);
+        
         using var jsonDoc = JsonDocument.Parse(uploadResponseBody);
 
         if (!jsonDoc.RootElement.TryGetProperty("file", out var fileElement) ||
@@ -69,113 +110,101 @@ public class GeminiService : BaseAiService, IAiFileUploader
             !fileElement.TryGetProperty("uri", out var uriElement) || uriElement.ValueKind != JsonValueKind.String ||
             !fileElement.TryGetProperty("mimeType", out var mimeTypeElement) || mimeTypeElement.ValueKind != JsonValueKind.String)
         {
-            Console.WriteLine($"Error: Could not parse file metadata from Gemini upload response: {uploadResponseBody}");
+            _logger.LogError("Error: Could not parse file metadata from Gemini upload response for {FileName}: {ResponseBody}", fileName, uploadResponseBody);
             throw new InvalidOperationException("Failed to parse Gemini file upload response.");
         }
 
-        // Extract size if available (optional, depends on API response)
         long sizeBytes = fileElement.TryGetProperty("sizeBytes", out var sizeElement) && sizeElement.ValueKind == JsonValueKind.Number ? sizeElement.GetInt64() : 0;
 
-        return new AiFileUploadResult(
-            ProviderFileId: nameElement.GetString()!, 
-            Uri: uriElement.GetString()!,          // The URI to use in API calls
+        var result = new AiFileUploadResult(
+            ProviderFileId: nameElement.GetString()!,
+            Uri: uriElement.GetString()!,
             MimeType: mimeTypeElement.GetString()!,
-            SizeBytes: sizeBytes,                  // Populate size if available
-            OriginalFileName: fileName             // Pass original filename
+            SizeBytes: sizeBytes,
+            OriginalFileName: fileName
         );
+        _logger.LogInformation("Successfully uploaded file {FileName} to Gemini. ProviderFileId: {ProviderFileId}", fileName, result.ProviderFileId);
+        return result;
     }
 
     public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
         AiRequestPayload requestPayload,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null)
     {
         HttpResponseMessage? response = null;
-        int maxRetries = 3;
-        
-        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        bool initialRequestSuccess = false;
+
+        try
         {
-            try
-            {
-                var request = CreateRequest(requestPayload);
-                response?.Dispose();
-                
-                response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var request = CreateRequest(requestPayload);
+            _logger.LogInformation("Sending request to Gemini model {ModelCode} with API Key ID (if managed): {ApiKeyId}", ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
 
-                if (response.IsSuccessStatusCode)
-                {
-                    break;
-                }
+            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
-                bool isRetryable = response.StatusCode == System.Net.HttpStatusCode.TooManyRequests || (int)response.StatusCode >= 500;
-
-                if (!isRetryable || attempt == maxRetries)
-                {
-                     await HandleApiErrorAsync(response, "Gemini");
-                     yield break; 
-                }
-                
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            if (!response.IsSuccessStatusCode)
             {
-                 Console.WriteLine("Gemini stream request cancelled.");
-                 response?.Dispose();
-                 yield break;
+                await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
+                // HandleApiErrorAsync is expected to throw. If it doesn't for some reason,
+                // the method will complete without yielding, which is fine.
+                yield break; 
             }
-            catch (HttpRequestException httpEx)
-            {
-                Console.WriteLine($"Gemini HttpRequestException (Attempt {attempt}/{maxRetries}): {httpEx.Message}");
-                if (attempt == maxRetries)
-                { 
-                    var statusCode = httpEx.StatusCode ?? System.Net.HttpStatusCode.RequestTimeout;
-                    using var errorResponse = new HttpResponseMessage(statusCode) { Content = new StringContent(httpEx.Message) }; 
-                    await HandleApiErrorAsync(errorResponse, "Gemini");
-                    yield break;
-                }
-                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                 Console.WriteLine($"Critical error during Gemini request (Attempt {attempt}/{maxRetries}): {ex.Message}");
-                 if (attempt == maxRetries) 
-                 { 
-                    response?.Dispose(); 
-                    throw; 
-                 }
-                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellationToken);
-            }
+            _logger.LogDebug("Successfully received stream response header from Gemini model {ModelCode}", ModelCode);
+            initialRequestSuccess = true;
+        }
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation(ex, "Gemini stream request operation was cancelled before/during HTTP send for model {ModelCode}.", ModelCode);
+            // response?.Dispose(); // Handled in finally block that should wrap stream processing too
+            yield break; 
+        }
+        catch (Exception ex) // Catches errors from SendAsync or HandleApiErrorAsync if it doesn't throw specific handled exceptions
+        {
+            _logger.LogError(ex, "Error during Gemini API request setup or initial response handling for model {ModelCode}.", ModelCode);
+            // response?.Dispose(); // Handled in finally block
+            throw; // Re-throw for command-level retry
         }
 
-        if (response == null || !response.IsSuccessStatusCode)
+        if (!initialRequestSuccess || response == null)
         {
-            Console.WriteLine("Gemini request failed after all retries or encountered an issue.");
+            // Should have been handled by exceptions or yield break above, but as a safeguard.
             response?.Dispose();
             yield break;
         }
 
+        // Process the stream: This part is now outside the initial try-catch for the request itself.
+        // It's in its own try-finally to ensure response disposal.
         try
         {
-            bool cancelled = false; 
+            bool receivedAnyData = false;
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                               .WithCancellation(cancellationToken))
+                               .WithCancellation(cancellationToken)
+                               .ConfigureAwait(false))
             {
-                 if (cancellationToken.IsCancellationRequested) 
+                 if (cancellationToken.IsCancellationRequested) // Should be caught by WithCancellation typically
                  {
-                    cancelled = true; 
+                    _logger.LogInformation("Gemini stream processing cancelled by token for model {ModelCode}.", ModelCode);
                     break;
                  }
-
+                receivedAnyData = true;
                 yield return new AiRawStreamChunk(jsonChunk);
             }
             
-            if (!cancelled)
+            if (!receivedAnyData && !cancellationToken.IsCancellationRequested)
             {
-                yield return new AiRawStreamChunk(string.Empty, true); 
+                 _logger.LogWarning("Gemini stream for model {ModelCode} ended without sending any data.", ModelCode);
+            }
+            
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                 _logger.LogDebug("Gemini stream completed for model {ModelCode}.", ModelCode);
             }
         }
+        // No catch here for the `yield return` part. Exceptions during ReadStreamAsync or processing will propagate.
+        // OperationCanceledException during ReadStreamAsync should be handled by its own cancellation logic or propagate.
         finally
         {
-            response.Dispose();
+            response.Dispose(); // response is guaranteed non-null here if initialRequestSuccess was true
         }
     }
 }

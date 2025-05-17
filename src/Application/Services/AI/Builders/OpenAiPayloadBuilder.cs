@@ -149,6 +149,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                         processedMessages.Add(new { role = "user", content = openAiContentItems.ToArray() });
                     }
                 }
+
             }
             else
             {
