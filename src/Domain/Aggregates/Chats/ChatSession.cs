@@ -14,8 +14,8 @@ public sealed class ChatSession : BaseAuditableEntity
     /// <summary>
     /// Used for optimistic concurrency control
     /// </summary>
-    [System.ComponentModel.DataAnnotations.Timestamp]
-    public byte[] RowVersion { get; private set; }
+   // [System.ComponentModel.DataAnnotations.Timestamp]
+  //  public byte[] RowVersion { get; private set; }
     private readonly List<Message> _messages = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
 
