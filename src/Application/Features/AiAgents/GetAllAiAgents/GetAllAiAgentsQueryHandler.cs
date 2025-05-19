@@ -2,12 +2,12 @@ using Application.Abstractions.Messaging;
 using Domain.Repositories;
 using Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel;
 using System.Text.Json;
 using Application.Features.AiAgents.GetAiAgentById;
 using Domain.Enums;
 using System.Collections.Generic;
 using System.Linq;
+using SharedKernal;
 
 namespace Application.Features.AiAgents.GetAllAiAgents;
 
@@ -23,12 +23,6 @@ public class GetAllAiAgentsQueryHandler : IQueryHandler<GetAllAiAgentsQuery, Get
     public async Task<Result<GetAllAiAgentsGroupedByCategoryResponse>> ExecuteAsync(GetAllAiAgentsQuery request, CancellationToken ct)
     {
         var agents = await _aiAgentRepository.GetByUserIdAsync(request.UserId, ct);
-
-        if (agents == null || !agents.Any())
-        {
-            return Result.Success(
-                new GetAllAiAgentsGroupedByCategoryResponse(new Dictionary<string, List<GetAllAiAgentResponse>>()));
-        }
 
         var agentsByCategory = new Dictionary<string, List<GetAllAiAgentResponse>>();
 

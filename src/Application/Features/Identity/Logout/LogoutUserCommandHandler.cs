@@ -1,7 +1,7 @@
 ﻿using Application.Abstractions.Messaging;
 using Domain.Aggregates.Users;
 using Microsoft.AspNetCore.Identity;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Identity.Logout;
 

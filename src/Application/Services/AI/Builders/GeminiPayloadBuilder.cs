@@ -3,7 +3,6 @@ using Application.Services.Helpers;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
 using Application.Services.AI.Interfaces;
-using Application.Services.AI.PayloadBuilders;
 
 namespace Application.Services.AI.Builders;
 
@@ -80,7 +79,6 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         if (!systemInjected && !string.IsNullOrWhiteSpace(combinedSystem))
         {
             historyToProcess.Insert(0, ("user", combinedSystem));
-            systemInjected = true;
             Logger?.LogWarning("Prepended Gemini system/thinking prompt as initial user message.");
         }
 

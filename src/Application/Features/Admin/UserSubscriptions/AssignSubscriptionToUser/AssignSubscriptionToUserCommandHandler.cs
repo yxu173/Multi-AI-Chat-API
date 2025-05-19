@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Domain.Aggregates.Admin;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Admin.UserSubscriptions.AssignSubscriptionToUser;
 

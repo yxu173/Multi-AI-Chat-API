@@ -2,7 +2,7 @@ using Application.Abstractions.Messaging;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using Domain.ValueObjects;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.AiAgents.CreateAiAgent;
 

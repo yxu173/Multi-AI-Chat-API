@@ -1,7 +1,6 @@
 using Application.Abstractions.Interfaces;
 using Application.Notifications;
 using Application.Services.AI;
-using Application.Services.Chat.Commands;
 using System.Threading;
 using System.Threading.Tasks;
 

@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Application.Features.AiModels.DTOs;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.AiModels.Queries.GetAiModelById;
 

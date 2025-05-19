@@ -1,7 +1,6 @@
 using FastEndpoints;
 using Microsoft.Extensions.Logging;
 using Serilog.Context;
-using SharedKernel;
 
 namespace Application.Abstractions.PreProcessors;
 

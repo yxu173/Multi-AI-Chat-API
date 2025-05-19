@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Domain.DomainErrors;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Identity.ResetPassword;
 

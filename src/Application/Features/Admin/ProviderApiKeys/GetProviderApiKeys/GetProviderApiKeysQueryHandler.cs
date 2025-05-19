@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Domain.Aggregates.Admin;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Admin.ProviderApiKeys.GetProviderApiKeys;
 
@@ -23,6 +23,6 @@ internal sealed class GetProviderApiKeysQueryHandler : IQueryHandler<GetProvider
             apiKeys = apiKeys.Where(k => k.AiProviderId == query.ProviderId.Value).ToList();
         }
 
-        return Result.Success<IReadOnlyList<ProviderApiKey>>(apiKeys);
+        return Result.Success(apiKeys);
     }
 }

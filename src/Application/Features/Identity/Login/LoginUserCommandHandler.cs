@@ -3,7 +3,7 @@ using Application.Abstractions.Messaging;
 using Domain.DomainErrors;
 using Domain.Repositories;
 using Microsoft.AspNetCore.Identity;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Identity.Login;
 

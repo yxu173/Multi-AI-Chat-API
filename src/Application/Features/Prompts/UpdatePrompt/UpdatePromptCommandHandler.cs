@@ -2,7 +2,7 @@ using Application.Abstractions.Messaging;
 using Domain.DomainErrors;
 using Domain.Repositories;
 using Domain.ValueObjects;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Prompts.UpdatePrompt;
 

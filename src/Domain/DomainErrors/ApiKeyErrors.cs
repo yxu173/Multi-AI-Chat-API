@@ -1,4 +1,4 @@
-using SharedKernel;
+using SharedKernal;
 
 namespace Domain.DomainErrors;
 

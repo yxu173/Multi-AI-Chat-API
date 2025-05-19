@@ -34,7 +34,7 @@ public record ModelParameters : ValueObject
     {
         return new ModelParameters
         {
-            SystemInstructions = systemInstructions ?? "you are a helpful assistant",
+            SystemInstructions = systemInstructions,
             DefaultModel = defaultModel == default ? new Guid("e29a994d-617f-49b8-8bff-17dcb9a08462") : defaultModel,
             Temperature = temperature ?? 0.7,
             PresencePenalty = presencePenalty ?? 0.0,
@@ -69,7 +69,7 @@ public record ModelParameters : ValueObject
         bool? promptCaching = null,
         string? safetySettings = null)
     {
-        return this with
+        return new ModelParameters
         {
             DefaultModel = defaultModel ?? DefaultModel,
             SystemInstructions = systemInstructions ?? SystemInstructions,

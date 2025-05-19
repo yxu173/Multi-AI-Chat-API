@@ -1,8 +1,10 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Application.Abstractions.Interfaces;
 using Newtonsoft.Json;
-using System.Text.Json; // For System.Text.Json.Nodes
-using System.Text.Json.Nodes; // For JsonObject
+
+namespace Infrastructure.Services.Plugins;
 
 public class WebSearchPlugin : IChatPlugin
 {
@@ -10,7 +12,6 @@ public class WebSearchPlugin : IChatPlugin
     private readonly string _apiKey;
     private readonly string _cx;
 
-    // Name used for AI Tool/Function definition
     public string Name => "google_search";
     public string Description => "Search the web using Google for real-time information";
 
@@ -27,17 +28,17 @@ public class WebSearchPlugin : IChatPlugin
     {
         // Define the schema the AI needs to provide arguments
         string schemaJson = """
-        {
-          "type": "object",
-          "properties": {
-            "query": {
-              "type": "string",
-              "description": "The search query to execute."
-            }
-          },
-          "required": ["query"]
-        }
-        """;
+                            {
+                              "type": "object",
+                              "properties": {
+                                "query": {
+                                  "type": "string",
+                                  "description": "The search query to execute."
+                                }
+                              },
+                              "required": ["query"]
+                            }
+                            """;
         // Parse and return as JsonObject
         return JsonNode.Parse(schemaJson)!.AsObject();
     }
@@ -54,7 +55,7 @@ public class WebSearchPlugin : IChatPlugin
         string query = queryValue.GetValue<string>();
         if (string.IsNullOrWhiteSpace(query))
         {
-             return new PluginResult("", false, "'query' argument cannot be empty.");
+            return new PluginResult("", false, "'query' argument cannot be empty.");
         }
 
         try
@@ -88,7 +89,7 @@ public class WebSearchPlugin : IChatPlugin
         for (int i = 0; i < Math.Min(5, response.Items.Count); i++) // Limit results
         {
             var item = response.Items[i];
-            result.AppendLine($"- **{item.Title ?? "No title"}**: {item.Snippet ?? "No description."} ([Link]({item.Link ?? "#"}))");
+            result.AppendLine($"- **{item.Title}**: {item.Snippet} ([Link]({item.Link ?? "#"}))");
         }
 
         return result.ToString();

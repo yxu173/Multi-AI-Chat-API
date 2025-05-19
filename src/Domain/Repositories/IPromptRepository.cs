@@ -1,5 +1,5 @@
 using Domain.Aggregates.Prompts;
-using SharedKernel;
+using SharedKernal;
 
 namespace Domain.Repositories;
 

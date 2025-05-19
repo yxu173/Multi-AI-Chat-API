@@ -3,7 +3,7 @@ using Domain.DomainErrors;
 using Domain.Repositories;
 using Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel;
+using SharedKernal;
 
 namespace Infrastructure.Repositories;
 

@@ -1,8 +1,8 @@
 using Application.Abstractions.Messaging;
 using Application.Features.AiAgents.GetAllAiAgents;
 using Domain.Repositories;
-using SharedKernel;
 using System.Text.Json;
+using SharedKernal;
 
 namespace Application.Features.AiAgents.GetAiAgentById;
 

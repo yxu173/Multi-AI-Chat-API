@@ -1,3 +1,5 @@
+using Domain.Aggregates.Chats;
+
 namespace Domain.Repositories;
 
 public interface IAiProviderRepository

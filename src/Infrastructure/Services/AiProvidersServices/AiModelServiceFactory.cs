@@ -1,15 +1,15 @@
 using Application.Abstractions.Data;
 using Application.Abstractions.Interfaces;
 using Application.Exceptions;
+using Domain.Aggregates.Chats;
 using Domain.Enums;
-using Domain.Aggregates.Admin;
-using Infrastructure.Services.AiProvidersServices;
 using Infrastructure.Services.Subscription;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Domain.Aggregates.Chats;
+
+namespace Infrastructure.Services.AiProvidersServices;
 
 public class AiModelServiceFactory : IAiModelServiceFactory
 {
@@ -67,10 +67,8 @@ public class AiModelServiceFactory : IAiModelServiceFactory
                       ?? throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
 
         string? apiKeySecretToUse = null;
-        ProviderApiKey? managedApiKey = null;
 
-        managedApiKey =
-            await _keyManagementService.GetProviderApiKeyObjectAsync(aiModel.AiProviderId, cancellationToken);
+        var managedApiKey = await _keyManagementService.GetProviderApiKeyObjectAsync(aiModel.AiProviderId, cancellationToken);
         if (managedApiKey != null)
         {
             apiKeySecretToUse = managedApiKey.Secret;

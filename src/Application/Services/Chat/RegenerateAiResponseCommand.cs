@@ -7,7 +7,7 @@ using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using FastEndpoints;
 
-namespace Application.Services.Chat.Commands;
+namespace Application.Services.Chat;
 
 /// <summary>
 /// Handles deleting previous AI response(s) for a user message and generating a new fresh response.

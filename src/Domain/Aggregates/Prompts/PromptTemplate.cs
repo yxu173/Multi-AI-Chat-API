@@ -2,7 +2,7 @@ using Domain.Aggregates.Users;
 using Domain.Common;
 using Domain.DomainErrors;
 using Domain.ValueObjects;
-using SharedKernel;
+using SharedKernal;
 
 namespace Domain.Aggregates.Prompts;
 
@@ -38,7 +38,7 @@ public class PromptTemplate : BaseEntity
         if (string.IsNullOrWhiteSpace(content))
             throw new ArgumentException("Content cannot be empty", nameof(content));
 
-        return new PromptTemplate(userId, title, content, description, tags ?? new List<Tag>());
+        return new PromptTemplate(userId, title, content, description, tags);
     }
 
     public void Update(string title, string content,string description)

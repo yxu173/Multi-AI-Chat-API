@@ -14,7 +14,6 @@ namespace Application.Services.Messaging;
 
 public class MessageStreamer : IMessageStreamer
 {
-    private readonly IMessageRepository _messageRepository;
     private readonly StreamingOperationManager _streamingOperationManager;
     private readonly ILogger<MessageStreamer> _logger;
     private readonly TokenUsageService _tokenUsageService;
@@ -23,7 +22,6 @@ public class MessageStreamer : IMessageStreamer
     private readonly IAiMessageFinalizer _aiMessageFinalizer;
 
     public MessageStreamer(
-        IMessageRepository messageRepository,
         StreamingOperationManager streamingOperationManager,
         ILogger<MessageStreamer> logger,
         TokenUsageService tokenUsageService,
@@ -32,7 +30,6 @@ public class MessageStreamer : IMessageStreamer
         IAiMessageFinalizer aiMessageFinalizer
     )
     {
-        _messageRepository = messageRepository;
         _streamingOperationManager = streamingOperationManager;
         _logger = logger;
         _tokenUsageService = tokenUsageService;
@@ -61,11 +58,6 @@ public class MessageStreamer : IMessageStreamer
         var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
         var linkedToken = linkedCts.Token;
 
-        int totalInputTokens = 0;
-        int totalOutputTokens = 0;
-
-        bool aiResponseCompletedSuccessfully = false;
-
         try
         {
             var responseType = MapModelTypeToResponse(modelType);
@@ -77,9 +69,9 @@ public class MessageStreamer : IMessageStreamer
 
             var handlerResult = await handler.HandleAsync(requestContext, aiMessage, aiService, modelType, linkedToken, providerApiKeyId);
 
-            totalInputTokens = handlerResult.TotalInputTokens;
-            totalOutputTokens = handlerResult.TotalOutputTokens;
-            aiResponseCompletedSuccessfully = handlerResult.AiResponseCompleted;
+            var totalInputTokens = handlerResult.TotalInputTokens;
+            var totalOutputTokens = handlerResult.TotalOutputTokens;
+            var aiResponseCompletedSuccessfully = handlerResult.AiResponseCompleted;
 
             if (!string.IsNullOrEmpty(handlerResult.AccumulatedThinkingContent))
             {

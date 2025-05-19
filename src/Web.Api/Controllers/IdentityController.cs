@@ -13,7 +13,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
-using SharedKernel;
+using SharedKernal;
 using Web.Api.Contracts.Identity;
 using Web.Api.Extensions;
 using Web.Api.Infrastructure;
@@ -126,7 +126,6 @@ public class IdentityController : BaseController
                 {
                     var nameParts = name?.Split(' ') ?? Array.Empty<string>();
                     givenName = nameParts.Length > 0 ? nameParts[0] : "User";
-                    surname = nameParts.Length > 1 ? nameParts[1] : "Name";
                 }
 
                 user = Domain.Aggregates.Users.User.Create(

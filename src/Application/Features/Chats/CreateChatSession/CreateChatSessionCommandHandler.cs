@@ -2,7 +2,7 @@ using Application.Abstractions.Messaging;
 using Domain.Aggregates.Chats;
 using Domain.Enums;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Chats.CreateChatSession;
 

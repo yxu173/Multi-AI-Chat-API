@@ -1,18 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.Net.Http;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using Application.Abstractions.Interfaces;
-using Infrastructure.Services.AiProvidersServices.Base;
-using System.IO;
 using System.Net.Http.Headers;
-using Application.Services;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using Application.Abstractions.Interfaces;
 using Application.Services.AI;
+using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
+
+namespace Infrastructure.Services.AiProvidersServices;
 
 public class GeminiService : BaseAiService, IAiFileUploader
 {
@@ -57,7 +51,7 @@ public class GeminiService : BaseAiService, IAiFileUploader
             // Extract the text content if needed here, or pass the whole JSON element raw text
             // For now, passing raw JSON text of the element.
             string rawJsonChunk = jsonElement.GetRawText();
-             _logger.LogTrace("Gemini stream chunk: {Chunk}", rawJsonChunk);
+            _logger.LogTrace("Gemini stream chunk: {Chunk}", rawJsonChunk);
             yield return rawJsonChunk;
         }
     }
@@ -181,23 +175,23 @@ public class GeminiService : BaseAiService, IAiFileUploader
                                .WithCancellation(cancellationToken)
                                .ConfigureAwait(false))
             {
-                 if (cancellationToken.IsCancellationRequested) // Should be caught by WithCancellation typically
-                 {
+                if (cancellationToken.IsCancellationRequested) // Should be caught by WithCancellation typically
+                {
                     _logger.LogInformation("Gemini stream processing cancelled by token for model {ModelCode}.", ModelCode);
                     break;
-                 }
+                }
                 receivedAnyData = true;
                 yield return new AiRawStreamChunk(jsonChunk);
             }
             
             if (!receivedAnyData && !cancellationToken.IsCancellationRequested)
             {
-                 _logger.LogWarning("Gemini stream for model {ModelCode} ended without sending any data.", ModelCode);
+                _logger.LogWarning("Gemini stream for model {ModelCode} ended without sending any data.", ModelCode);
             }
             
             if (!cancellationToken.IsCancellationRequested)
             {
-                 _logger.LogDebug("Gemini stream completed for model {ModelCode}.", ModelCode);
+                _logger.LogDebug("Gemini stream completed for model {ModelCode}.", ModelCode);
             }
         }
         // No catch here for the `yield return` part. Exceptions during ReadStreamAsync or processing will propagate.

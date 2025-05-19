@@ -1,4 +1,4 @@
-﻿namespace SharedKernel;
+﻿namespace SharedKernal;
 
 public enum ErrorType
 {

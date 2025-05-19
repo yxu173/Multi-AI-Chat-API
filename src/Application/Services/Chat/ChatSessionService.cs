@@ -1,4 +1,5 @@
 using Application.Notifications;
+using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using FastEndpoints;
 

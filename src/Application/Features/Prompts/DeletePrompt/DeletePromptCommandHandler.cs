@@ -1,6 +1,6 @@
 using Application.Abstractions.Messaging;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Prompts.DeletePrompt;
 

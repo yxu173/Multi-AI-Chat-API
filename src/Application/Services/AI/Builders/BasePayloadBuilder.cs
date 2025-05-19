@@ -2,10 +2,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Enums;
-using Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services.AI.PayloadBuilders;
+namespace Application.Services.AI.Builders;
 
 public abstract class BasePayloadBuilder
 {
@@ -103,14 +102,7 @@ public abstract class BasePayloadBuilder
     {
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
-
-    /// <summary>
-    /// Adds parameters to the request payload, handling all parameter mapping and validation
-    /// in a single pass
-    /// </summary>
-    /// <param name="requestObj">The target dictionary for the formatted parameters</param>
-    /// <param name="context">The AI request context</param>
-    /// <param name="isThinking">Whether the request is for a thinking operation</param>
+    
     protected void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         // Create base parameters dictionary
@@ -121,11 +113,10 @@ public abstract class BasePayloadBuilder
         var modelType = model.ModelType;
         
         // Get parameters from the appropriate source (agent > user settings)
-        ModelParameters? sourceParams = null;
         if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
         {   
             // Agent has custom parameters
-            sourceParams = agent.ModelParameter;
+            var sourceParams = agent.ModelParameter;
             parameters["temperature"] = sourceParams.Temperature;
             parameters["top_p"] = sourceParams.TopP;
             parameters["top_k"] = sourceParams.TopK;

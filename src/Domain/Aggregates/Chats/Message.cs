@@ -1,7 +1,6 @@
 using System;
 using Domain.Common;
 using Domain.Enums;
-using SharedKernel;
 
 namespace Domain.Aggregates.Chats;
 
@@ -62,7 +61,7 @@ public sealed class Message : BaseAuditableEntity
     
     public void UpdateContent(string newContent)
     {
-        Content = newContent ?? string.Empty;
+        Content = newContent;
         LastModifiedAt = DateTime.UtcNow;
     }
 

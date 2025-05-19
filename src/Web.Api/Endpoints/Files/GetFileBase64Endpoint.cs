@@ -52,7 +52,7 @@ public class GetFileBase64Endpoint : Endpoint<GetFileBase64Request, FileBase64Re
                 return;
             }
 
-            if (!System.IO.File.Exists(fileAttachment.FilePath))
+            if (!File.Exists(fileAttachment.FilePath))
             {
                 AddError("File not found on server");
                 await SendErrorsAsync(404, ct);
@@ -62,7 +62,7 @@ public class GetFileBase64Endpoint : Endpoint<GetFileBase64Request, FileBase64Re
             byte[] fileBytes;
             
             // Read file content
-            fileBytes = await System.IO.File.ReadAllBytesAsync(fileAttachment.FilePath, ct);
+            fileBytes = await File.ReadAllBytesAsync(fileAttachment.FilePath, ct);
             
             // For images, optimize if requested and if image type
             if (req.OptimizeForLlm && fileAttachment.FileType == Domain.Aggregates.Chats.FileType.Image)

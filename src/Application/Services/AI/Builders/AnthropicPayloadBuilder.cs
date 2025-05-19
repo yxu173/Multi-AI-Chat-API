@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Services.AI.Interfaces;
-using Application.Services.AI.PayloadBuilders;
 
 namespace Application.Services.AI.Builders;
 

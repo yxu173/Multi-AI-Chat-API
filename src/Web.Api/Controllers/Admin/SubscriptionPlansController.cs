@@ -9,7 +9,6 @@ using Domain.Aggregates.Admin;
 using FastEndpoints;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using SharedKernel;
 using Web.Api.Contracts.Admin;
 using Web.Api.Extensions;
 

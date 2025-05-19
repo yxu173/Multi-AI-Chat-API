@@ -28,14 +28,11 @@ public class UploadFileResponse
 public class UploadFileEndpoint : Endpoint<UploadFileRequest, UploadFileResponse>
 {
     private readonly FileUploadService _fileUploadService;
-    private readonly IFileAttachmentRepository _fileAttachmentRepository;
 
     public UploadFileEndpoint(
-        FileUploadService fileUploadService,
-        IFileAttachmentRepository fileAttachmentRepository)
+        FileUploadService fileUploadService)
     {
         _fileUploadService = fileUploadService ?? throw new ArgumentNullException(nameof(fileUploadService));
-        _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
     }
 
     public override void Configure()

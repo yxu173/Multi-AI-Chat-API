@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Domain.Repositories;
-using SharedKernel;
 using Domain.ValueObjects;
+using SharedKernal;
 
 namespace Application.Features.AiAgents.UpdateAiAgent;
 

@@ -1,6 +1,7 @@
 ﻿using Application.Abstractions.Messaging;
+using Domain.Aggregates.Chats;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.AiProviders.CreateAiProvider;
 

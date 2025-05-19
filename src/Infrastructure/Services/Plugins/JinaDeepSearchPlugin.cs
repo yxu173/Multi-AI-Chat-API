@@ -60,7 +60,7 @@ public class JinaDeepSearchPlugin : IChatPlugin
                 return new PluginResult("", false, "Query parameter is required");
             }
 
-            string userQuery = queryNode!.GetValue<string>()!;
+            string userQuery = queryNode.GetValue<string>();
             _logger.LogInformation("Executing Jina DeepSearch with query: {Query}", userQuery);
 
             var result = await ExecuteDeepSearchAsync(userQuery, cancellationToken);

@@ -99,7 +99,6 @@ public sealed class SendUserMessageCommand
 
         requestContext = requestContext with { History = HistoryBuilder.BuildHistory(requestContext, aiMessage) };
 
-        AiServiceContext? serviceContext = null;
         bool streamSucceeded = false;
 
         for (int attempt = 1; attempt <= MaxRetries; attempt++)
@@ -109,7 +108,7 @@ public sealed class SendUserMessageCommand
             try
             {
                 _logger.LogInformation("Attempt {Attempt}/{MaxRetries} to get AI service for chat {ChatSessionId}", attempt, MaxRetries, chatSessionId);
-                serviceContext = await _aiModelServiceFactory.GetServiceContextAsync(userId, chatSession.AiModelId, chatSession.AiAgentId, cancellationToken);
+                var serviceContext = await _aiModelServiceFactory.GetServiceContextAsync(userId, chatSession.AiModelId, chatSession.AiAgentId, cancellationToken);
 
                 if (serviceContext?.Service == null)
                 {

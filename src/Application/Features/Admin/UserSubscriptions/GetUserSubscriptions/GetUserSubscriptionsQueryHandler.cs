@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Domain.Aggregates.Admin;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Admin.UserSubscriptions.GetUserSubscriptions;
 
@@ -50,6 +50,6 @@ internal sealed class GetUserSubscriptionsQueryHandler : IQueryHandler<GetUserSu
                 .ToList();
         }
 
-        return Result.Success<IReadOnlyList<UserSubscription>>(subscriptions);
+        return Result.Success(subscriptions);
     }
 }

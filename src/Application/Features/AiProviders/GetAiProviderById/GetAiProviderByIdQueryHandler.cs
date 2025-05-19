@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Application.Features.AiProviders.GetAllAiProviders;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.AiProviders.GetAiProviderById;
 

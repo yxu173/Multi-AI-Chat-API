@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Domain.Aggregates.Admin;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Admin.SubscriptionPlans.GetSubscriptionPlans;
 
@@ -19,12 +19,12 @@ internal sealed class GetSubscriptionPlansQueryHandler : IQueryHandler<GetSubscr
         if (query.ActiveOnly)
         {
             var activePlans = await _subscriptionPlanRepository.GetActiveAsync(ct);
-            return Result.Success<IReadOnlyList<SubscriptionPlan>>(activePlans);
+            return Result.Success(activePlans);
         }
         else
         {
             var allPlans = await _subscriptionPlanRepository.GetAllAsync(ct);
-            return Result.Success<IReadOnlyList<SubscriptionPlan>>(allPlans);
+            return Result.Success(allPlans);
         }
     }
 }

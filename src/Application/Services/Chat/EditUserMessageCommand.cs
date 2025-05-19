@@ -3,12 +3,11 @@ using Application.Notifications;
 using Application.Services.AI;
 using Application.Services.Helpers;
 using Application.Services.Messaging;
-using Application.Services.Utilities;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using FastEndpoints;
 
-namespace Application.Services.Chat.Commands;
+namespace Application.Services.Chat;
 
 /// <summary>
 /// Handles editing an existing user message, cleaning up subsequent AI responses, and streaming a fresh AI response.

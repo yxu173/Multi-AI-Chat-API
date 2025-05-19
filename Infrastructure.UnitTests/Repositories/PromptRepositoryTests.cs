@@ -5,7 +5,6 @@ using FluentAssertions;
 using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel;
 using Xunit;
 using Domain.Aggregates.Prompts;
 using Domain.DomainErrors;

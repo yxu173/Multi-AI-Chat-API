@@ -1,6 +1,6 @@
 ﻿using Domain.DomainErrors;
 using Microsoft.AspNetCore.Identity;
-using SharedKernel;
+using SharedKernal;
 
 namespace Domain.Aggregates.Users;
 

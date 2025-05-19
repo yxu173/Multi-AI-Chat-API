@@ -1,9 +1,10 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Application.Abstractions.Interfaces;
 using Newtonsoft.Json;
-using System.Net.Http.Headers;
-using System.Text.Json.Nodes; // For JsonObject
-using System.Text.Json; // Re-added for JsonValue, JsonSerializer, etc.
+
+namespace Infrastructure.Services.Plugins;
 
 public class PerplexityPlugin : IChatPlugin
 {
@@ -24,17 +25,17 @@ public class PerplexityPlugin : IChatPlugin
     public JsonObject GetParametersSchema()
     {
         string schemaJson = """
-        {
-          "type": "object",
-          "properties": {
-            "query": {
-              "type": "string",
-              "description": "The query or prompt for Perplexity AI."
-            }
-          },
-          "required": ["query"]
-        }
-        """;
+                            {
+                              "type": "object",
+                              "properties": {
+                                "query": {
+                                  "type": "string",
+                                  "description": "The query or prompt for Perplexity AI."
+                                }
+                              },
+                              "required": ["query"]
+                            }
+                            """;
         return JsonNode.Parse(schemaJson)!.AsObject();
     }
 

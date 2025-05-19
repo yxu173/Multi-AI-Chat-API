@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Domain.Aggregates.Users;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Plugins.ToggleUserPlugin;
 

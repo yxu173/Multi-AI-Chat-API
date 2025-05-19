@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
-using Domain.Aggregates.Chats;
+
+namespace Domain.Aggregates.Chats;
 
 public sealed class AiProvider
 {

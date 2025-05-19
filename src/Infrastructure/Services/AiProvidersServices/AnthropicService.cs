@@ -1,20 +1,12 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Application.Abstractions.Interfaces;
-using Application.Services;
-using Domain.Aggregates.Chats;
-using Domain.Aggregates.Users;
-using Domain.ValueObjects;
-using Infrastructure.Services.AiProvidersServices.Base;
-using System.IO;
-using System.Collections.Generic;
-using System.Linq;
 using Application.Services.AI;
+using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
-using System.Net.Http;
-using System;
+
+namespace Infrastructure.Services.AiProvidersServices;
 
 public class AnthropicService : BaseAiService
 {

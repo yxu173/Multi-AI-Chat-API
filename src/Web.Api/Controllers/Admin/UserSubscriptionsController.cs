@@ -11,7 +11,6 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel;
 using Web.Api.Contracts.Admin;
 using Web.Api.Extensions;
 using Web.Api.Infrastructure;

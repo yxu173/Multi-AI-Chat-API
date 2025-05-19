@@ -6,8 +6,8 @@ using Domain.DomainErrors;
 using Domain.Repositories;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel;
 using System.Collections.Generic;
+using SharedKernal;
 
 namespace Application.Features.Identity.Register;
 

@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 using Domain.Aggregates.Chats;
-using SharedKernel;
+using SharedKernal;
 
 namespace Domain.Repositories;
 

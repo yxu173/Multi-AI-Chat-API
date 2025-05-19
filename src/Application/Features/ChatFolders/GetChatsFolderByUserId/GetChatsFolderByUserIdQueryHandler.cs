@@ -1,7 +1,7 @@
 using Application.Abstractions.Messaging;
 using Application.Features.ChatFolders.GetChatFolderById;
 using Domain.Repositories;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.ChatFolders.GetChatsFolderByUserId;
 

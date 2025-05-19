@@ -1,3 +1,4 @@
+using Domain.Aggregates.Chats;
 using FluentAssertions;
 using Infrastructure.Database;
 using Infrastructure.Repositories;

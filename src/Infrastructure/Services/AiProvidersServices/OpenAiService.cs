@@ -1,14 +1,10 @@
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
 using Application.Abstractions.Interfaces;
-using Infrastructure.Services.AiProvidersServices.Base;
-using System.IO;
-using Application.Services;
 using Application.Services.AI;
+using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
-using System.Net.Http;
-using System;
+
+namespace Infrastructure.Services.AiProvidersServices;
 
 public class OpenAiService : BaseAiService
 {
@@ -60,7 +56,7 @@ public class OpenAiService : BaseAiService
                 
                 if (!string.IsNullOrEmpty(jsonData))
                 {
-                     yield return jsonData;
+                    yield return jsonData;
                 }
             }
         }

@@ -1,11 +1,11 @@
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
-using Application.Services;
 using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
+
+namespace Infrastructure.Services.AiProvidersServices;
 
 public class DeepSeekService : BaseAiService
 {
@@ -81,8 +81,8 @@ public class DeepSeekService : BaseAiService
         try
         {
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                                .WithCancellation(cancellationToken)
-                                .ConfigureAwait(false))
+                               .WithCancellation(cancellationToken)
+                               .ConfigureAwait(false))
             {
                 if (cancellationToken.IsCancellationRequested) 
                 {
@@ -97,14 +97,14 @@ public class DeepSeekService : BaseAiService
                     if (doc.RootElement.TryGetProperty("choices", out var choices) && 
                         choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
                     { 
-                         if(choices[0].TryGetProperty("finish_reason", out var finishReason) && 
-                            finishReason.ValueKind != JsonValueKind.Null && 
-                            finishReason.ValueKind != JsonValueKind.Undefined && 
-                            !string.IsNullOrEmpty(finishReason.GetString()))
-                         {
+                        if(choices[0].TryGetProperty("finish_reason", out var finishReason) && 
+                           finishReason.ValueKind != JsonValueKind.Null && 
+                           finishReason.ValueKind != JsonValueKind.Undefined && 
+                           !string.IsNullOrEmpty(finishReason.GetString()))
+                        {
                             _logger.LogDebug("{ProviderName} stream indicates completion. Finish reason: {FinishReason}", ProviderName, finishReason.GetString());
                             isCompletion = true;
-                         }
+                        }
                     }
                 }
                 catch (JsonException jsonEx) 
@@ -121,7 +121,7 @@ public class DeepSeekService : BaseAiService
             }
             if (!cancellationToken.IsCancellationRequested)
             {
-                 _logger.LogDebug("{ProviderName} stream completed for model {ModelCode}.", ProviderName, ModelCode);
+                _logger.LogDebug("{ProviderName} stream completed for model {ModelCode}.", ProviderName, ModelCode);
             }
         }
         finally

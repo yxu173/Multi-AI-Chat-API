@@ -1,6 +1,6 @@
 using FastEndpoints;
 using FluentValidation;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Abstractions.PreProcessors;
 

@@ -2,7 +2,7 @@ using Application.Abstractions.Messaging;
 using Domain.Aggregates.Prompts;
 using Domain.Repositories;
 using Domain.ValueObjects;
-using SharedKernel;
+using SharedKernal;
 
 namespace Application.Features.Prompts.CreatePrompt;
 

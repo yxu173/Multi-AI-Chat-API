@@ -1,5 +1,6 @@
-using Domain.Aggregates.Chats;
 using Domain.Common;
+
+namespace Domain.Aggregates.Chats;
 
 public sealed class ChatSession : BaseAuditableEntity
 {
