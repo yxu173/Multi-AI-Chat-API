@@ -48,18 +48,31 @@ public sealed class UserAiModelSettings : BaseEntity
         string? safetySettings,
         bool? promptCaching)
     {
-        this.ModelParameters.UpdateModelParameters(
-            defaultModel,
-            systemMessage,
-            temperature,
-            presencePenalty,
-            frequencyPenalty,
-            topP,
-            topK,
-            maxTokens,
-            contextLimit,
-            promptCaching,
-            safetySettings
+        // Create a new ModelParameters with updated values and assign it back
+        ModelParameters = ModelParameters.WithUpdates(
+            defaultModel: defaultModel,
+            systemInstructions: systemMessage,
+            temperature: temperature,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            topP: topP,
+            topK: topK,
+            maxTokens: maxTokens,
+            contextLimit: contextLimit,
+            promptCaching: promptCaching,
+            safetySettings: safetySettings
         );
+    }
+    
+    /// <summary>
+    /// Updates the entire model parameters object with a new instance
+    /// </summary>
+    /// <param name="newParameters">The new model parameters to use</param>
+    public void UpdateModelParameters(ModelParameters newParameters)
+    {
+        if (newParameters == null)
+            throw new ArgumentNullException(nameof(newParameters));
+            
+        ModelParameters = newParameters;
     }
 }

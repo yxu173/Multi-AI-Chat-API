@@ -22,7 +22,11 @@ public sealed class ResetSystemInstructionsCommandHandler : ICommandHandler<Rese
                 "User settings not found.",
                 "User settings don't exist"));
 
-        setting.ModelParameters.ResetSystemInstructions();
+        // Create a new ModelParameters instance with default system instructions
+        var updatedParameters = setting.ModelParameters.WithDefaultSystemInstructions();
+        
+        // Update the setting with the new parameters
+        setting.UpdateModelParameters(updatedParameters);
 
         await _userAiModelSettingsRepository.UpdateAsync(setting, ct);
 

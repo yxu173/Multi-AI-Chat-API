@@ -42,7 +42,6 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                     topP: request.TopP,
                     topK: request.TopK,
                     maxTokens: request.MaxTokens,
-                    enableThinking: request.EnableThinking,
                     promptCaching: request.PromptCaching,
                     contextLimit: request.ContextLimit, safetySettings: request.SafetySettings);
             }

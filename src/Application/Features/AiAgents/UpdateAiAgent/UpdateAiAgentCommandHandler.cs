@@ -41,9 +41,9 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                     command.TopP,
                     command.TopK,
                     command.MaxTokens,
-                    command.EnableThinking,
+                    command.ContextLimit,
                     command.PromptCaching,
-                    command.ContextLimit, command.SafetySettings);
+                     command.SafetySettings);
             }
 
             agent.Update(

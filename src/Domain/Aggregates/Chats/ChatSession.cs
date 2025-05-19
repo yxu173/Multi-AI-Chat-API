@@ -10,6 +10,12 @@ public sealed class ChatSession : BaseAuditableEntity
     public Guid? FolderId { get; private set; }
     public Guid? AiAgentId { get; private set; }
     public bool EnableThinking { get; private set; }
+    
+    /// <summary>
+    /// Used for optimistic concurrency control
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Timestamp]
+    public byte[] RowVersion { get; private set; }
     private readonly List<Message> _messages = new();
     public IReadOnlyList<Message> Messages => _messages.AsReadOnly();
 
