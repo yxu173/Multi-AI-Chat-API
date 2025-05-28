@@ -4,166 +4,167 @@ using Microsoft.Extensions.Logging;
 
 namespace Application.Services.AI.Streaming;
 
-public class GeminiStreamChunkParser : IStreamChunkParser
+public class GeminiStreamChunkParser : BaseStreamChunkParser<GeminiStreamChunkParser>
 {
-    private readonly ILogger<GeminiStreamChunkParser> _logger;
-
     public GeminiStreamChunkParser(ILogger<GeminiStreamChunkParser> logger)
+        : base(logger)
     {
-        _logger = logger;
     }
 
-    public ModelType SupportedModelType => ModelType.Gemini;
+    public override ModelType SupportedModelType => ModelType.Gemini;
 
-    public ParsedChunkInfo ParseChunk(string rawJson)
+    protected override ParsedChunkInfo ParseModelSpecificChunk(string rawJson)
     {
-        try
+        using var doc = JsonDocument.Parse(rawJson);
+        var root = doc.RootElement;
+
+        string? textDelta = null;
+        ToolCallChunk? toolCallInfo = null;
+        int? inputTokens = null;
+        int? outputTokens = null;
+        string? finishReason = null;
+        bool containsFunctionCall = false; // Tracks if a function call is part of the current chunk
+
+        Logger?.LogInformation("[GeminiDebug] Raw chunk content: {RawContent}", rawJson);
+
+        // Check for top-level error property
+        if (root.TryGetProperty("error", out var errorElement))
         {
-            using var doc = JsonDocument.Parse(rawJson);
-            var root = doc.RootElement;
+            Logger?.LogError("Gemini stream reported error: {ErrorJson}", errorElement.GetRawText());
+            return new ParsedChunkInfo(FinishReason: "error"); // Propagate error as finish reason
+        }
 
-            string? textDelta = null;
-            ToolCallChunk? toolCallInfo = null;
-            int? inputTokens = null;
-            int? outputTokens = null;
-            string? finishReason = null;
-            bool containsFunctionCall = false;
+        if (root.TryGetProperty("candidates", out var candidates) && candidates.ValueKind == JsonValueKind.Array && candidates.GetArrayLength() > 0)
+        {
+            var firstCandidate = candidates[0];
+            Logger?.LogTrace("[GeminiDebug] Candidate content: {Candidate}", firstCandidate.GetRawText());
 
-            _logger?.LogInformation("[GeminiDebug] Raw chunk content: {RawContent}", rawJson);
-
-            if (root.TryGetProperty("error", out var errorElement))
+            if (firstCandidate.TryGetProperty("finishReason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String)
             {
-                _logger?.LogError("Gemini stream reported error: {ErrorJson}", errorElement.GetRawText());
-                return new ParsedChunkInfo(FinishReason: "error");
+                var reason = reasonElement.GetString()?.ToUpperInvariant();
+                Logger?.LogDebug("Found Gemini finishReason: {Reason}", reason);
+
+                switch (reason)
+                {
+                    case "STOP":
+                        finishReason = "stop";
+                        break;
+                    case "MAX_TOKENS":
+                        finishReason = "length";
+                        break;
+                    case "SAFETY":
+                    case "RECITATION": // Assuming recitation issues are a form of content filter/safety
+                        finishReason = "content_filter";
+                        break;
+                    case "TOOL_CALLS": // This is the specific reason Gemini uses
+                    case "FUNCTION_CALL": // Older or alternative naming
+                        finishReason = "tool_calls";
+                        containsFunctionCall = true; // Explicitly note tool call presence from finish reason
+                        break;
+                    case null: // No explicit reason yet
+                        break;
+                    default:
+                        Logger?.LogWarning("Unknown Gemini finish reason: {Reason}", reason);
+                        // Potentially map to a generic error or pass through if StreamProcessor can handle unknown reasons
+                        finishReason = reason; // Pass through for now
+                        break;
+                }
             }
 
-            if (root.TryGetProperty("candidates", out var candidates) && candidates.ValueKind == JsonValueKind.Array && candidates.GetArrayLength() > 0)
+            if (firstCandidate.TryGetProperty("content", out var content) && content.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Array)
             {
-                var firstCandidate = candidates[0];
-
-                _logger?.LogInformation("[GeminiDebug] Candidate content: {Candidate}", firstCandidate.GetRawText());
-
-                if (firstCandidate.TryGetProperty("finishReason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String)
+                foreach (var part in parts.EnumerateArray())
                 {
-                    var reason = reasonElement.GetString()?.ToUpperInvariant();
-                    _logger?.LogInformation("Found Gemini finishReason: {Reason}", reason);
-
-                    switch (reason)
+                    if (part.TryGetProperty("text", out var textElement) && textElement.ValueKind == JsonValueKind.String)
                     {
-                        case "STOP":
-                            finishReason = "stop";
-                            break;
-                        case "MAX_TOKENS":
-                            finishReason = "length";
-                            break;
-                        case "SAFETY":
-                            finishReason = "content_filter";
-                            break;
-                        case "RECITATION":
-                            finishReason = "content_filter";
-                            break;
-                        case "TOOL_CALLS":
-                        case "FUNCTION_CALL":
-                            finishReason = "tool_calls";
-                            break;
-                        case null:
-                            break;
-                        default:
-                            _logger?.LogWarning("Unknown Gemini finish reason: {Reason}", reason);
-                            break;
+                        textDelta = (textDelta ?? string.Empty) + textElement.GetString(); // Append if multiple text parts
+                        Logger?.LogTrace("Parsed Gemini text content: '{TextDelta}'", textDelta);
                     }
-                }
-
-                if (firstCandidate.TryGetProperty("content", out var content) && content.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var part in parts.EnumerateArray())
+                    else if (part.TryGetProperty("functionCall", out var functionCall))
                     {
-                        if (part.TryGetProperty("text", out var textElement) && textElement.ValueKind == JsonValueKind.String)
+                        containsFunctionCall = true; // Mark that a function call structure was found
+                        string? funcName = null;
+                        string? funcArgs = null;
+                        // Gemini function calls are typically not chunked for arguments in the same way as OpenAI.
+                        // They usually appear fully formed in one part if finishReason is TOOL_CALLS.
+                        if (functionCall.TryGetProperty("name", out var nameElement))
                         {
-                            textDelta = textElement.GetString();
-                            _logger?.LogInformation("Parsed Gemini text content: '{TextDelta}'", textDelta);
+                            funcName = nameElement.GetString();
                         }
-                        else if (part.TryGetProperty("functionCall", out var functionCall))
+                        if (functionCall.TryGetProperty("args", out var argsElement))
                         {
-                            containsFunctionCall = true;
-                            string? funcName = null;
-                            string? funcArgs = null;
+                            // Gemini args are an object, not a string. StreamProcessor expects string.
+                            funcArgs = argsElement.GetRawText(); 
+                        }
 
-                            if (functionCall.TryGetProperty("name", out var nameElement))
-                            {
-                                funcName = nameElement.GetString();
-                            }
-                            if (functionCall.TryGetProperty("args", out var argsElement))
-                            {
-                                funcArgs = argsElement.GetRawText();
-                            }
-
-                            if (funcName != null)
-                            {
-                                toolCallInfo = new ToolCallChunk(0, Id: Guid.NewGuid().ToString(), funcName, funcArgs);
-                                _logger?.LogInformation("Parsed Gemini function call: {Name}", funcName);
-                            }
+                        if (funcName != null)
+                        {
+                            // Gemini doesn't provide a tool_call_id in the stream in the same way OpenAI does.
+                            // StreamProcessor generates one if needed, or we can generate a temporary one.
+                            // For simplicity, StreamProcessor will handle ID generation if this toolCallInfo is used.
+                            // Index is also not explicitly per-call in Gemini as it is in Anthropic/OpenAI tool deltas.
+                            // We'll use a default index of 0 for now, as Gemini usually sends one tool call at a time in this structure.
+                            toolCallInfo = new ToolCallChunk(0, Name: funcName, ArgumentChunk: funcArgs, IsComplete: true);
+                            Logger?.LogDebug("Parsed Gemini function call: {Name}", funcName);
                         }
                     }
                 }
             }
+        }
 
-            if (root.TryGetProperty("usageMetadata", out var usageMetadata))
+        // Usage metadata might appear in chunks without candidate data (e.g., final chunk)
+        if (root.TryGetProperty("usageMetadata", out var usageMetadata))
+        {
+            Logger?.LogTrace("Found Gemini usageMetadata: {UsageMetadataRaw}", usageMetadata.GetRawText());
+            if (usageMetadata.TryGetProperty("promptTokenCount", out var pToken) && pToken.ValueKind == JsonValueKind.Number)
             {
-                _logger?.LogTrace("Found Gemini usageMetadata.");
-                if (usageMetadata.TryGetProperty("promptTokenCount", out var pToken) && pToken.ValueKind == JsonValueKind.Number)
-                {
-                    inputTokens = pToken.GetInt32();
-                }
-                if (usageMetadata.TryGetProperty("candidatesTokenCount", out var cToken) && cToken.ValueKind == JsonValueKind.Number)
-                {
-                    outputTokens = cToken.GetInt32();
-                }
-                else if (usageMetadata.TryGetProperty("totalTokenCount", out var tToken) && tToken.ValueKind == JsonValueKind.Number && inputTokens.HasValue)
+                inputTokens = pToken.GetInt32();
+            }
+            // Gemini sometimes sends totalTokenCount, sometimes candidatesTokenCount
+            if (usageMetadata.TryGetProperty("candidatesTokenCount", out var cToken) && cToken.ValueKind == JsonValueKind.Number)
+            {
+                outputTokens = cToken.GetInt32();
+            }
+            else if (usageMetadata.TryGetProperty("totalTokenCount", out var tToken) && tToken.ValueKind == JsonValueKind.Number)
+            {
+                // If we have input tokens, we can derive output, otherwise totalTokenCount might be just output or combined.
+                // This heuristic might need refinement based on observing more Gemini stream patterns.
+                if (inputTokens.HasValue)
                 {
                     outputTokens = tToken.GetInt32() - inputTokens.Value;
                 }
-
-                if (inputTokens.HasValue || outputTokens.HasValue)
+                else
                 {
-                    _logger?.LogDebug("Parsed Gemini token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
+                    // If no promptTokenCount seen yet, assume totalTokenCount is effectively output for this chunk or final sum.
+                    outputTokens = tToken.GetInt32(); 
                 }
             }
 
-            if (containsFunctionCall)
+            if (inputTokens.HasValue || outputTokens.HasValue)
             {
-                finishReason = "tool_calls";
-                _logger?.LogInformation("Setting finish reason to 'tool_calls' due to function call presence");
+                Logger?.LogDebug("Parsed Gemini token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
             }
-
-            if (!string.IsNullOrEmpty(textDelta) && string.IsNullOrEmpty(finishReason) && root.TryGetProperty("done", out var doneElement) && doneElement.GetBoolean())
-            {
-                finishReason = "stop";
-                _logger?.LogInformation("Setting finish reason to 'stop' for final content chunk");
-            }
-
-            _logger?.LogInformation("[GeminiSummary] Processed chunk: TextDelta={TextDelta}, ToolCallInfo={ToolCallInfo}, FinishReason={FinishReason}",
-                textDelta != null ? $"Length: {textDelta.Length}" : "null",
-                toolCallInfo != null ? $"Name: {toolCallInfo.Name}" : "null",
-                finishReason);
-
-            return new ParsedChunkInfo(
-                TextDelta: textDelta,
-                ToolCallInfo: toolCallInfo,
-                InputTokens: inputTokens,
-                OutputTokens: outputTokens,
-                FinishReason: finishReason
-            );
         }
-        catch (JsonException jsonEx)
+        
+        // If a functionCall part was found, and no explicit tool_calls finish_reason, set it.
+        // This ensures that StreamProcessor correctly identifies the intent for tool execution.
+        if (containsFunctionCall && finishReason != "tool_calls")
         {
-            _logger.LogError(jsonEx, "Failed to parse Gemini stream chunk. RawChunk: {RawChunk}", rawJson);
-            return new ParsedChunkInfo();
+            finishReason = "tool_calls";
+            Logger?.LogDebug("Overriding finish reason to 'tool_calls' due to detected functionCall part.");
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error parsing Gemini stream chunk. RawChunk: {RawChunk}", rawJson);
-            return new ParsedChunkInfo();
-        }
+
+        Logger?.LogTrace("[GeminiSummary] Processed chunk: TextDelta='{TextDelta}', ToolCallName={ToolName}, FinishReason={FR}",
+            textDelta,
+            toolCallInfo?.Name,
+            finishReason);
+
+        return new ParsedChunkInfo(
+            TextDelta: textDelta,
+            ToolCallInfo: toolCallInfo,
+            InputTokens: inputTokens,
+            OutputTokens: outputTokens,
+            FinishReason: finishReason
+        );
     }
 } 

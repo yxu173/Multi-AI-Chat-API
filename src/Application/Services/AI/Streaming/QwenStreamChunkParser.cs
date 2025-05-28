@@ -1,13 +1,19 @@
 using System.Text.Json;
 using Domain.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace Application.Services.AI.Streaming;
 
-public class QwenStreamChunkParser : IStreamChunkParser
+public class QwenStreamChunkParser : BaseStreamChunkParser<QwenStreamChunkParser>
 {
-    public ModelType SupportedModelType => ModelType.Qwen;
+    public QwenStreamChunkParser(ILogger<QwenStreamChunkParser> logger)
+        : base(logger)
+    {
+    }
 
-    public ParsedChunkInfo ParseChunk(string rawContent)
+    public override ModelType SupportedModelType => ModelType.Qwen;
+
+    protected override ParsedChunkInfo ParseModelSpecificChunk(string rawContent)
     {
         if (string.IsNullOrEmpty(rawContent))
         {

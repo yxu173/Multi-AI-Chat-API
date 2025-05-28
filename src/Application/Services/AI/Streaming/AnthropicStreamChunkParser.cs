@@ -4,203 +4,167 @@ using Microsoft.Extensions.Logging;
 
 namespace Application.Services.AI.Streaming;
 
-public class AnthropicStreamChunkParser : IStreamChunkParser
+public class AnthropicStreamChunkParser : BaseStreamChunkParser<AnthropicStreamChunkParser>
 {
-    private readonly ILogger<AnthropicStreamChunkParser> _logger;
-
     public AnthropicStreamChunkParser(ILogger<AnthropicStreamChunkParser> logger)
+        : base(logger)
     {
-        _logger = logger;
     }
 
-    public ModelType SupportedModelType => ModelType.Anthropic;
+    public override ModelType SupportedModelType => ModelType.Anthropic;
 
-    public ParsedChunkInfo ParseChunk(string rawJson)
+    protected override ParsedChunkInfo ParseModelSpecificChunk(string rawJson)
     {
-        try
+        Logger.LogTrace("[AnthropicParser] Received raw data chunk: {RawContent}", rawJson);
+
+        using var doc = JsonDocument.Parse(rawJson);
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
         {
-            using var doc = JsonDocument.Parse(rawJson);
-            var root = doc.RootElement;
-
-            string? textDelta = null;
-            string? thinkingDelta = null;
-            ToolCallChunk? toolCallInfo = null;
-            int? inputTokens = null;
-            int? outputTokens = null;
-            string? finishReason = null;
-
-            _logger?.LogInformation("[AnthropicDebug] Raw chunk content: {RawContent}", rawJson);
-
-            // Handle error responses first
-            if (root.TryGetProperty("error", out var errorElement))
-            {
-                string errorType = string.Empty;
-                string errorMessage = string.Empty;
-
-                if (errorElement.TryGetProperty("type", out var typeElement))
-                {
-                    errorType = typeElement.GetString() ?? string.Empty;
-                }
-                if (errorElement.TryGetProperty("message", out var messageElement))
-                {
-                    errorMessage = messageElement.GetString() ?? string.Empty;
-                }
-
-                _logger?.LogError("Anthropic stream reported error: {ErrorJson}", errorElement.GetRawText());
-
-                finishReason = errorType switch
-                {
-                    "overloaded_error" => "overloaded",
-                    "rate_limit_error" => "rate_limit",
-                    "invalid_request_error" => "invalid_request",
-                    _ => "error"
-                };
-
-                return new ParsedChunkInfo(FinishReason: finishReason);
-            }
-
-            // Main event processing
-            if (root.TryGetProperty("type", out var element) && element.ValueKind == JsonValueKind.String)
-            {
-                var eventType = element.GetString();
-                _logger?.LogDebug("Processing Anthropic event type: {EventType}", eventType);
-
-                switch (eventType)
-                {
-                    case "message_start":
-                        if (root.TryGetProperty("message", out var messageStart) && messageStart.TryGetProperty("usage", out var usageStart))
-                        {
-                            if (usageStart.TryGetProperty("input_tokens", out var inTok) && inTok.ValueKind == JsonValueKind.Number)
-                                inputTokens = inTok.GetInt32();
-                            _logger?.LogDebug("Parsed input tokens from message_start: {InputTokens}", inputTokens);
-                        }
-                        break;
-
-                    case "content_block_start":
-                        if (root.TryGetProperty("content_block", out var blockStart) && blockStart.TryGetProperty("type", out var blockType) && blockType.GetString() == "tool_use")
-                        {
-                            if (blockStart.TryGetProperty("id", out var toolId) && blockStart.TryGetProperty("name", out var toolName) &&
-                                root.TryGetProperty("index", out var startIndexElement) && startIndexElement.TryGetInt32(out int startIndex))
-                            {
-                                toolCallInfo = new ToolCallChunk(startIndex, Id: toolId.GetString(), Name: toolName.GetString(), ArgumentChunk: null);
-                                _logger?.LogInformation("Parsed tool_use start: Index={Index}, Id={Id}, Name={Name}", startIndex, toolCallInfo.Id, toolCallInfo.Name);
-                            }
-                            else
-                            {
-                                _logger?.LogWarning("Could not parse tool_use start details from: {Json}", rawJson);
-                            }
-                        }
-                        break;
-
-                    case "content_block_delta":
-                        if (root.TryGetProperty("index", out var deltaIndexElement) && deltaIndexElement.TryGetInt32(out int deltaIndex))
-                        {
-                            if (root.TryGetProperty("delta", out var contentDelta) && contentDelta.TryGetProperty("type", out var deltaTypeElement))
-                            {
-                                string deltaType = deltaTypeElement.GetString() ?? string.Empty;
-
-                                if (deltaType == "text_delta" && contentDelta.TryGetProperty("text", out var textElement))
-                                {
-                                    textDelta = textElement.GetString();
-                                    _logger?.LogDebug("Parsed text_delta: Index={Index}, Text='{TextDelta}'", deltaIndex, textDelta);
-                                }
-                                else if (deltaType == "input_json_delta" && contentDelta.TryGetProperty("partial_json", out var argsChunkElement))
-                                {
-                                    toolCallInfo = new ToolCallChunk(deltaIndex, ArgumentChunk: argsChunkElement.GetString());
-                                    _logger?.LogDebug("Parsed tool argument chunk (input_json_delta): Index={Index}, Length={Length}", deltaIndex, toolCallInfo.ArgumentChunk?.Length ?? 0);
-                                }
-                                else if (deltaType == "thinking_delta" && contentDelta.TryGetProperty("thinking", out var thinkingElement))
-                                {
-                                    thinkingDelta = thinkingElement.GetString();
-                                    _logger?.LogDebug("Parsed thinking_delta: Index={Index}, Text='{ThinkingDelta}'", deltaIndex, thinkingDelta);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            _logger?.LogWarning("Could not parse content_block_delta details (missing index or delta info) from: {Json}", rawJson);
-                        }
-                        break;
-
-                    case "content_block_stop":
-                        if (root.TryGetProperty("index", out var stopIndexElement) && stopIndexElement.TryGetInt32(out int stopIndex))
-                        {
-                            _logger?.LogDebug("Received content_block_stop for index {Index}", stopIndex);
-                        }
-                        break;
-
-                    case "message_delta":
-                        if (root.TryGetProperty("delta", out var messageDelta) && messageDelta.TryGetProperty("stop_reason", out var reasonElement))
-                        {
-                            var reason = reasonElement.GetString();
-                            finishReason = reason switch
-                            {
-                                "end_turn" => "stop",
-                                "max_tokens" => "length",
-                                "tool_calls" => "tool_calls", 
-                                _ => reason
-                            };
-                            _logger?.LogInformation("Received stop reason: {Reason} (normalized to: {NormalizedReason})", reason, finishReason);
-                        }
-                        if (root.TryGetProperty("usage", out var usageDelta))
-                        {
-                            if (usageDelta.TryGetProperty("output_tokens", out var outTok) && outTok.ValueKind == JsonValueKind.Number)
-                                outputTokens = outTok.GetInt32();
-                            _logger?.LogDebug("Parsed output tokens from message_delta usage: {OutputTokens}", outputTokens);
-                        }
-                        break;
-
-                    case "message_stop":
-                        _logger?.LogInformation("Received message_stop event.");
-                        if (string.IsNullOrEmpty(finishReason))
-                        {
-                            finishReason = "stop";
-                            _logger?.LogInformation("Assuming normal 'stop' finish reason for message_stop.");
-                        }
-                         if (root.TryGetProperty("message", out var finalMessage) && finalMessage.TryGetProperty("usage", out var finalUsage))
-                         {
-                             if (finalUsage.TryGetProperty("input_tokens", out var finalInTok) && finalInTok.ValueKind == JsonValueKind.Number) inputTokens = finalInTok.GetInt32();
-                             if (finalUsage.TryGetProperty("output_tokens", out var finalOutTok) && finalOutTok.ValueKind == JsonValueKind.Number) outputTokens = finalOutTok.GetInt32();
-                             if (root.TryGetProperty("message", out var startMsg) && startMsg.TryGetProperty("usage", out var startUsage) &&
-                                 startUsage.TryGetProperty("input_tokens", out var startInTok) && startInTok.ValueKind == JsonValueKind.Number && !inputTokens.HasValue)
-                             {
-                                 inputTokens = startInTok.GetInt32();
-                             }
-                             if (inputTokens.HasValue || outputTokens.HasValue)
-                             {
-                                 _logger?.LogDebug("Parsed final token usage from message_stop: Input={Input}, Output={Output}", inputTokens, outputTokens);
-                             }
-                         }
-                        break;
-
-                    case "ping":
-                        _logger?.LogTrace("Received ping event");
-                        break;
-
-                    default:
-                        _logger?.LogWarning("Unknown event type: {EventType}", eventType);
-                        break;
-                }
-            }
-
-            return new ParsedChunkInfo(
-                TextDelta: textDelta,
-                ThinkingDelta: thinkingDelta,
-                ToolCallInfo: toolCallInfo,
-                InputTokens: inputTokens,
-                OutputTokens: outputTokens,
-                FinishReason: finishReason
-            );
+            Logger.LogWarning("Anthropic stream chunk missing or invalid 'type' property: {RawJson}", rawJson);
+            return new ParsedChunkInfo(); // Or a specific error
         }
-        catch (JsonException jsonEx)
+
+        var eventType = typeElement.GetString();
+        string? textDelta = null;
+        ToolCallChunk? toolCallInfo = null;
+        int? inputTokens = null;
+        int? outputTokens = null;
+        string? finishReason = null;
+
+        switch (eventType)
         {
-            _logger.LogError(jsonEx, "Failed to parse Anthropic stream chunk. RawChunk: {RawChunk}", rawJson);
-            return new ParsedChunkInfo();
+            case "message_start":
+                if (root.TryGetProperty("message", out var messageElement))
+                {
+                    if (messageElement.TryGetProperty("usage", out var usageElement))
+                    {
+                        if (usageElement.TryGetProperty("input_tokens", out var inTokens))
+                        {
+                            inputTokens = inTokens.GetInt32();
+                        }
+                    }
+                }
+                break;
+
+            case "content_block_start":
+                if (root.TryGetProperty("content_block", out var contentBlockStart))
+                {
+                    if (contentBlockStart.TryGetProperty("type", out var cBlockType) && cBlockType.GetString() == "tool_use")
+                    {
+                        int index = root.GetProperty("index").GetInt32();
+                        string? id = contentBlockStart.GetProperty("id").GetString();
+                        string? name = contentBlockStart.GetProperty("name").GetString();
+                        // Input is not available here, it will be in content_block_delta for tool_use
+                        toolCallInfo = new ToolCallChunk(index, id, name, null, false);
+                        Logger.LogDebug("Anthropic tool use started: {ToolName} (ID: {ToolId}, Index: {ToolIndex})", name, id, index);
+                    }
+                }
+                break;
+
+            case "content_block_delta":
+                if (root.TryGetProperty("delta", out var deltaElement))
+                {
+                    var index = root.GetProperty("index").GetInt32();
+                    if (deltaElement.TryGetProperty("type", out var deltaType))
+                    {
+                        if (deltaType.GetString() == "text_delta")
+                        {
+                            textDelta = deltaElement.GetProperty("text").GetString();
+                        }
+                        else if (deltaType.GetString() == "input_json_delta") // For tool use arguments
+                        {
+                            string? argumentChunk = deltaElement.GetProperty("partial_json").GetString();
+                            toolCallInfo = new ToolCallChunk(index, ArgumentChunk: argumentChunk);
+                            Logger.LogTrace("Anthropic tool use delta (args): {ArgumentChunk} for index {ToolIndex}", argumentChunk, index);
+                        }
+                    }
+                }
+                break;
+
+            case "content_block_stop":
+                // This event indicates a content block (like a tool_use block) has finished streaming its content.
+                // For tool calls, this means the arguments are complete.
+                if (root.TryGetProperty("index", out var blockIndexElement))
+                {
+                    int stoppedBlockIndex = blockIndexElement.GetInt32();
+                    // We can mark the tool call at this index as having its arguments complete.
+                    // The overall `tool_calls` finish reason comes later in `message_delta` or `message_stop`.
+                    // However, the `StreamProcessor` currently reconstructs tool calls. This might need adjustment
+                    // if StreamProcessor expects IsComplete on a per-chunk basis to mean the *entire* tool call object is done.
+                    // For Anthropic, argument streaming is done, but the overall decision to use tools might not be final yet.
+                    // Let's assume IsComplete on ToolCallChunk means arguments for that specific call are done streaming.
+                    toolCallInfo = new ToolCallChunk(stoppedBlockIndex, IsComplete: true); 
+                    Logger.LogDebug("Anthropic content_block_stop for index {Index}", stoppedBlockIndex);
+                }
+                break;
+
+            case "message_delta":
+                if (root.TryGetProperty("delta", out var messageDeltaElement))
+                {
+                    if (messageDeltaElement.TryGetProperty("stop_reason", out var stopReasonElement) && stopReasonElement.ValueKind != JsonValueKind.Null)
+                    {
+                        finishReason = stopReasonElement.GetString();
+                        Logger.LogInformation("Anthropic message_delta stop_reason: {StopReason}", finishReason);
+
+                        if (finishReason == "tool_use")
+                        {
+                             // This indicates the model wants to use tools. The actual tool details were in content_block events.
+                             // The StreamProcessor will collect these tool calls.
+                        }
+                    }
+                }
+                if (root.TryGetProperty("usage", out var messageDeltaUsage) && messageDeltaUsage.TryGetProperty("output_tokens", out var outTokensDelta))
+                {
+                    outputTokens = outTokensDelta.GetInt32();
+                }
+                break;
+
+            case "message_stop":
+                // This is the final event in the stream.
+                // It might contain the final output_tokens if not already provided by message_delta.
+                // It also confirms the stop_reason.
+                Logger.LogInformation("Anthropic message_stop event received.");
+                if (root.TryGetProperty("amazon-bedrock-invocationMetrics", out var bedrockMetrics))
+                {
+                    inputTokens = bedrockMetrics.GetProperty("inputTokenCount").GetInt32();
+                    outputTokens = bedrockMetrics.GetProperty("outputTokenCount").GetInt32();
+                }
+                else if (root.TryGetProperty("usage", out var finalUsage)) // Check for Claude directly
+                {
+                     if (inputTokens == null && finalUsage.TryGetProperty("input_tokens", out var finalInTokens)) inputTokens = finalInTokens.GetInt32();
+                     if (finalUsage.TryGetProperty("output_tokens", out var finalOutTokens)) outputTokens = finalOutTokens.GetInt32();
+                }
+                
+                // The actual finish_reason should have been set by message_delta if it was a natural stop or tool_use.
+                // If finish_reason is still null here, it implies a successful completion (e.g. "stop_sequence" or "max_tokens").
+                // The StreamProcessor seems to handle the case where finish_reason is "tool_calls" or "stop".
+                // Anthropic uses "tool_use", "stop_sequence", "max_tokens", "end_turn".
+                // We need to map these to what StreamProcessor expects or ensure StreamProcessor handles them.
+                // For now, pass it through. If it was already set by message_delta, this won't overwrite unless it was null.
+                // If not set by message_delta, and we reach message_stop, assume it's a natural stop.
+                if (string.IsNullOrEmpty(finishReason))
+                {
+                    finishReason = "stop"; // Default to "stop" if no explicit reason from delta and stream ends
+                }
+                break;
+
+            case "ping":
+                // Keep-alive event, ignore.
+                break;
+
+            default:
+                Logger.LogWarning("Unhandled Anthropic event type: {EventType} - {RawJson}", eventType, rawJson);
+                break;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error parsing Anthropic stream chunk. RawChunk: {RawChunk}", rawJson);
-            return new ParsedChunkInfo();
-        }
+
+        return new ParsedChunkInfo(
+            TextDelta: textDelta,
+            ToolCallInfo: toolCallInfo,
+            InputTokens: inputTokens,
+            OutputTokens: outputTokens,
+            FinishReason: finishReason
+        );
     }
 } 
