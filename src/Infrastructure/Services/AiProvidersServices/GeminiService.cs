@@ -5,6 +5,7 @@ using Application.Abstractions.Interfaces;
 using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -12,15 +13,19 @@ public class GeminiService : BaseAiService, IAiFileUploader
 {
     private const string BaseUrl = "https://generativelanguage.googleapis.com/";
     private readonly ILogger<GeminiService> _logger;
+    private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
 
     public GeminiService(
         IHttpClientFactory httpClientFactory, 
         string? apiKey,
         string modelCode,
-        ILogger<GeminiService> logger)
+        ILogger<GeminiService> logger,
+        IResilienceService resilienceService)
         : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
+                            ?? throw new ArgumentNullException(nameof(resilienceService));
     }
 
     protected override string ProviderName => "Gemini";
@@ -58,37 +63,62 @@ public class GeminiService : BaseAiService, IAiFileUploader
 
     public async Task<AiFileUploadResult?> UploadFileForAiAsync(byte[] fileBytes, string mimeType, string fileName, CancellationToken cancellationToken)
     {
-        // 1. Upload the file bytes
         var uploadUrl = $"https://generativelanguage.googleapis.com/upload/v1beta/files?key={ApiKey}";
-        _logger.LogInformation("Uploading file to Gemini: {FileName}, MIME: {MimeType}, Size: {Size} bytes", fileName, mimeType, fileBytes.Length);
+        _logger.LogInformation("Preparing to upload file to {ProviderName}: {FileName}, MIME: {MimeType}, Size: {Size} bytes, using resilience pipeline", ProviderName, fileName, mimeType, fileBytes.Length);
 
-        var uploadRequest = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
-        uploadRequest.Headers.Add("X-Goog-Upload-Protocol", "raw");
-        uploadRequest.Content = new ByteArrayContent(fileBytes);
-        uploadRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
-        // ContentLength is automatically set by ByteArrayContent
+        HttpResponseMessage? uploadResponse = null;
+        Uri? requestUriForLogging = null; 
 
-        HttpResponseMessage uploadResponse;
         try
         {
-            uploadResponse = await HttpClient.SendAsync(uploadRequest, cancellationToken).ConfigureAwait(false);
+            uploadResponse = await _resiliencePipeline.ExecuteAsync(
+                async ct => 
+                {
+                    // Create a new HttpRequestMessage for each attempt
+                    var attemptRequest = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
+                    attemptRequest.Headers.Add("X-Goog-Upload-Protocol", "raw");
+                    // For ByteArrayContent, it's generally safe to reuse the same byte array.
+                    // If issues were to arise with content being "consumed", it would need to be new byte[fileBytes.Length] and fileBytes.CopyTo(newArray,0)
+                    // but ByteArrayContent itself can typically be reused if the underlying array isn't modified.
+                    attemptRequest.Content = new ByteArrayContent(fileBytes); 
+                    attemptRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
+                    
+                    requestUriForLogging = attemptRequest.RequestUri;
+                    _logger.LogDebug("Attempting to upload file {FileName} to {ProviderName}: {Endpoint} via Polly pipeline", fileName, ProviderName, requestUriForLogging);
+                    return await HttpClient.SendAsync(attemptRequest, ct);
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Polly.CircuitBreaker.BrokenCircuitException ex)
+        {
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName} file upload. Request for {FileName} to {Uri} was not sent.", ProviderName, fileName, requestUriForLogging ?? new Uri(uploadUrl));
+            throw;
+        }
+        catch (Polly.Timeout.TimeoutRejectedException ex)
+        {
+            _logger.LogError(ex, "{ProviderName} file upload request for {FileName} to {Uri} timed out.", ProviderName, fileName, requestUriForLogging ?? new Uri(uploadUrl));
+            throw;
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "HTTP request failed during Gemini file upload for {FileName}.", fileName);
-            throw; // Re-throw to be handled by the caller or a general error handler
+            _logger.LogError(ex, "HTTP request failed during {ProviderName} file upload for {FileName}. URI: {Uri}", ProviderName, fileName, requestUriForLogging ?? new Uri(uploadUrl));
+            throw; 
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Gemini file upload cancelled for {FileName}.", fileName);
+            _logger.LogInformation("{ProviderName} file upload cancelled for {FileName}. URI: {Uri}", ProviderName, fileName, requestUriForLogging ?? new Uri(uploadUrl));
             throw;
+        }
+
+        if (uploadResponse == null) 
+        {
+            _logger.LogError("{ProviderName} file upload response was null after resilience pipeline execution for {FileName}. This indicates an unexpected issue.", ProviderName, fileName);
+            throw new InvalidOperationException($"Upload response was null for {fileName} with {ProviderName}.");
         }
 
         if (!uploadResponse.IsSuccessStatusCode)
         {
-            _logger.LogWarning("Gemini file upload failed for {FileName} with status {StatusCode}.", fileName, uploadResponse.StatusCode);
-            // Passing null for providerApiKeyId as this is not a streaming content scenario
-            // and might have different rate limits or no specific managed key.
+            _logger.LogWarning("{ProviderName} file upload failed for {FileName} with status {StatusCode}. URI: {Uri}", ProviderName, fileName, uploadResponse.StatusCode, uploadResponse.RequestMessage?.RequestUri);
             await HandleApiErrorAsync(uploadResponse, providerApiKeyId: null).ConfigureAwait(false); 
             return null;
         }
@@ -128,46 +158,59 @@ public class GeminiService : BaseAiService, IAiFileUploader
     {
         HttpResponseMessage? response = null;
         bool initialRequestSuccess = false;
+        Uri? requestUriForLogging = null;
 
         try
         {
-            var request = CreateRequest(requestPayload);
-            _logger.LogInformation("Sending request to Gemini model {ModelCode} with API Key ID (if managed): {ApiKeyId}", ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
+            _logger.LogInformation("Preparing to send request to {ProviderName} model {ModelCode} with API Key ID (if managed): {ApiKeyId} using resilience pipeline", 
+                ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
 
-            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response = await _resiliencePipeline.ExecuteAsync(
+                async ct => 
+                {
+                    var attemptRequest = CreateRequest(requestPayload);
+                    requestUriForLogging = attemptRequest.RequestUri;
+                    _logger.LogDebug("Attempting to send request to {ProviderName} endpoint: {Endpoint} via Polly pipeline", ProviderName, requestUriForLogging);
+                    return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                },
+                cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
                 await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
-                // HandleApiErrorAsync is expected to throw. If it doesn't for some reason,
-                // the method will complete without yielding, which is fine.
                 yield break; 
             }
-            _logger.LogDebug("Successfully received stream response header from Gemini model {ModelCode}", ModelCode);
+            _logger.LogDebug("Successfully received stream response header from {ProviderName} model {ModelCode}", ProviderName, ModelCode);
             initialRequestSuccess = true;
+        }
+        catch (Polly.CircuitBreaker.BrokenCircuitException ex)
+        {
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName} stream. Request to {Uri} was not sent.", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw;
+        }
+        catch (Polly.Timeout.TimeoutRejectedException ex)
+        {
+            _logger.LogError(ex, "Request to {ProviderName} stream timed out. URI: {Uri}", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation(ex, "Gemini stream request operation was cancelled before/during HTTP send for model {ModelCode}.", ModelCode);
-            // response?.Dispose(); // Handled in finally block that should wrap stream processing too
+            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
             yield break; 
         }
-        catch (Exception ex) // Catches errors from SendAsync or HandleApiErrorAsync if it doesn't throw specific handled exceptions
+        catch (Exception ex) 
         {
-            _logger.LogError(ex, "Error during Gemini API request setup or initial response handling for model {ModelCode}.", ModelCode);
-            // response?.Dispose(); // Handled in finally block
-            throw; // Re-throw for command-level retry
+            _logger.LogError(ex, "Error during {ProviderName} stream API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw; 
         }
 
         if (!initialRequestSuccess || response == null)
         {
-            // Should have been handled by exceptions or yield break above, but as a safeguard.
             response?.Dispose();
             yield break;
         }
 
-        // Process the stream: This part is now outside the initial try-catch for the request itself.
-        // It's in its own try-finally to ensure response disposal.
+        var successfulRequestUri = response.RequestMessage?.RequestUri; // For logging
         try
         {
             bool receivedAnyData = false;
@@ -175,9 +218,9 @@ public class GeminiService : BaseAiService, IAiFileUploader
                                .WithCancellation(cancellationToken)
                                .ConfigureAwait(false))
             {
-                if (cancellationToken.IsCancellationRequested) // Should be caught by WithCancellation typically
+                if (cancellationToken.IsCancellationRequested) 
                 {
-                    _logger.LogInformation("Gemini stream processing cancelled by token for model {ModelCode}.", ModelCode);
+                    _logger.LogInformation("{ProviderName} stream processing cancelled by token for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
                     break;
                 }
                 receivedAnyData = true;
@@ -186,19 +229,17 @@ public class GeminiService : BaseAiService, IAiFileUploader
             
             if (!receivedAnyData && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("Gemini stream for model {ModelCode} ended without sending any data.", ModelCode);
+                _logger.LogWarning("{ProviderName} stream for model {ModelCode} ended without sending any data. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
             }
             
             if (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogDebug("Gemini stream completed for model {ModelCode}.", ModelCode);
+                _logger.LogDebug("{ProviderName} stream completed for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
             }
         }
-        // No catch here for the `yield return` part. Exceptions during ReadStreamAsync or processing will propagate.
-        // OperationCanceledException during ReadStreamAsync should be handled by its own cancellation logic or propagate.
         finally
         {
-            response.Dispose(); // response is guaranteed non-null here if initialRequestSuccess was true
+            response.Dispose(); 
         }
     }
 }

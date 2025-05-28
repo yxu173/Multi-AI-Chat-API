@@ -66,69 +66,71 @@ public static class DependencyInjection
         
         services.AddHostedService<DailyQuotaResetService>();
 
-        // Register typed HttpClients for each AI provider with appropriate configuration
+        // Register typed HttpClients for each AI provider
+        // Resilience is now handled within each service using IResilienceService
         
         // OpenAI client
         services.AddHttpClient<OpenAiService>(client => {
             client.BaseAddress = new Uri("https://api.openai.com/");
-            client.Timeout = TimeSpan.FromSeconds(60);
+            client.Timeout = TimeSpan.FromSeconds(60); // This timeout is for the HttpClient itself, Polly will have its own timeout
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        }); // Removed .AddPolicyHandler(InitializeRetryPolicy())
         
         // Anthropic client
         services.AddHttpClient<AnthropicService>(client => {
             client.BaseAddress = new Uri("https://api.anthropic.com/");
-            client.Timeout = TimeSpan.FromSeconds(120); // Longer timeout for larger models
+            client.Timeout = TimeSpan.FromSeconds(120);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
             client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        }); // Removed .AddPolicyHandler(InitializeRetryPolicy())
         
         // Gemini client
         services.AddHttpClient<GeminiService>(client => {
             client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
             client.Timeout = TimeSpan.FromSeconds(90);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        }); // Potentially remove .AddPolicyHandler for consistency if GeminiService will use IResilienceService
         
         // DeepSeek client
         services.AddHttpClient<DeepSeekService>(client => {
             client.BaseAddress = new Uri("https://api.deepseek.com/");
             client.Timeout = TimeSpan.FromSeconds(60);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        }); // Potentially remove .AddPolicyHandler for consistency
         
         // AimlFlux client
         services.AddHttpClient<AimlApiService>(client => {
             client.BaseAddress = new Uri("https://api.aiml.flux.com/");
             client.Timeout = TimeSpan.FromSeconds(60);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        }); // Potentially remove .AddPolicyHandler for consistency
         
         // Grok client
         services.AddHttpClient<GrokService>(client => {
             client.BaseAddress = new Uri("https://api.grok.ai/");
             client.Timeout = TimeSpan.FromSeconds(60);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        }); // Potentially remove .AddPolicyHandler for consistency
         
         // Qwen client
         services.AddHttpClient<QwenService>(client => {
             client.BaseAddress = new Uri("https://api.qwen.ai/");
             client.Timeout = TimeSpan.FromSeconds(60);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        }); // Potentially remove .AddPolicyHandler for consistency
         
         // Imagen client
         services.AddHttpClient<ImagenService>(client => {
             client.BaseAddress = new Uri("https://api.imagen.ai/");
-            client.Timeout = TimeSpan.FromSeconds(120); // Image generation needs longer timeout
+            client.Timeout = TimeSpan.FromSeconds(120); 
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        }); // Potentially remove .AddPolicyHandler for consistency
         
         // Default HTTP client for backward compatibility
         services.AddHttpClient();
 
-        // Add retry and resilience policy helper method
+        // Keep InitializeRetryPolicy if it's used by other HttpClient registrations not converted to IResilienceService yet
+        // If no other clients use it, this static method can be removed.
         static IAsyncPolicy<HttpResponseMessage> InitializeRetryPolicy()
         {
             return HttpPolicyExtensions
@@ -296,7 +298,7 @@ public static class DependencyInjection
         services.AddHttpClient("WikipediaApiClient", client =>
         {
             client.DefaultRequestHeaders.Add("Api-User-Agent", "MultiAiChatApi/1.0 (https://github.com/yourrepo/Multi-AI-Chat-API; your-email@example.com)");
-        }).AddPolicyHandler(InitializeRetryPolicy());
+        });
 
         // Register Wikipedia Plugin
         services.AddScoped<WikipediaPlugin>(sp =>

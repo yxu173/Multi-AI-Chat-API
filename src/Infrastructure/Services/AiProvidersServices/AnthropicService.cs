@@ -5,6 +5,7 @@ using Application.Abstractions.Interfaces;
 using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -13,6 +14,7 @@ public class AnthropicService : BaseAiService
     private const string AnthropicBaseUrl = "https://api.anthropic.com/v1/";
     private const string AnthropicApiVersion = "2023-06-01";
     private readonly ILogger<AnthropicService> _logger;
+    private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
 
     protected override string ProviderName => "Anthropic";
 
@@ -20,10 +22,13 @@ public class AnthropicService : BaseAiService
         IHttpClientFactory httpClientFactory, 
         string? apiKey, 
         string modelCode, 
-        ILogger<AnthropicService> logger)
+        ILogger<AnthropicService> logger,
+        IResilienceService resilienceService)
         : base(httpClientFactory, apiKey, modelCode, AnthropicBaseUrl)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName) 
+                            ?? throw new ArgumentNullException(nameof(resilienceService));
     }
 
     protected override void ConfigureHttpClient()
@@ -83,14 +88,21 @@ public class AnthropicService : BaseAiService
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
     {
-        var request = CreateRequest(requestPayload);
         HttpResponseMessage? response = null;
         bool initialRequestSuccess = false;
+        Uri? requestUriForLogging = null;
 
         try
         {
-            _logger.LogDebug("Sending request to Anthropic endpoint: {Endpoint}, Model: {Model}", request.RequestUri, ModelCode);
-            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response = await _resiliencePipeline.ExecuteAsync(
+                async ct => 
+                {
+                    var attemptRequest = CreateRequest(requestPayload);
+                    requestUriForLogging = attemptRequest.RequestUri;
+                    _logger.LogDebug("Attempting to send request to Anthropic endpoint: {Endpoint}, Model: {Model} via Polly pipeline", requestUriForLogging, ModelCode);
+                    return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                },
+                cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -100,14 +112,24 @@ public class AnthropicService : BaseAiService
             _logger.LogDebug("Successfully received stream response header from Anthropic model {ModelCode}", ModelCode);
             initialRequestSuccess = true;
         }
+        catch (Polly.CircuitBreaker.BrokenCircuitException ex)
+        {
+            _logger.LogError(ex, "Circuit breaker is open for Anthropic. Request to {Uri} was not sent.", requestUriForLogging ?? new Uri(AnthropicBaseUrl + GetEndpointPath()));
+            throw;
+        }
+        catch (Polly.Timeout.TimeoutRejectedException ex)
+        {
+            _logger.LogError(ex, "Request to Anthropic timed out. URI: {Uri}", requestUriForLogging ?? new Uri(AnthropicBaseUrl + GetEndpointPath()));
+            throw;
+        }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation(ex, "Anthropic stream request operation was cancelled before/during HTTP send for model {ModelCode}. URI: {Uri}", ModelCode, request.RequestUri);
+            _logger.LogInformation(ex, "Anthropic stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ModelCode, requestUriForLogging ?? new Uri(AnthropicBaseUrl + GetEndpointPath()));
             yield break;
         }
-        catch (Exception ex) // Catches errors from SendAsync or HandleApiErrorAsync
+        catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during Anthropic API request setup or initial response handling for model {ModelCode}. URI: {Uri}", ModelCode, request.RequestUri);
+            _logger.LogError(ex, "Error during Anthropic API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ModelCode, requestUriForLogging ?? new Uri(AnthropicBaseUrl + GetEndpointPath()));
             throw; 
         }
         
@@ -117,8 +139,8 @@ public class AnthropicService : BaseAiService
             yield break;
         }
 
-        // Process the stream
-        _logger.LogDebug("Anthropic request successful (HTTP {StatusCode}), beginning to process stream.", response.StatusCode);
+        var successfulRequestUri = response.RequestMessage?.RequestUri; // For logging in the finally block
+        _logger.LogDebug("Anthropic request successful (HTTP {StatusCode}), beginning to process stream from {Uri}", response.StatusCode, successfulRequestUri);
         try
         {
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
@@ -141,8 +163,6 @@ public class AnthropicService : BaseAiService
                         if (eventTypeWithinJson == "error")
                         {
                             _logger.LogError("Error event received in Anthropic stream: {JsonChunk}", jsonChunk);
-                            // Potentially break or handle as a stream-terminating error depending on policy.
-                            // For now, we yield it and let downstream decide. If it means the stream is unusable, consider breaking.
                         }
                     }
                 }
@@ -152,17 +172,17 @@ public class AnthropicService : BaseAiService
                 }
                 _logger.LogTrace("Yielding Anthropic chunk. Event in JSON: '{EventType}', IsCompletion: {IsCompletion}", eventTypeWithinJson ?? "N/A", isCompletion);
                 yield return new AiRawStreamChunk(jsonChunk, isCompletion);
-                if (isCompletion) break; // Stop processing if it's the final message_stop event.
+                if (isCompletion) break; 
             }
             
             if (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogDebug("Finished reading Anthropic stream for request to {Endpoint}", request.RequestUri);
+                _logger.LogDebug("Finished reading Anthropic stream for request to {Endpoint}", successfulRequestUri);
             }
         }
         finally
         {
-            response.Dispose(); // response is guaranteed non-null here
+            response.Dispose(); 
         }
     }
 }

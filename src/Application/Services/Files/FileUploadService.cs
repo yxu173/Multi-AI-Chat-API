@@ -8,6 +8,10 @@ using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.Processing;
+using Application.Services.Files.BackgroundProcessing;
+using Hangfire;
+using Microsoft.Extensions.Logging;
+using System.IO;
 
 namespace Application.Services.Files;
 
@@ -15,13 +19,21 @@ public class FileUploadService
 {
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly string _uploadsBasePath;
+    private readonly IBackgroundJobClient _backgroundJobClient;
+    private readonly ILogger<FileUploadService> _logger;
+    private const int StreamBufferSize = 81920; // 80 KB buffer for streaming
 
-    public FileUploadService(IFileAttachmentRepository fileAttachmentRepository, string uploadsBasePath)
+    public FileUploadService(
+        IFileAttachmentRepository fileAttachmentRepository, 
+        string uploadsBasePath,
+        IBackgroundJobClient backgroundJobClient,
+        ILogger<FileUploadService> logger)
     {
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _uploadsBasePath = uploadsBasePath ?? throw new ArgumentNullException(nameof(uploadsBasePath));
+        _backgroundJobClient = backgroundJobClient ?? throw new ArgumentNullException(nameof(backgroundJobClient));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         
-        // Ensure uploads directory exists
         if (!Directory.Exists(_uploadsBasePath))
         {
             Directory.CreateDirectory(_uploadsBasePath);
@@ -36,98 +48,95 @@ public class FileUploadService
             Directory.CreateDirectory(uploadPath);
         }
 
-        var uniqueFileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
+        var originalFileName = Path.GetFileName(file.FileName);
+        var uniqueFileName = $"{Guid.NewGuid()}_{originalFileName}";
         var filePath = Path.Combine(uploadPath, uniqueFileName);
 
-        byte[] fileBytes;
+        long finalFileSize = 0;
+        string contentType = file.ContentType;
+        bool processedAsImage = false;
+
+        if (contentType.StartsWith("image/"))
+        {
+            _logger.LogInformation("Attempting to process image file {FileName} for upload.", originalFileName);
+            try
+            {
+                using var imageReadStream = file.OpenReadStream();
+                using var image = await Image.LoadAsync(imageReadStream, cancellationToken);
+                
+                image.Mutate(x => x.Resize(new ResizeOptions
+                {
+                    Size = new Size(2048, 2048),
+                    Mode = ResizeMode.Max,
+                    Sampler = KnownResamplers.Lanczos3
+                }));
+
+                IImageEncoder encoder = contentType.ToLowerInvariant() switch
+                {
+                    "image/jpeg" or "image/jpg" => new JpegEncoder { Quality = 75 },
+                    "image/png" => new PngEncoder { CompressionLevel = PngCompressionLevel.BestCompression },
+                    "image/webp" => new WebpEncoder { Quality = 80 },
+                    _ => new JpegEncoder { Quality = 75 }
+                };
+                
+                await using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, StreamBufferSize, useAsync: true))
+                {
+                    await image.SaveAsync(fileStream, encoder, cancellationToken);
+                    finalFileSize = fileStream.Length;
+                }
+
+                if (encoder is JpegEncoder) contentType = "image/jpeg";
+                else if (encoder is PngEncoder) contentType = "image/png";
+                else if (encoder is WebpEncoder) contentType = "image/webp";
+                
+                processedAsImage = true;
+                _logger.LogInformation("Image {FileName} processed and saved. Original size: {OriginalSize}, New size: {NewSize}", originalFileName, file.Length, finalFileSize);
+            }
+            catch (SixLabors.ImageSharp.UnknownImageFormatException ex)
+            {
+                 _logger.LogWarning(ex, "Could not determine image format for {FileName}. Will save as original.", originalFileName);
+            }
+            catch (SixLabors.ImageSharp.ImageFormatException ex)
+            {
+                 _logger.LogWarning(ex, "Invalid image format for {FileName}. Will save as original.", originalFileName);
+            }
+            catch (Exception ex) 
+            {
+                _logger.LogError(ex, "Error processing image {FileName}. Will save as original.", originalFileName);
+                if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath); 
+            }
+        }
+
+        if (!processedAsImage) 
+        {
+            _logger.LogInformation("Streaming file {FileName} directly to disk. Path: {FilePath}", originalFileName, filePath);
+            await using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, StreamBufferSize, useAsync: true))
+            {
+                await using var uploadStream = file.OpenReadStream();
+                await uploadStream.CopyToAsync(fileStream, StreamBufferSize, cancellationToken);
+                finalFileSize = fileStream.Length; 
+            }
+            _logger.LogInformation("File {FileName} streamed directly to disk. Size: {FileSize}", originalFileName, finalFileSize);
+        }
         
-        if (file.ContentType.StartsWith("image/"))
-        {
-            using var image = await Image.LoadAsync(file.OpenReadStream());
-            
-
-            image.Mutate(x => x.Resize(new ResizeOptions
-            {
-                Size = new Size(2048, 2048),
-                Mode = ResizeMode.Max,
-                Sampler = KnownResamplers.Lanczos3
-            }));
-
-            await using var ms = new MemoryStream();
-            IImageEncoder encoder = file.ContentType switch
-            {
-                "image/jpeg" => new JpegEncoder { Quality = 75 },
-                "image/png" => new PngEncoder { CompressionLevel = PngCompressionLevel.BestCompression },
-                "image/webp" => new WebpEncoder { Quality = 80 },
-                _ => new JpegEncoder() { Quality = 75 }
-            };
-
-            await image.SaveAsync(ms, encoder, cancellationToken);
-            fileBytes = ms.ToArray();
-        }
-        else
-        {
-            await using var stream = new MemoryStream();
-            await file.CopyToAsync(stream, cancellationToken);
-            fileBytes = stream.ToArray();
-        }
-
-        using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await stream.WriteAsync(fileBytes, 0, fileBytes.Length, cancellationToken);
-        }
-
         var fileAttachment = FileAttachment.Create(
-            file.FileName,
-            filePath,
-            file.ContentType,
-            file.Length,
+            originalFileName, 
+            filePath,      
+            contentType,   
+            finalFileSize, 
             messageId
         );
 
-        // Save to database
         await _fileAttachmentRepository.AddAsync(fileAttachment, cancellationToken);
+        _logger.LogInformation("File attachment {FileAttachmentId} for {FileName} saved to DB. Path: {FilePath}", fileAttachment.Id, fileAttachment.FileName, fileAttachment.FilePath);
+
+        _backgroundJobClient.Enqueue<IBackgroundFileProcessor>(processor => 
+            processor.ProcessFileAttachmentAsync(fileAttachment.Id, CancellationToken.None));
+
+        _logger.LogInformation("Enqueued background processing job for file attachment ID: {FileAttachmentId}", fileAttachment.Id);
 
         return fileAttachment;
     }
-
-    public async Task AssociateFileWithMessageAsync(Guid fileId, Guid messageId, CancellationToken cancellationToken = default)
-    {
-        var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId, cancellationToken);
-        if (fileAttachment == null)
-        {
-            throw new InvalidOperationException($"File attachment with ID {fileId} not found");
-        }
-
-        var updatedFileAttachment = FileAttachment.Create(
-            fileAttachment.FileName,
-            fileAttachment.FilePath,
-            fileAttachment.ContentType,
-            fileAttachment.FileSize,
-            messageId
-        );
-
-         var fieldInfo = typeof(BaseEntity).GetField("<Id>k__BackingField", 
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        if (fieldInfo != null)
-        {
-            fieldInfo.SetValue(updatedFileAttachment, fileAttachment.Id);
-        }
-
-        await _fileAttachmentRepository.UpdateAsync(updatedFileAttachment, cancellationToken);
-    }
-
-    public async Task<string> GetFileUrlAsync(Guid fileId, CancellationToken cancellationToken = default)
-    {
-        var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId, cancellationToken);
-        if (fileAttachment == null)
-        {
-            throw new InvalidOperationException($"File attachment with ID {fileId} not found");
-        }
-
-        return fileAttachment.FilePath;
-    }
-
     public async Task DeleteFileAsync(Guid fileId, CancellationToken cancellationToken = default)
     {
         var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId, cancellationToken);
@@ -136,9 +145,9 @@ public class FileUploadService
             return; 
         }
 
-        if (File.Exists(fileAttachment.FilePath))
+        if (System.IO.File.Exists(fileAttachment.FilePath))
         {
-            File.Delete(fileAttachment.FilePath);
+            System.IO.File.Delete(fileAttachment.FilePath);
         }
 
         // Remove from database

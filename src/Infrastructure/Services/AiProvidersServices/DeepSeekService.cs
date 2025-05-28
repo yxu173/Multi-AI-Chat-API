@@ -4,6 +4,7 @@ using Application.Abstractions.Interfaces;
 using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -11,15 +12,19 @@ public class DeepSeekService : BaseAiService
 {
     private const string BaseUrl = "https://api.deepseek.com/v1/";
     private readonly ILogger<DeepSeekService> _logger;
+    private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
 
     public DeepSeekService(
         IHttpClientFactory httpClientFactory, 
         string? apiKey,
         string modelCode,
-        ILogger<DeepSeekService> logger)
+        ILogger<DeepSeekService> logger,
+        IResilienceService resilienceService)
         : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
+                            ?? throw new ArgumentNullException(nameof(resilienceService));
     }
 
     protected override string ProviderName => "DeepSeek";
@@ -45,13 +50,22 @@ public class DeepSeekService : BaseAiService
     {
         HttpResponseMessage? response = null;
         bool initialRequestSuccess = false;
+        Uri? requestUriForLogging = null;
 
         try
         {
-            var request = CreateRequest(requestPayload);
-            _logger.LogInformation("Sending request to {ProviderName} model {ModelCode} with API Key ID (if managed): {ApiKeyId}", ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
+            _logger.LogInformation("Preparing to send request to {ProviderName} model {ModelCode} with API Key ID (if managed): {ApiKeyId} using resilience pipeline", 
+                ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
 
-            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response = await _resiliencePipeline.ExecuteAsync(
+                async ct => 
+                {
+                    var attemptRequest = CreateRequest(requestPayload);
+                    requestUriForLogging = attemptRequest.RequestUri;
+                    _logger.LogDebug("Attempting to send request to {ProviderName} endpoint: {Endpoint} via Polly pipeline", ProviderName, requestUriForLogging);
+                    return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                },
+                cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -61,14 +75,24 @@ public class DeepSeekService : BaseAiService
             _logger.LogDebug("Successfully received stream response header from {ProviderName} model {ModelCode}", ProviderName, ModelCode);
             initialRequestSuccess = true;
         }
+        catch (Polly.CircuitBreaker.BrokenCircuitException ex)
+        {
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw;
+        }
+        catch (Polly.Timeout.TimeoutRejectedException ex)
+        {
+            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw;
+        }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled before/during HTTP send for model {ModelCode}.", ProviderName, ModelCode);
+            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
             yield break; 
         }
         catch (Exception ex) 
         {
-            _logger.LogError(ex, "Error during {ProviderName} API request setup or initial response handling for model {ModelCode}.", ProviderName, ModelCode);
+            _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
             throw; 
         }
 
@@ -78,6 +102,7 @@ public class DeepSeekService : BaseAiService
             yield break;
         }
 
+        var successfulRequestUri = response.RequestMessage?.RequestUri; // For logging
         try
         {
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
@@ -86,7 +111,7 @@ public class DeepSeekService : BaseAiService
             {
                 if (cancellationToken.IsCancellationRequested) 
                 {
-                    _logger.LogInformation("{ProviderName} stream processing cancelled by token for model {ModelCode}.", ProviderName, ModelCode);
+                    _logger.LogInformation("{ProviderName} stream processing cancelled by token for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
                     break;
                 }
 
@@ -102,26 +127,26 @@ public class DeepSeekService : BaseAiService
                            finishReason.ValueKind != JsonValueKind.Undefined && 
                            !string.IsNullOrEmpty(finishReason.GetString()))
                         {
-                            _logger.LogDebug("{ProviderName} stream indicates completion. Finish reason: {FinishReason}", ProviderName, finishReason.GetString());
+                            _logger.LogDebug("{ProviderName} stream indicates completion. Finish reason: {FinishReason}. URI: {SuccessfulRequestUri}", ProviderName, finishReason.GetString(), successfulRequestUri);
                             isCompletion = true;
                         }
                     }
                 }
                 catch (JsonException jsonEx) 
                 { 
-                    _logger.LogWarning(jsonEx, "Failed to parse JSON chunk from {ProviderName}: {JsonChunk}", ProviderName, jsonChunk);
+                    _logger.LogWarning(jsonEx, "Failed to parse JSON chunk from {ProviderName}: {JsonChunk}. URI: {SuccessfulRequestUri}", ProviderName, jsonChunk, successfulRequestUri);
                 }
 
                 yield return new AiRawStreamChunk(jsonChunk, isCompletion);
                 if (isCompletion) 
                 {
-                    _logger.LogDebug("{ProviderName} stream processing completed due to finish_reason for model {ModelCode}.", ProviderName, ModelCode);
+                    _logger.LogDebug("{ProviderName} stream processing completed due to finish_reason for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
                     break;
                 }
             }
             if (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogDebug("{ProviderName} stream completed for model {ModelCode}.", ProviderName, ModelCode);
+                _logger.LogDebug("{ProviderName} stream completed for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
             }
         }
         finally

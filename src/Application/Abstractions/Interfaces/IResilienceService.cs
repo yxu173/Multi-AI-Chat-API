@@ -8,5 +8,7 @@ namespace Application.Abstractions.Interfaces
 
 
         ResiliencePipeline<PluginResult> CreatePluginExecutionPipeline(Func<PluginResult, bool> isTransientError);
+
+        ResiliencePipeline<HttpResponseMessage> CreateAiServiceProviderPipeline(string providerName);
     }
 }

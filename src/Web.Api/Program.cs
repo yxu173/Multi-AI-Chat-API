@@ -14,12 +14,32 @@ using Application.Abstractions.PreProcessors;
 using Web.Api.Extensions;
 using Polly;
 using Polly.Extensions.Http;
+using Hangfire;
+using Hangfire.PostgreSql;
+using Hangfire.Console;
+using Web.Api.Authorisation;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, loggerConfig) => loggerConfig.ReadFrom.Configuration(context.Configuration));
+
+builder.Services.AddHangfire(configuration => configuration
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UsePostgreSqlStorage(options =>
+    {
+        options.UseNpgsqlConnection(builder.Configuration.GetConnectionString("Database"));
+    })
+    .UseConsole());
+
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = Environment.ProcessorCount * 2;
+    options.Queues = new[] { "default", "critical", "low" };
+});
 
 builder.Services
     .AddPresentation()
@@ -118,6 +138,13 @@ app.UseSerilogRequestLogging();
 app.UseCors("CorsPolicy");
 
 app.UseStaticFiles();
+
+// Add Hangfire Dashboard middleware.
+// Ensure it's placed after authentication/authorization if you want to secure it.
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = new[] { new HangfireAuthorizationFilter() }
+});
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();

@@ -1,4 +1,5 @@
 using Domain.Common;
+using Domain.Enums;
 
 namespace Domain.Aggregates.Chats;
 
@@ -10,6 +11,9 @@ public sealed class FileAttachment : BaseEntity
     public string ContentType { get; private set; }
     public FileType FileType { get; private set; }
     public long FileSize { get; private set; }
+
+    public FileProcessingStatus ProcessingStatus { get; private set; }
+    public string? ProcessedDataCacheKey { get; private set; }
 
     private FileAttachment()
     {
@@ -26,14 +30,25 @@ public sealed class FileAttachment : BaseEntity
             FilePath = filePath,
             ContentType = contentType,
             FileType = DetermineFileType(contentType),
-            FileSize = fileSize
+            FileSize = fileSize,
+            ProcessingStatus = FileProcessingStatus.Pending,
+            ProcessedDataCacheKey = null
         };
     }
     
- 
+    public void SetProcessingStatus(FileProcessingStatus status)
+    {
+        ProcessingStatus = status;
+    }
+
+    public void SetProcessedDataCacheKey(string? cacheKey)
+    {
+        ProcessedDataCacheKey = cacheKey;
+    }
 
     private static FileType DetermineFileType(string contentType)
     {
+        if (string.IsNullOrEmpty(contentType)) return FileType.Other;
         if (contentType.StartsWith("image/"))
             return FileType.Image;
         if (contentType.StartsWith("video/"))

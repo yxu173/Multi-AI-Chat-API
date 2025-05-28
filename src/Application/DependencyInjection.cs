@@ -17,6 +17,7 @@ using Application.Services.Messaging;
 using Application.Services.Messaging.Handlers;
 using Application.Services.Plugins;
 using Application.Services.TokenUsage;
+using Application.Services.Files.BackgroundProcessing;
 
 namespace Application;
 
@@ -92,12 +93,18 @@ public static class DependencyInjection
         services.AddScoped<FileUploadService>(provider =>
             new FileUploadService(
                 provider.GetRequiredService<Domain.Repositories.IFileAttachmentRepository>(),
-                uploadsBasePath));
+                uploadsBasePath,
+                provider.GetRequiredService<Hangfire.IBackgroundJobClient>(),
+                provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FileUploadService>>()));
         services.AddSingleton<StreamingOperationManager>();
         
         services.AddGlobalPreProcessors();
 
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
+
+        // Background File Processor
+        services.AddScoped<IBackgroundFileProcessor, BackgroundFileProcessor>();
+
         return services;
     }
 }

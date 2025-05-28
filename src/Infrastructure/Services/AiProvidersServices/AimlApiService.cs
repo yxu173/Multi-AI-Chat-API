@@ -3,24 +3,33 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
-using Application.Services;
 using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
+using Polly;
+using System.IO;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
 public class AimlApiService : BaseAiService
 {
     private const string BaseUrl = "https://api.aimlapi.com/v1/";
-    private readonly string _imageSavePath = "wwwroot/images/aiml"; // Specific path for AIML images
+    private readonly string _imageSavePath = Path.Combine("wwwroot", "images", "aiml"); // Use Path.Combine for safety
     private readonly ILogger<AimlApiService> _logger;
+    private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
 
-    public AimlApiService(IHttpClientFactory httpClientFactory, string? apiKey, string modelCode, ILogger<AimlApiService> logger)
+    public AimlApiService(
+        IHttpClientFactory httpClientFactory, 
+        string? apiKey, 
+        string modelCode, 
+        ILogger<AimlApiService> logger,
+        IResilienceService resilienceService)
         : base(httpClientFactory, apiKey, modelCode, BaseUrl)
     {
-        Directory.CreateDirectory(_imageSavePath); // Ensure the directory exists
+        Directory.CreateDirectory(_imageSavePath); 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
+                            ?? throw new ArgumentNullException(nameof(resilienceService));
     }
 
     protected override string ProviderName => "AimlApi";
@@ -39,12 +48,11 @@ public class AimlApiService : BaseAiService
 
     protected override string GetEndpointPath() => "images/generations";
 
-    // Override ReadStreamAsync to handle non-streaming JSON response
     protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("[AimlApi Raw Response] Status: {StatusCode}, Body Length: {Length}", response.StatusCode, jsonResponse.Length);
-        if (jsonResponse.Length < 1000) // Log small full responses for debugging
+        if (jsonResponse.Length < 1000) 
         {
             _logger.LogDebug("[AimlApi Raw Response Body]: {ResponseBody}", jsonResponse);
         }
@@ -60,23 +68,30 @@ public class AimlApiService : BaseAiService
         string fullJsonResponse = string.Empty;
         AiRawStreamChunk? resultChunk = null;
         bool operationSuccessful = false;
+        Uri? requestUriForLogging = null;
 
         try
         {
-            var request = CreateRequest(requestPayload);
-            _logger.LogInformation("Sending image generation request to {ProviderName} model {ModelCode} with API Key ID (if managed): {ApiKeyId}", 
+            _logger.LogInformation("Preparing to send image generation request to {ProviderName} model {ModelCode} with API Key ID (if managed): {ApiKeyId} using resilience pipeline", 
                                  ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
 
-            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response = await _resiliencePipeline.ExecuteAsync(
+                async ct => 
+                {
+                    var attemptRequest = CreateRequest(requestPayload);
+                    requestUriForLogging = attemptRequest.RequestUri;
+                    _logger.LogDebug("Attempting to send request to {ProviderName} endpoint: {Endpoint} via Polly pipeline", ProviderName, requestUriForLogging);
+                    return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                },
+                cancellationToken).ConfigureAwait(false);
             
             if (!response.IsSuccessStatusCode)
             {
                 await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false); 
-                // Assuming HandleApiErrorAsync throws. If not, operationSuccessful remains false.
-                yield break; // Exit if error is handled and thrown by HandleApiErrorAsync
+                yield break; 
             }
 
-            _logger.LogDebug("Successfully received response from {ProviderName} model {ModelCode}", ProviderName, ModelCode);
+            _logger.LogDebug("Successfully received response from {ProviderName} model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, response.RequestMessage?.RequestUri);
 
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
                                 .WithCancellation(cancellationToken)
@@ -84,7 +99,7 @@ public class AimlApiService : BaseAiService
             {
                  if (cancellationToken.IsCancellationRequested) 
                  {
-                    _logger.LogInformation("{ProviderName} response processing cancelled by token for model {ModelCode}.", ProviderName, ModelCode);
+                    _logger.LogInformation("{ProviderName} response processing cancelled by token for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, response.RequestMessage?.RequestUri);
                     break;
                  }
                  fullJsonResponse = jsonChunk; 
@@ -93,33 +108,34 @@ public class AimlApiService : BaseAiService
             
             if (cancellationToken.IsCancellationRequested || string.IsNullOrEmpty(fullJsonResponse))
             {
-                 _logger.LogInformation("{ProviderName} request cancelled or yielded no response data for model {ModelCode}.", ProviderName, ModelCode);
-                 // operationSuccessful remains false
+                 _logger.LogInformation("{ProviderName} request cancelled or yielded no response data for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, response.RequestMessage?.RequestUri);
             }
             else
             {
-                string resultMarkdown = ParseImageResponseAndGetMarkdown(fullJsonResponse); // This can throw
+                string resultMarkdown = ParseImageResponseAndGetMarkdown(fullJsonResponse); 
                 resultChunk = new AiRawStreamChunk(resultMarkdown, IsCompletion: true);
                 operationSuccessful = true;
             }
         }
+        catch (Polly.CircuitBreaker.BrokenCircuitException ex)
+        {
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw;
+        }
+        catch (Polly.Timeout.TimeoutRejectedException ex)
+        {
+            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw;
+        }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
-             _logger.LogInformation(ex, "{ProviderName} image generation request operation was cancelled for model {ModelCode}.", ProviderName, ModelCode);
-             // operationSuccessful remains false
+             _logger.LogInformation(ex, "{ProviderName} image generation request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
         }
-        // Specific exceptions like ProviderRateLimitException should be caught by the command if HandleApiErrorAsync throws them.
-        // Or, catch them here if specific local handling (not rethrow) is needed.
-        catch (Exception ex) // Catch other exceptions from SendAsync, HandleApiErrorAsync (if it doesn't throw specific types), or ParseImageResponseAndGetMarkdown
+        catch (Exception ex) 
         { 
-            _logger.LogError(ex, "Unhandled exception during {ProviderName} image generation for model {ModelCode}. API Key ID (if managed): {ApiKeyId}", 
-                             ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
-            // operationSuccessful remains false. Consider creating an error chunk if appropriate for the caller.
-            // For now, let command level handle by rethrowing or if no resultChunk is yielded.
-            // If we want to yield an error chunk: 
-            // resultChunk = new AiRawStreamChunk($\"Error generating image: {ex.Message}\", IsCompletion: true); 
-            // operationSuccessful = true; // if we decide to yield this error chunk.
-            throw; // Re-throw to allow command-level retry logic to handle it.
+            _logger.LogError(ex, "Unhandled exception during {ProviderName} image generation for model {ModelCode}. API Key ID (if managed): {ApiKeyId}, URI: {Uri}", 
+                             ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default", requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw; 
         }
         finally
         {
@@ -130,7 +146,6 @@ public class AimlApiService : BaseAiService
         {
             yield return resultChunk;
         }
-        // If !operationSuccessful or resultChunk is null, the enumerable completes without items.
     }
 
     private string ParseImageResponseAndGetMarkdown(string jsonResponse)

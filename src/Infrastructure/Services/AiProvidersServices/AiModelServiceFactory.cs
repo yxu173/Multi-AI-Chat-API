@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Application.Services.AI.Interfaces;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -20,6 +21,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
     private readonly IProviderKeyManagementService _keyManagementService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AiModelServiceFactory> _logger;
+    private readonly ICacheService _cacheService;
 
     public AiModelServiceFactory(
         IServiceProvider serviceProvider,
@@ -28,7 +30,8 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         ISubscriptionService subscriptionService,
         IProviderKeyManagementService keyManagementService,
         IHttpClientFactory httpClientFactory,
-        ILogger<AiModelServiceFactory> logger)
+        ILogger<AiModelServiceFactory> logger,
+        ICacheService cacheService)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -37,6 +40,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         _keyManagementService = keyManagementService ?? throw new ArgumentNullException(nameof(keyManagementService));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
     }
 
     [Obsolete("Use GetServiceContextAsync instead for better error handling and API key management.")]
@@ -61,10 +65,30 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             throw new QuotaExceededException(quotaErrorMessage ?? "Quota exceeded for user subscription.");
         }
 
-        var aiModel = await _dbContext.AiModels
-                          .Include(m => m.AiProvider)
-                          .FirstOrDefaultAsync(m => m.Id == modelId, cancellationToken)
-                      ?? throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
+        string cacheKey = $"aimodel:{modelId}";
+        var aiModel = await _cacheService.GetAsync<AiModel>(cacheKey, cancellationToken);
+
+        if (aiModel == null)
+        {
+            _logger.LogDebug("AiModel {ModelId} not found in cache. Fetching from database.", modelId);
+            aiModel = await _dbContext.AiModels
+                              .Include(m => m.AiProvider)
+                              .AsNoTracking()
+                              .FirstOrDefaultAsync(m => m.Id == modelId, cancellationToken);
+
+            if (aiModel != null)
+            {
+                await _cacheService.SetAsync(cacheKey, aiModel, TimeSpan.FromHours(1), cancellationToken);
+            }
+            else
+            {
+                 throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
+            }
+        }
+        else
+        {
+            _logger.LogDebug("AiModel {ModelId} retrieved from cache.", modelId);
+        }
 
         string? apiKeySecretToUse = null;
 
@@ -126,19 +150,19 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var grokLogger = _serviceProvider.GetService<ILogger<GrokService>>();
         var qwenLogger = _serviceProvider.GetService<ILogger<QwenService>>();
 
+        var resilienceService = _serviceProvider.GetRequiredService<IResilienceService>();
+
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => new OpenAiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, openAiLogger),
-            ModelType.Anthropic => new AnthropicService(_httpClientFactory, apiKeySecret, aiModel.ModelCode,
-                anthropicLogger),
-            ModelType.DeepSeek => new DeepSeekService(_httpClientFactory, apiKeySecret, aiModel.ModelCode,
-                deepSeekLogger),
-            ModelType.Gemini => new GeminiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, geminiLogger),
-            ModelType.AimlFlux => new AimlApiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, aimlLogger),
+            ModelType.OpenAi => new OpenAiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService),
+            ModelType.Anthropic => new AnthropicService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService),
+            ModelType.DeepSeek => new DeepSeekService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService),
+            ModelType.Gemini => new GeminiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService),
+            ModelType.AimlFlux => new AimlApiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, aimlLogger, resilienceService),
             ModelType.Imagen => CreateImagenService(_httpClientFactory, aiModel.ModelCode, imagenLogger),
-            ModelType.Grok => new GrokService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, grokLogger),
-            ModelType.Qwen => new QwenService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, qwenLogger),
-            _ => throw new NotSupportedException($"Model type {aiModel} not supported.")
+            ModelType.Grok => new GrokService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService),
+            ModelType.Qwen => new QwenService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService),
+            _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported for instantiation with IResilienceService in factory.")
         };
     }
 
@@ -149,6 +173,10 @@ public class AiModelServiceFactory : IAiModelServiceFactory
                         throw new InvalidOperationException("Imagen ProjectId not configured.");
         var region = _configuration["AI:Imagen:Region"] ??
                      throw new InvalidOperationException("Imagen Region not configured.");
+        
+        // Resolve IResilienceService from the service provider for ImagenService
+        var resilienceService = _serviceProvider.GetRequiredService<IResilienceService>();
+
         return new ImagenService(httpClientFactory, projectId, region, modelCode, logger);
     }
 }

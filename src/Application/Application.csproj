@@ -28,4 +28,10 @@
     <Folder Include="Features\AiModels\Queries\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="Hangfire.Core">
+      <HintPath>..\..\..\..\.nuget\packages\hangfire.core\1.8.20\lib\netstandard2.0\Hangfire.Core.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>

@@ -48,6 +48,6 @@ namespace Infrastructure.Services.Resilience
 
     public class TimeoutPolicyOptions
     {
-        public int TimeoutInSeconds { get; set; } = 10;
+        public int TimeoutInSeconds { get; set; } = 150;
     }
 }
