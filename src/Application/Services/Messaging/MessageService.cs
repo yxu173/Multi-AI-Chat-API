@@ -2,6 +2,7 @@ using Application.Notifications;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using FastEndpoints;
+using Application.Services.Messaging; // Ensure MessageDto is accessible
 
 namespace Application.Services.Messaging;
 
@@ -37,10 +38,7 @@ public class MessageService
         
         await _messageRepository.AddAsync(message, cancellationToken);
         
-        var messageDto = new MessageDto(message.Content, false, message.Id)
-        {
-            FileAttachments = message.FileAttachments.ToList()
-        };
+        var messageDto = MessageDto.FromEntity(message);
         
         await new MessageSentNotification(chatSessionId, messageDto).PublishAsync(cancellation: cancellationToken);
         return message;
@@ -53,7 +51,9 @@ public class MessageService
     {
         var message = Message.CreateAiMessage(userId, chatSessionId);
         await _messageRepository.AddAsync(message, cancellationToken);
-        await new MessageSentNotification(chatSessionId, new MessageDto(message.Content, true, message.Id)).PublishAsync(cancellation: cancellationToken);
+        
+        var messageDto = MessageDto.FromEntity(message);
+        await new MessageSentNotification(chatSessionId, messageDto).PublishAsync(cancellation: cancellationToken);
         return message;
     }
 
@@ -109,8 +109,7 @@ public class MessageService
     {
         if (message == null) throw new ArgumentNullException(nameof(message));
 
-        message.FailMessage(); // Sets status to Failed
-        // Prepend or append the failure reason to the content, or set it as content if empty.
+        message.FailMessage(); 
         if (string.IsNullOrWhiteSpace(message.Content))
         {
             message.UpdateContent($"[Error: {failureReason}]");
@@ -121,13 +120,8 @@ public class MessageService
         }
         
         await _messageRepository.UpdateAsync(message, cancellationToken);
-
-        // Notify clients that the message has failed
-        var messageDto = new MessageDto(message.Content, message.IsFromAi, message.Id)
-        {
-            Status = message.Status.ToString(), // Send the updated status
-            FileAttachments = message.FileAttachments.ToList()
-        };
+        
+        var messageDto = MessageDto.FromEntity(message);
         await new MessageUpdateNotification(message.ChatSessionId, messageDto).PublishAsync(cancellation: cancellationToken);
     }
 }

@@ -36,11 +36,7 @@ internal static class HistoryBuilder
             : messagesQuery;
 
         return limitedMessages
-            .Select(m => new MessageDto(m.Content, m.IsFromAi, m.Id)
-            {
-                FileAttachments = m.FileAttachments?.ToList(),
-                ThinkingContent = null,
-            })
+            .Select(m => MessageDto.FromEntity(m, overrideThinkingContent: null))
             .ToList();
     }
 }
