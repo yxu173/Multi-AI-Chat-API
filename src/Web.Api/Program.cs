@@ -4,26 +4,58 @@ using Infrastructure;
 using Infrastructure.Database;
 using Web.Api;
 using Web.Api.Hubs;
-using Web.Api.Middleware;
 using System.Runtime;
-using System.Threading.RateLimiting;
 using FastEndpoints;
 using FastEndpoints.Swagger;
-using Microsoft.AspNetCore.RateLimiting;
 using Application.Abstractions.PreProcessors;
 using Web.Api.Extensions;
-using Polly;
-using Polly.Extensions.Http;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Hangfire.Console;
 using Web.Api.Authorisation;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var otelResourceBuilder = ResourceBuilder.CreateDefault()
+    .AddService(serviceName: "Multi-AI-Chat-API", serviceVersion: "1.0.0");
+
+builder.Logging.AddOpenTelemetry(options =>
+{
+    options.SetResourceBuilder(otelResourceBuilder);
+    options.IncludeFormattedMessage = true;
+    options.IncludeScopes = true;
+    options.ParseStateValues = true;
+    options.AddConsoleExporter();
+    // We'll use console exporter for local development
+});
+
+//builder.Logging.AddFilter<OpenTelemetry.Logs.OpenTelemetryLoggerProvider>("*", Microsoft.Extensions.Logging.LogLevel.Warning);
+
 builder.Host.UseSerilog((context, loggerConfig) => loggerConfig.ReadFrom.Configuration(context.Configuration));
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracerProviderBuilder =>
+            tracerProviderBuilder
+                .SetResourceBuilder(otelResourceBuilder)
+                .AddSource("Multi-AI-Chat-API.Web.Api")
+                .AddAspNetCoreInstrumentation(options => { options.RecordException = true; })
+                .AddHttpClientInstrumentation(options => { options.RecordException = true; })
+                .AddEntityFrameworkCoreInstrumentation(options => { options.SetDbStatementForText = true; })
+                .AddConsoleExporter()
+    )
+    .WithMetrics(meterProviderBuilder =>
+            meterProviderBuilder
+                .SetResourceBuilder(otelResourceBuilder)
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddPrometheusExporter()
+    );
 
 builder.Services.AddHangfire(configuration => configuration
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
@@ -49,19 +81,17 @@ builder.Services
 builder.Services.AddFastEndpoints()
     .SwaggerDocument();
 
-// Register global pre-processors and post-processors for FastEndpoints
 builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(RequestLoggingPreProcessor<>));
 builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(ValidationPreProcessor<>));
 builder.Services.AddSingleton(typeof(IPostProcessor<,>), typeof(RequestLoggingPostProcessor<,>));
 
-// Add security features: Rate limiting
 builder.Services.AddApplicationRateLimiting();
 
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
     options.HandshakeTimeout = TimeSpan.FromSeconds(15);
-    options.MaximumReceiveMessageSize = 10 * 1024 * 1024; // 10 MB
+    options.MaximumReceiveMessageSize = 10 * 1024 * 1024;
 });
 
 builder.Services.AddCors(options =>
@@ -74,21 +104,21 @@ builder.Services.AddCors(options =>
             .AllowCredentials());
 });
 
-builder.Services.AddHttpClient("DefaultClient", client => {
-    client.Timeout = TimeSpan.FromSeconds(30);
-})
-.SetHandlerLifetime(TimeSpan.FromMinutes(5)); 
+builder.Services.AddHttpClient("DefaultClient", client => { client.Timeout = TimeSpan.FromSeconds(30); })
+    .SetHandlerLifetime(TimeSpan.FromMinutes(5));
 
 builder.Services.AddHttpClient();
 
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+// Add Prometheus endpoint accessible on both HTTP and HTTPS
+app.MapPrometheusScrapingEndpoint().AllowAnonymous();
+
 await app.UseAdminManagedApiKeysAsync();
 
-
-var uploadsPath = builder.Configuration["FilesStorage:BasePath"] ?? 
-    Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+var uploadsPath = builder.Configuration["FilesStorage:BasePath"] ??
+                  Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 
 if (!Directory.Exists(uploadsPath))
 {
@@ -122,7 +152,7 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
-else 
+else
 {
     //app.UseHsts();
 }

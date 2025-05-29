@@ -5,6 +5,7 @@ using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
+using System.Diagnostics;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -13,6 +14,8 @@ public class DeepSeekService : BaseAiService
     private const string BaseUrl = "https://api.deepseek.com/v1/";
     private readonly ILogger<DeepSeekService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
+
+    private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.DeepSeekService", "1.0.0");
 
     public DeepSeekService(
         IHttpClientFactory httpClientFactory, 
@@ -31,87 +34,146 @@ public class DeepSeekService : BaseAiService
 
     protected override void ConfigureHttpClient()
     {
+        using var activity = ActivitySource.StartActivity(nameof(ConfigureHttpClient));
         if (!string.IsNullOrEmpty(ApiKey))
         {
             HttpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
+            activity?.SetTag("auth.method", "Bearer");
         }
         else
         {
+            activity?.AddEvent(new ActivityEvent("API key not configured."));
             _logger.LogWarning("DeepSeek API key is not configured. Requests may fail.");
         }
     }
 
     protected override string GetEndpointPath() => "chat/completions";
 
+    protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var activity = ActivitySource.StartActivity(nameof(ReadStreamAsync));
+        activity?.SetTag("http.response_status_code", response.StatusCode.ToString());
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested) 
+            {
+                activity?.AddEvent(new ActivityEvent("Stream reading cancelled."));
+                break;
+            }
+
+            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:"))
+            {
+                if (!string.IsNullOrWhiteSpace(line)) 
+                {
+                    activity?.AddEvent(new ActivityEvent("Skipped non-data line in stream", tags: new ActivityTagsCollection { { "line_preview", line.Substring(0, Math.Min(line.Length, 100)) } }));
+                }
+                continue;
+            }
+            
+            var jsonData = line.Substring("data:".Length).Trim();
+            if (jsonData.Equals("[DONE]", StringComparison.OrdinalIgnoreCase))
+            {
+                activity?.AddEvent(new ActivityEvent("Received [DONE] marker."));
+                break;
+            }
+
+            if (!string.IsNullOrEmpty(jsonData))
+            {
+                activity?.AddEvent(new ActivityEvent("Yielding data chunk"));
+                yield return jsonData;
+            }
+        }
+        activity?.AddEvent(new ActivityEvent("Finished reading stream."));
+    }
+
     public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
         AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
     {
+        using var activity = ActivitySource.StartActivity(nameof(StreamResponseAsync));
+        activity?.SetTag("ai.provider", ProviderName);
+        activity?.SetTag("ai.model", ModelCode);
+        activity?.SetTag("ai.provider_api_key_id", providerApiKeyId?.ToString());
+
         HttpResponseMessage? response = null;
         bool initialRequestSuccess = false;
         Uri? requestUriForLogging = null;
 
         try
         {
-            _logger.LogInformation("Preparing to send request to {ProviderName} model {ModelCode} with API Key ID (if managed): {ApiKeyId} using resilience pipeline", 
-                ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
-
             response = await _resiliencePipeline.ExecuteAsync(
-                async ct => 
+                async ct =>
                 {
+                    using var attemptActivity = ActivitySource.StartActivity("SendHttpRequestAttempt");
                     var attemptRequest = CreateRequest(requestPayload);
                     requestUriForLogging = attemptRequest.RequestUri;
-                    _logger.LogDebug("Attempting to send request to {ProviderName} endpoint: {Endpoint} via Polly pipeline", ProviderName, requestUriForLogging);
+                    attemptActivity?.SetTag("http.url", requestUriForLogging?.ToString());
+                    attemptActivity?.SetTag("http.method", attemptRequest.Method.ToString());
                     return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
                 },
                 cancellationToken).ConfigureAwait(false);
+            
+            activity?.SetTag("http.response_status_code", ((int)response.StatusCode).ToString());
 
             if (!response.IsSuccessStatusCode)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, $"API call failed with status {response.StatusCode}");
                 await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
-                yield break; 
+                yield break;
             }
-            _logger.LogDebug("Successfully received stream response header from {ProviderName} model {ModelCode}", ProviderName, ModelCode);
             initialRequestSuccess = true;
         }
         catch (Polly.CircuitBreaker.BrokenCircuitException ex)
         {
-            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            activity?.SetStatus(ActivityStatusCode.Error, "Circuit breaker open");
+            activity?.AddException(ex);
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
             throw;
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
         {
-            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            activity?.SetStatus(ActivityStatusCode.Error, "Request timed out by Polly");
+            activity?.AddException(ex);
+            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
             throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
-            yield break; 
+            activity?.SetStatus(ActivityStatusCode.Ok, "Operation cancelled by user");
+            activity?.AddEvent(new ActivityEvent("Stream request operation was cancelled by user."));
+            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            yield break;
         }
-        catch (Exception ex) 
+        catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
-            throw; 
+            activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during API resilience execution.");
+            activity?.AddException(ex);
+            _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            throw;
         }
 
-        if (!initialRequestSuccess || response == null) 
+        if (!initialRequestSuccess || response == null)
         {
             response?.Dispose();
             yield break;
         }
 
-        var successfulRequestUri = response.RequestMessage?.RequestUri; // For logging
+        var successfulRequestUri = response.RequestMessage?.RequestUri;
         try
         {
             await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
                                .WithCancellation(cancellationToken)
                                .ConfigureAwait(false))
             {
-                if (cancellationToken.IsCancellationRequested) 
+                if (cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogInformation("{ProviderName} stream processing cancelled by token for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
+                    activity?.AddEvent(new ActivityEvent("Stream processing cancelled by token.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
                     break;
                 }
 
@@ -119,39 +181,42 @@ public class DeepSeekService : BaseAiService
                 try
                 {
                     using var doc = JsonDocument.Parse(jsonChunk);
-                    if (doc.RootElement.TryGetProperty("choices", out var choices) && 
+                    if (doc.RootElement.TryGetProperty("choices", out var choices) &&
                         choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
-                    { 
-                        if(choices[0].TryGetProperty("finish_reason", out var finishReason) && 
-                           finishReason.ValueKind != JsonValueKind.Null && 
-                           finishReason.ValueKind != JsonValueKind.Undefined && 
+                    {
+                        if (choices[0].TryGetProperty("finish_reason", out var finishReason) &&
+                           finishReason.ValueKind != JsonValueKind.Null &&
+                           finishReason.ValueKind != JsonValueKind.Undefined &&
                            !string.IsNullOrEmpty(finishReason.GetString()))
                         {
-                            _logger.LogDebug("{ProviderName} stream indicates completion. Finish reason: {FinishReason}. URI: {SuccessfulRequestUri}", ProviderName, finishReason.GetString(), successfulRequestUri);
+                            var reason = finishReason.GetString();
+                            activity?.AddEvent(new ActivityEvent("Stream indicates completion.", tags: new ActivityTagsCollection { { "ai.finish_reason", reason } }));
                             isCompletion = true;
                         }
                     }
                 }
-                catch (JsonException jsonEx) 
-                { 
+                catch (JsonException jsonEx)
+                {
+                    activity?.AddEvent(new ActivityEvent("JSON parsing error in stream chunk.", tags: new ActivityTagsCollection { { "json_chunk_preview", jsonChunk.Substring(0, Math.Min(jsonChunk.Length,100)) } }));
+                    activity?.AddException(jsonEx);
                     _logger.LogWarning(jsonEx, "Failed to parse JSON chunk from {ProviderName}: {JsonChunk}. URI: {SuccessfulRequestUri}", ProviderName, jsonChunk, successfulRequestUri);
                 }
 
                 yield return new AiRawStreamChunk(jsonChunk, isCompletion);
-                if (isCompletion) 
+                if (isCompletion)
                 {
-                    _logger.LogDebug("{ProviderName} stream processing completed due to finish_reason for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
+                    activity?.AddEvent(new ActivityEvent("Stream processing completed due to finish_reason."));
                     break;
                 }
             }
             if (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogDebug("{ProviderName} stream completed for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
+                activity?.AddEvent(new ActivityEvent("Stream completed.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
             }
         }
         finally
         {
-            response.Dispose(); 
+            response.Dispose();
         }
     }
 }

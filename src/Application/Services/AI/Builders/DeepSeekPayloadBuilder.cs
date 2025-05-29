@@ -74,7 +74,7 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         {
             if (string.IsNullOrEmpty(rawContent)) continue;
 
-            var contentParts = _multimodalContentParser.Parse(rawContent);
+            var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
             var processedParts = new List<string>();
             
             foreach (var part in contentParts)
@@ -134,8 +134,6 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             }
         }
 
-
-        await Task.CompletedTask;
         return processedMessages;
     }
 

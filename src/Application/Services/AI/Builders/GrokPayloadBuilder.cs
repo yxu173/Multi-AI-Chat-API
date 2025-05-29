@@ -23,7 +23,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
+    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -35,7 +35,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         
         CustomizePayload(requestObj, context);
 
-        var processedMessages = ProcessMessagesForGrokInput(context.History, context.AiAgent, context.UserSettings);
+        var processedMessages = await ProcessMessagesForGrokInputAsync(context.History, context.AiAgent, context.UserSettings, cancellationToken);
         requestObj["messages"] = processedMessages;
 
         if ( tools != null && tools.Any())
@@ -66,7 +66,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             }
         }
 
-        return Task.FromResult(new AiRequestPayload(requestObj));
+        return new AiRequestPayload(requestObj);
     }
 
 
@@ -110,10 +110,11 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return tools.ToArray();
     }
 
-    private List<object> ProcessMessagesForGrokInput(
+    private async Task<List<object>> ProcessMessagesForGrokInputAsync(
         List<MessageDto> history,
         AiAgent? aiAgent,
-        UserAiModelSettings? userSettings)
+        UserAiModelSettings? userSettings,
+        CancellationToken cancellationToken)
     {
         var processedMessages = new List<object>();
 
@@ -134,7 +135,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
             if (!message.IsFromAi)
             {
-                var contentParts = _multimodalContentParser.Parse(rawContent);
+                var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
                 var contentArray = new List<object>();
 
                 foreach (var part in contentParts)

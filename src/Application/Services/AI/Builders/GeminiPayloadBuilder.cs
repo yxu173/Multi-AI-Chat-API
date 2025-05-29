@@ -84,7 +84,18 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         var mergedHistory = MergeConsecutiveRoles(historyToProcess); 
         IAiFileUploader? fileUploader = null;
-        bool needsFileUpload = mergedHistory.Any(m => _multimodalContentParser.Parse(m.Content).Any(p => p is FilePart || p is ImagePart));
+        
+        bool needsFileUpload = false;
+        foreach (var msg in mergedHistory)
+        {
+            // This check now needs to be async as ParseAsync is the only method.
+            var tempContentParts = await _multimodalContentParser.ParseAsync(msg.Content, cancellationToken); 
+            if (tempContentParts.Any(p => p is FilePart || p is ImagePart))
+            {
+                needsFileUpload = true;
+                break;
+            }
+        }
 
         if (needsFileUpload)
         {
@@ -111,7 +122,7 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         {
             if (string.IsNullOrEmpty(rawContent)) continue;
 
-            var contentParts = _multimodalContentParser.Parse(rawContent);
+            var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
             var geminiParts = new List<object>();
 
             foreach (var part in contentParts)

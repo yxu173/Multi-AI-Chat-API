@@ -28,7 +28,8 @@ public sealed class SendUserMessageCommand
     private readonly ILogger<SendUserMessageCommand> _logger;
 
     private const int MaxRetries = 3;
-    private readonly TimeSpan DefaultRetryAfter = TimeSpan.FromSeconds(5); // Default if provider doesn't specify
+    private readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(2); // Initial delay
+    private const double RetryBackoffFactor = 2.0; // Factor to multiply delay by each time
 
     public SendUserMessageCommand(
         ChatSessionService chatSessionService,
@@ -105,6 +106,8 @@ public sealed class SendUserMessageCommand
         {
             if (cancellationToken.IsCancellationRequested) break;
 
+            TimeSpan delayForThisAttempt = TimeSpan.FromSeconds(Math.Pow(RetryBackoffFactor, attempt -1) * InitialRetryDelay.TotalSeconds);
+
             try
             {
                 _logger.LogInformation("Attempt {Attempt}/{MaxRetries} to get AI service for chat {ChatSessionId}", attempt, MaxRetries, chatSessionId);
@@ -114,7 +117,8 @@ public sealed class SendUserMessageCommand
                 {
                     _logger.LogWarning("Failed to get AI service or key on attempt {Attempt} for chat {ChatSessionId}. No key available or service instantiation failed.", attempt, chatSessionId);
                     if (attempt == MaxRetries) throw new Exception("Failed to obtain AI service after multiple retries: No API key available or service setup failed.");
-                    await Task.Delay(DefaultRetryAfter, cancellationToken); // Wait before retrying if no key was found
+                    _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to service/key acquisition failure.", delayForThisAttempt, chatSessionId);
+                    await Task.Delay(delayForThisAttempt, cancellationToken); 
                     continue;
                 }
 
@@ -140,16 +144,19 @@ public sealed class SendUserMessageCommand
                 _logger.LogWarning(ex, "Provider rate limit hit on attempt {Attempt} for chat {ChatSessionId}. Key ID: {ApiKeyId}", attempt, chatSessionId, ex.ApiKeyIdUsed);
                 if (ex.ApiKeyIdUsed.HasValue)
                 {
-                    await _providerKeyManagementService.ReportKeyRateLimitedAsync(ex.ApiKeyIdUsed.Value, ex.RetryAfter ?? DefaultRetryAfter, CancellationToken.None);
+                    await _providerKeyManagementService.ReportKeyRateLimitedAsync(ex.ApiKeyIdUsed.Value, ex.RetryAfter ?? delayForThisAttempt, CancellationToken.None);
                 }
                 if (attempt == MaxRetries) throw; // Rethrow if max retries reached
-                await Task.Delay(ex.RetryAfter ?? DefaultRetryAfter, cancellationToken); // Wait before retrying
+                var actualDelay = ex.RetryAfter ?? delayForThisAttempt;
+                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to provider rate limit.", actualDelay, chatSessionId);
+                await Task.Delay(actualDelay, cancellationToken); // Wait before retrying
             }
             catch (HttpRequestException ex) // Includes other HTTP errors from BaseAiService
             {
                 _logger.LogError(ex, "HTTP request exception on attempt {Attempt} for chat {ChatSessionId}", attempt, chatSessionId);
                 if (attempt == MaxRetries) throw; 
-                await Task.Delay(DefaultRetryAfter, cancellationToken); // Basic retry for general HTTP issues
+                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to HTTP request exception.", delayForThisAttempt, chatSessionId);
+                await Task.Delay(delayForThisAttempt, cancellationToken); // Basic retry for general HTTP issues
             }
             catch (QuotaExceededException ex) // This is from user's subscription, not API key rate limit
             {
@@ -161,7 +168,8 @@ public sealed class SendUserMessageCommand
                 _logger.LogError(ex, "Unhandled exception on attempt {Attempt} during AI interaction for chat {ChatSessionId}", attempt, chatSessionId);
                 // For unknown errors, might be safer to not retry or have a more specific retry strategy
                 if (attempt == MaxRetries) throw; 
-                await Task.Delay(DefaultRetryAfter, cancellationToken); // Basic retry
+                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to unhandled exception.", delayForThisAttempt, chatSessionId);
+                await Task.Delay(delayForThisAttempt, cancellationToken); // Basic retry
             }
         }
 

@@ -22,7 +22,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null,
+    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null,
         CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
@@ -42,7 +42,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             Logger?.LogDebug("Adding system instructions for model {ModelCode}", model.ModelCode);
         }
 
-        var processedMessages = ProcessMessagesForOpenAIInput(context.History);
+        var processedMessages = await ProcessMessagesForOpenAIInputAsync(context.History, cancellationToken);
         requestObj["input"] = processedMessages;
 
         if (tools?.Any() == true)
@@ -76,10 +76,10 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         CustomizePayload(requestObj, context);
 
-        return Task.FromResult(new AiRequestPayload(requestObj));
+        return new AiRequestPayload(requestObj);
     }
 
-    private List<object> ProcessMessagesForOpenAIInput(List<MessageDto> history)
+    private async Task<List<object>> ProcessMessagesForOpenAIInputAsync(List<MessageDto> history, CancellationToken cancellationToken)
     {
         var processedMessages = new List<object>();
 
@@ -93,7 +93,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
             if (role == "user")
             {
-                var contentParts = _multimodalContentParser.Parse(rawContent);
+                var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
                 var openAiContentItems = new List<object>();
                 bool hasNonTextContent = false;
 

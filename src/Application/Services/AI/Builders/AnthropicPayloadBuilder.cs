@@ -21,7 +21,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         _multimodalContentParser = multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
+    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -31,7 +31,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         AddParameters(requestObj, context);
 
-        var (systemPrompt, processedMessages) = ProcessMessagesForAnthropic(context.History, context);
+        var (systemPrompt, processedMessages) = await ProcessMessagesForAnthropicAsync(context.History, context, cancellationToken);
         if (!string.IsNullOrWhiteSpace(systemPrompt))
         {
             requestObj["system"] = systemPrompt;
@@ -56,10 +56,10 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             Logger?.LogWarning("Anthropic request payload was missing 'max_tokens'. Added default value: {DefaultMaxTokens}", defaultMaxTokens);
         }
 
-        return Task.FromResult(new AiRequestPayload(requestObj)); 
+        return new AiRequestPayload(requestObj);
     }
 
-    private (string? SystemPrompt, List<object> Messages) ProcessMessagesForAnthropic(List<MessageDto> history, AiRequestContext context)
+    private async Task<(string? SystemPrompt, List<object> Messages)> ProcessMessagesForAnthropicAsync(List<MessageDto> history, AiRequestContext context, CancellationToken cancellationToken)
     {
         string? agentSystemMessage = context.AiAgent?.ModelParameter.SystemInstructions;
         string? userSystemMessage = context.UserSettings?.ModelParameters.SystemInstructions;
@@ -75,7 +75,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             string anthropicRole = role; 
             if (string.IsNullOrEmpty(rawContent)) continue;
 
-            var contentParts = _multimodalContentParser.Parse(rawContent);
+            var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
             if (contentParts.Count > 1 || contentParts.Any(p => p is not TextPart))
             {
                 var anthropicContentItems = new List<object>();

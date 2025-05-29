@@ -7,6 +7,8 @@ using Application.Features.Chats.GetChatById;
 using Application.Services.Chat;
 using Application.Services.Messaging;
 using FastEndpoints;
+using System.Diagnostics;
+using OpenTelemetry.Trace;
 
 namespace Web.Api.Hubs;
 
@@ -16,62 +18,101 @@ public class ChatHub : Hub
     private readonly ChatService _chatService;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly MessageService _messageService;
+    private readonly ILogger<ChatHub> _logger;
 
+    private static readonly ActivitySource ActivitySource = new("Web.Api.Hubs.ChatHub", "1.0.0");
     private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024;
 
     public ChatHub(
         ChatService chatService,
         IFileAttachmentRepository fileAttachmentRepository,
-        MessageService messageService)
+        MessageService messageService,
+        ILogger<ChatHub> logger)
     {
         _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
         _fileAttachmentRepository = fileAttachmentRepository ??
                                     throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
 
     public override async Task OnConnectedAsync()
     {
+        using var activity = ActivitySource.StartActivity(nameof(OnConnectedAsync));
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        Console.WriteLine($"User {userId} connected to chat hub");
+        activity?.SetTag("user.id", userId);
+        activity?.SetTag("signalr.connection_id", Context.ConnectionId);
+        _logger.LogInformation("User {UserId} connected to chat hub with ConnectionId {ConnectionId}", userId, Context.ConnectionId);
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        using var activity = ActivitySource.StartActivity(nameof(OnDisconnectedAsync));
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        Console.WriteLine(
-            $"User {userId} disconnected from chat hub. Reason: {exception?.Message ?? "Normal disconnection"}");
+        activity?.SetTag("user.id", userId);
+        activity?.SetTag("signalr.connection_id", Context.ConnectionId);
+        if (exception != null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+            activity?.RecordException(exception);
+            _logger.LogInformation(exception, "User {UserId} disconnected from chat hub with ConnectionId {ConnectionId}. Reason: {Reason}", userId, Context.ConnectionId, exception.Message);
+        }
+        else
+        {
+            _logger.LogInformation("User {UserId} disconnected from chat hub with ConnectionId {ConnectionId} (Normal disconnection)", userId, Context.ConnectionId);
+        }
         await base.OnDisconnectedAsync(exception);
     }
 
     public async Task JoinChatSession(string chatSessionId)
     {
+        using var activity = ActivitySource.StartActivity(nameof(JoinChatSession));
+        activity?.SetTag("chat_session.id", chatSessionId);
+        activity?.SetTag("user.id", Context.UserIdentifier);
+        activity?.SetTag("signalr.connection_id", Context.ConnectionId);
+
         try
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, chatSessionId);
-            Console.WriteLine($"User {Context.UserIdentifier} joined chat session {chatSessionId}");
+            _logger.LogInformation("User {UserId} joined chat session {ChatSessionId}", Context.UserIdentifier, chatSessionId);
+            activity?.AddEvent(new ActivityEvent("Added to SignalR group."));
 
             try
             {
+                using var fetchHistoryActivity = ActivitySource.StartActivity("FetchChatHistory");
                 var chatGuid = Guid.Parse(chatSessionId);
+                fetchHistoryActivity?.SetTag("chat_session.guid", chatGuid.ToString());
                 var chatResult = await new GetChatByIdQuery(chatGuid).ExecuteAsync();
 
                 if (chatResult.IsSuccess)
                 {
+                    fetchHistoryActivity?.SetTag("fetch_history.success", true);
                     await Clients.Caller.SendAsync("ReceiveChatHistory", chatResult.Value);
+                    activity?.AddEvent(new ActivityEvent("Chat history sent to caller."));
+                }
+                else
+                {
+                    fetchHistoryActivity?.SetTag("fetch_history.success", false);
+                    fetchHistoryActivity?.SetTag("fetch_history.error", chatResult.Error.Description ?? "Unknown error");
+                    _logger.LogWarning("Failed to fetch chat history for session {ChatSessionId}. Error: {Error}", chatSessionId, chatResult.Error?.Description);
+                    await Clients.Caller.SendAsync("Error", $"Joined chat but failed to load history: {chatResult.Error?.Description}");
                 }
             }
             catch (Exception historyEx)
             {
-                Console.WriteLine($"Error loading chat history: {historyEx.Message}");
+                activity?.SetStatus(ActivityStatusCode.Error, "Error loading chat history.");
+                activity?.RecordException(historyEx);
+                _logger.LogError(historyEx, "Error loading chat history for session {ChatSessionId}", chatSessionId);
                 await Clients.Caller.SendAsync("Error", $"Joined chat but failed to load history: {historyEx.Message}");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error joining chat session: {ex.Message}");
+            activity?.SetStatus(ActivityStatusCode.Error, "Error joining chat session.");
+            activity?.RecordException(ex);
+            _logger.LogError(ex, "Error joining chat session {ChatSessionId}", chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to join chat session: {ex.Message}");
         }
     }
@@ -87,10 +128,18 @@ public class ChatHub : Hub
         string? safetyTolerance = null
     )
     {
+        using var activity = ActivitySource.StartActivity(nameof(SendMessage));
+        activity?.SetTag("chat_session.id", chatSessionId);
+        activity?.SetTag("user.id", Context.UserIdentifier);
+        activity?.SetTag("message.content_length", content?.Length ?? 0);
+        // Add other relevant parameters as tags if needed, e.g., enableThinking, imageSize
+
         try
         {
             if (string.IsNullOrWhiteSpace(content))
             {
+                activity?.SetStatus(ActivityStatusCode.Error, "Message content empty.");
+                _logger.LogWarning("SendMessage called with empty content for session {ChatSessionId}", chatSessionId);
                 await Clients.Caller.SendAsync("Error", "Message content cannot be empty");
                 return;
             }
@@ -107,10 +156,13 @@ public class ChatHub : Hub
                 enableSafetyChecker,
                 safetyTolerance,
                 cancellationToken: default);
+            activity?.AddEvent(new ActivityEvent("Message sent to ChatService."));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error sending message: {ex.Message}");
+            activity?.SetStatus(ActivityStatusCode.Error, "Error sending message.");
+            activity?.RecordException(ex);
+            _logger.LogError(ex, "Error sending message in session {ChatSessionId}", chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to send message: {ex.Message}");
         }
     }
@@ -130,6 +182,12 @@ public class ChatHub : Hub
         string? safetyTolerance = null
     )
     {
+        using var activity = ActivitySource.StartActivity(nameof(SendMessageWithAttachments));
+        activity?.SetTag("chat_session.id", chatSessionId);
+        activity?.SetTag("user.id", Context.UserIdentifier);
+        activity?.SetTag("message.content_length", content?.Length ?? 0);
+        activity?.SetTag("message.attachment_count", fileAttachmentIds?.Count ?? 0);
+
         var userId = Guid.Parse(Context.UserIdentifier);
 
         try
@@ -138,7 +196,9 @@ public class ChatHub : Hub
 
             if (fileAttachmentIds != null && fileAttachmentIds.Any())
             {
+                using var processAttachmentsActivity = ActivitySource.StartActivity("ProcessAttachmentsInHub");
                 processedContent = await ProcessFileAttachmentsAsync(processedContent, fileAttachmentIds);
+                processAttachmentsActivity?.SetTag("content_length_after_processing", processedContent.Length);
             }
 
             await _chatService.SendUserMessageAsync(
@@ -152,10 +212,13 @@ public class ChatHub : Hub
                 enableSafetyChecker,
                 safetyTolerance,
                 cancellationToken: default);
+            activity?.AddEvent(new ActivityEvent("Message with attachments sent to ChatService."));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error sending message with attachments: {ex.Message}");
+            activity?.SetStatus(ActivityStatusCode.Error, "Error sending message with attachments.");
+            activity?.RecordException(ex);
+            _logger.LogError(ex, "Error sending message with attachments in session {ChatSessionId}", chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to send message: {ex.Message}");
         }
     }
@@ -165,10 +228,18 @@ public class ChatHub : Hub
     /// </summary>
     public async Task EditMessage(string chatSessionId, string messageId, string newContent)
     {
+        using var activity = ActivitySource.StartActivity(nameof(EditMessage));
+        activity?.SetTag("chat_session.id", chatSessionId);
+        activity?.SetTag("message.id", messageId);
+        activity?.SetTag("user.id", Context.UserIdentifier);
+        activity?.SetTag("message.new_content_length", newContent?.Length ?? 0);
+
         try
         {
             if (string.IsNullOrWhiteSpace(newContent))
             {
+                activity?.SetStatus(ActivityStatusCode.Error, "New message content empty.");
+                _logger.LogWarning("EditMessage called with empty new content for message {MessageId} in session {ChatSessionId}", messageId, chatSessionId);
                 await Clients.Caller.SendAsync("Error", "Message content cannot be empty");
                 return;
             }
@@ -176,10 +247,13 @@ public class ChatHub : Hub
             var userId = Guid.Parse(Context.UserIdentifier);
             await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId),
                 newContent);
+            activity?.AddEvent(new ActivityEvent("Edit message request sent to ChatService."));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error editing message: {ex.Message}");
+            activity?.SetStatus(ActivityStatusCode.Error, "Error editing message.");
+            activity?.RecordException(ex);
+            _logger.LogError(ex, "Error editing message {MessageId} in session {ChatSessionId}", messageId, chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
         }
     }
@@ -190,6 +264,13 @@ public class ChatHub : Hub
     public async Task EditMessageWithAttachments(string chatSessionId, string messageId, string newContent,
         List<Guid> fileAttachmentIds)
     {
+        using var activity = ActivitySource.StartActivity(nameof(EditMessageWithAttachments));
+        activity?.SetTag("chat_session.id", chatSessionId);
+        activity?.SetTag("message.id", messageId);
+        activity?.SetTag("user.id", Context.UserIdentifier);
+        activity?.SetTag("message.new_content_length", newContent?.Length ?? 0);
+        activity?.SetTag("message.attachment_count", fileAttachmentIds?.Count ?? 0);
+
         var userId = Guid.Parse(Context.UserIdentifier);
 
         try
@@ -198,15 +279,20 @@ public class ChatHub : Hub
 
             if (fileAttachmentIds != null && fileAttachmentIds.Any())
             {
+                using var processAttachmentsActivity = ActivitySource.StartActivity("ProcessAttachmentsInHub");
                 processedContent = await ProcessFileAttachmentsAsync(processedContent, fileAttachmentIds);
+                processAttachmentsActivity?.SetTag("content_length_after_processing", processedContent.Length);
             }
 
             await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId),
                 processedContent);
+            activity?.AddEvent(new ActivityEvent("Edit message with attachments request sent to ChatService."));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error editing message with attachments: {ex.Message}");
+            activity?.SetStatus(ActivityStatusCode.Error, "Error editing message with attachments.");
+            activity?.RecordException(ex);
+            _logger.LogError(ex, "Error editing message {MessageId} with attachments in session {ChatSessionId}", messageId, chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
         }
     }
@@ -216,9 +302,14 @@ public class ChatHub : Hub
     /// </summary>
     public async Task GetMessageAttachments(string messageId)
     {
+        using var activity = ActivitySource.StartActivity(nameof(GetMessageAttachments));
+        activity?.SetTag("message.id", messageId);
+        activity?.SetTag("user.id", Context.UserIdentifier);
+
         try
         {
             var attachments = await _messageService.GetMessageAttachmentsAsync(Guid.Parse(messageId));
+            activity?.SetTag("attachments.count", attachments.Count);
 
             foreach (var attachment in attachments)
             {
@@ -233,10 +324,13 @@ public class ChatHub : Hub
                     url = $"/api/file/{attachment.Id}"
                 });
             }
+            activity?.AddEvent(new ActivityEvent("Attachments sent to caller.", tags: new ActivityTagsCollection { { "count", attachments.Count } }));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error retrieving message attachments: {ex.Message}");
+            activity?.SetStatus(ActivityStatusCode.Error, "Error retrieving message attachments.");
+            activity?.RecordException(ex);
+            _logger.LogError(ex, "Error retrieving message attachments for message {MessageId}", messageId);
             await Clients.Caller.SendAsync("Error", $"Failed to get message attachments: {ex.Message}");
         }
     }
@@ -246,14 +340,22 @@ public class ChatHub : Hub
     /// </summary>
     public async Task RegenerateResponse(string chatSessionId, string userMessageId)
     {
+        using var activity = ActivitySource.StartActivity(nameof(RegenerateResponse));
+        activity?.SetTag("chat_session.id", chatSessionId);
+        activity?.SetTag("message.id_to_regenerate_for", userMessageId);
+        activity?.SetTag("user.id", Context.UserIdentifier);
+
         try
         {
             var userId = Guid.Parse(Context.UserIdentifier);
             await _chatService.RegenerateAiResponseAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(userMessageId));
+            activity?.AddEvent(new ActivityEvent("Regenerate response request sent to ChatService."));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error regenerating response: {ex.Message}");
+            activity?.SetStatus(ActivityStatusCode.Error, "Error regenerating response.");
+            activity?.RecordException(ex);
+            _logger.LogError(ex, "Error regenerating response for message {UserMessageId} in session {ChatSessionId}", userMessageId, chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to regenerate response: {ex.Message}");
         }
     }
@@ -263,21 +365,40 @@ public class ChatHub : Hub
     /// </summary>
     private async Task<string> ProcessFileAttachmentsAsync(string content, List<Guid> fileAttachmentIds)
     {
+        // This is a private helper method. Activities within it will be parented to the calling public method's activity.
+        // So, starting a new top-level activity here might be redundant unless it represents a very distinct, long-running sub-operation.
+        // For now, let operations within be part of the caller's span. Logging within will be correlated.
         var processedContent = content;
 
         foreach (var fileId in fileAttachmentIds)
         {
             var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(fileId);
-            if (fileAttachment == null) continue;
-
-            if (!File.Exists(fileAttachment.FilePath))
+            if (fileAttachment == null)
             {
-                processedContent += $"\n[Attachment {fileAttachment.FileName} not found]";
+                _logger.LogWarning("File attachment with ID {FileId} not found in repository during content processing.", fileId);
+                processedContent += $"\n[Attachment metadata not found for ID: {fileId}]";
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(fileAttachment.FilePath))
+            {
+                _logger.LogError("File attachment with ID {FileId} has an empty or null FilePath during content processing.", fileId);
+                processedContent += $"\n[Attachment {fileAttachment.FileName} has invalid path information]";
+                continue;
+            }
+
+            if (!System.IO.File.Exists(fileAttachment.FilePath))
+            {
+                _logger.LogWarning("File attachment {FileName} (ID: {FileId}) not found at path: {FilePath} during content processing",
+                                 fileAttachment.FileName, fileId, fileAttachment.FilePath);
+                processedContent += $"\n[Attachment {fileAttachment.FileName} not found on disk]";
                 continue;
             }
 
             if (fileAttachment.FileSize > MAX_CLIENT_FILE_SIZE)
             {
+                _logger.LogWarning("File attachment {FileName} (ID: {FileId}, Size: {FileSize}) exceeds max client size {MaxFileSize} and was skipped during content processing.",
+                                 fileAttachment.FileName, fileId, fileAttachment.FileSize, MAX_CLIENT_FILE_SIZE);
                 processedContent +=
                     $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit of {MAX_CLIENT_FILE_SIZE / (1024 * 1024)}MB]";
                 continue;
@@ -296,7 +417,8 @@ public class ChatHub : Hub
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error processing attachment {fileAttachment.FileName}: {ex.Message}");
+                // Log specific error for this attachment processing to avoid losing context if one of many fails
+                _logger.LogError(ex, "Error processing attachment {FileName} (ID: {FileId}) for inclusion in message content", fileAttachment.FileName, fileId);
                 processedContent += $"\n[Error processing attachment: {fileAttachment.FileName}]";
             }
         }

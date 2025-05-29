@@ -4,6 +4,7 @@ using Application.Services.AI;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
+using System.Diagnostics;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -12,6 +13,8 @@ public class OpenAiService : BaseAiService
     private const string OpenAiBaseUrl = "https://api.openai.com/v1/";
     private readonly ILogger<OpenAiService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
+
+    private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.OpenAiService", "1.0.0");
 
     protected override string ProviderName => "OpenAI";
 
@@ -30,6 +33,7 @@ public class OpenAiService : BaseAiService
 
     protected override void ConfigureHttpClient()
     {
+        using var activity = ActivitySource.StartActivity(nameof(ConfigureHttpClient));
         HttpClient.DefaultRequestHeaders.Clear();
         if (!string.IsNullOrEmpty(ApiKey))
         {
@@ -46,13 +50,20 @@ public class OpenAiService : BaseAiService
 
     protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        using var activity = ActivitySource.StartActivity(nameof(ReadStreamAsync));
+        activity?.SetTag("http.response_status_code", response.StatusCode.ToString());
+
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
 
         while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (cancellationToken.IsCancellationRequested) break;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                activity?.AddEvent(new ActivityEvent("Stream reading cancelled."));
+                break;
+            }
 
             if (string.IsNullOrWhiteSpace(line) || line.StartsWith("event:"))
             {
@@ -65,6 +76,7 @@ public class OpenAiService : BaseAiService
                 
                 if (!string.IsNullOrEmpty(jsonData))
                 {
+                    activity?.AddEvent(new ActivityEvent("Yielding data chunk"));
                     yield return jsonData;
                 }
             }
@@ -76,6 +88,11 @@ public class OpenAiService : BaseAiService
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
     {
+        using var activity = ActivitySource.StartActivity(nameof(StreamResponseAsync));
+        activity?.SetTag("ai.provider", ProviderName);
+        activity?.SetTag("ai.model", ModelCode);
+        activity?.SetTag("ai.provider_api_key_id", providerApiKeyId?.ToString());
+
         HttpResponseMessage? response = null;
         bool initialRequestSuccess = false;
         Uri? requestUriForLogging = null;
@@ -85,38 +102,51 @@ public class OpenAiService : BaseAiService
             response = await _resiliencePipeline.ExecuteAsync(
                 async ct => 
                 {
+                    using var attemptActivity = ActivitySource.StartActivity("SendHttpRequestAttempt");
                     var attemptRequest = CreateRequest(requestPayload); 
                     requestUriForLogging = attemptRequest.RequestUri;
-                    _logger.LogDebug("Attempting to send request to OpenAI endpoint: {Endpoint} via Polly pipeline", requestUriForLogging);
+                    attemptActivity?.SetTag("http.url", requestUriForLogging?.ToString());
+                    attemptActivity?.SetTag("http.method", attemptRequest.Method.ToString());
+                    
                     return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
                 },
                 cancellationToken).ConfigureAwait(false);
             
+            activity?.SetTag("http.response_status_code", ((int)response.StatusCode).ToString());
+
             if (!response.IsSuccessStatusCode)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, $"API call failed with status {response.StatusCode}");
                 await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
                 yield break;
             }
-            _logger.LogDebug("Successfully received stream response header from OpenAI model {ModelCode}", ModelCode);
             initialRequestSuccess = true;
         }
         catch (Polly.CircuitBreaker.BrokenCircuitException ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, "Circuit breaker open");
+            activity?.AddException(ex);
             _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
             throw; 
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, "Request timed out by Polly");
+            activity?.AddException(ex);
             _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, "Operation cancelled by user");
+            activity?.AddEvent(new ActivityEvent("Stream request operation was cancelled by user."));
             _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
             yield break;
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during API resilience execution.");
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
             throw; 
         }
@@ -137,7 +167,7 @@ public class OpenAiService : BaseAiService
             }
             if (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogDebug("Finished reading OpenAI stream for request to {Endpoint}", successfulRequestUri);
+                activity?.AddEvent(new ActivityEvent("Finished reading stream successfully."));
             }
         }
         finally

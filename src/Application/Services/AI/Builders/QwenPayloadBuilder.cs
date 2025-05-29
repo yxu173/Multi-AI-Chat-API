@@ -23,7 +23,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
+    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -36,7 +36,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         
         CustomizePayload(requestObj, context);
 
-        var processedMessages = ProcessMessagesForQwenInput(context.History, context.AiAgent, context.UserSettings);
+        var processedMessages = await ProcessMessagesForQwenInputAsync(context.History, context.AiAgent, context.UserSettings, cancellationToken);
         requestObj["messages"] = processedMessages;
 
         if ( tools != null && tools.Any())
@@ -67,7 +67,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             }
         }
 
-        return Task.FromResult(new AiRequestPayload(requestObj));
+        return new AiRequestPayload(requestObj);
     }
 
     private object[] PrepareFunctionDefinitions(List<FunctionDefinitionDto> functions)
@@ -97,10 +97,11 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return tools.ToArray();
     }
 
-    private List<object> ProcessMessagesForQwenInput(
+    private async Task<List<object>> ProcessMessagesForQwenInputAsync(
         List<MessageDto> history,
         AiAgent? aiAgent,
-        UserAiModelSettings? userSettings)
+        UserAiModelSettings? userSettings,
+        CancellationToken cancellationToken)
     {
         var processedMessages = new List<object>();
 
@@ -154,7 +155,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
                 if (!message.IsFromAi)
                 {
-                    var contentParts = _multimodalContentParser.Parse(rawContent);
+                    var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
                     bool hasMultimodalContent = contentParts.Any(p => p is ImagePart || p is FilePart);
 
                     if (hasMultimodalContent)

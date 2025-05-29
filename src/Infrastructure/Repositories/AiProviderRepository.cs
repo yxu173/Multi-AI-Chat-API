@@ -77,10 +77,7 @@ public class AiProviderRepository : IAiProviderRepository
     public async Task<bool> ExistsAsync(Guid id)
     {
         string cacheKey = $"{CacheKeyPrefix}:exists:{id}";
-        return await _cacheService.GetOrSetAsync(
-            cacheKey,
-            async () => await _dbContext.AiProviders.AnyAsync(p => p.Id == id),
-            CacheExpiry);
+        return await _dbContext.AiProviders.AnyAsync(p => p.Id == id);
     }
 
     public async Task<bool> ExistsByNameAsync(string name)
