@@ -370,6 +370,11 @@ public abstract class BasePayloadBuilder
         }
     }
 
+    public virtual string ExtractTextFromMessage(string? messageContent)
+    {
+        if (string.IsNullOrWhiteSpace(messageContent)) return string.Empty;
+        return System.Text.RegularExpressions.Regex.Replace(messageContent, @"<image|file-base64:.*>", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+    }
 
     protected static class Validators
     {
@@ -417,4 +422,7 @@ public abstract class BasePayloadBuilder
             return AnthropicSupportedDocumentTypes.Contains(normalizedMediaType);
         }
     }
+
+    // Add virtual method for customization
+    protected virtual void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context) { }
 }

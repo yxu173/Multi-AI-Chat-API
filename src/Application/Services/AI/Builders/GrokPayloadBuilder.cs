@@ -33,7 +33,7 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         AddParameters(requestObj, context);
         
-        CustomizePayload(requestObj, context);
+        base.CustomizePayload(requestObj, context);
 
         var processedMessages = await ProcessMessagesForGrokInputAsync(context.History, context.AiAgent, context.UserSettings, cancellationToken);
         requestObj["messages"] = processedMessages;
@@ -69,17 +69,15 @@ public class GrokPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return new AiRequestPayload(requestObj);
     }
 
-
-    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    // Override the base CustomizePayload method with Grok-specific logic
+    protected override void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         requestObj["temperature"] = 0.0;
-        
         bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
-        
         if (useThinking)
         {
             requestObj["reasoning_effort"] = "high";
-            Logger?.LogDebug("Set Grok 'reasoning_effort' to 'maximum' for thinking mode");
+            Logger?.LogDebug("Set Grok 'reasoning_effort' to 'high' for thinking mode");
         }
     }
 

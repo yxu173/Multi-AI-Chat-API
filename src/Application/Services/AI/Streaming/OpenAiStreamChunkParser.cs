@@ -13,18 +13,17 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
 
     public override ModelType SupportedModelType => ModelType.OpenAi;
 
-    protected override ParsedChunkInfo ParseModelSpecificChunk(string rawJson)
+    protected override ParsedChunkInfo ParseModelSpecificChunkInternal(JsonDocument jsonDoc)
     {
         // The main try-catch block is now in the base class.
         // The null/empty check for rawJson is also in the base class.
-        Logger?.LogInformation("[OpenAiParser] Received raw data chunk: {RawContent}", rawJson);
+        Logger?.LogInformation("[OpenAiParser] Received raw data chunk: {RawContent}", jsonDoc.RootElement.GetRawText());
 
-        using var doc = JsonDocument.Parse(rawJson); // This can throw JsonException, handled by base.
-        var root = doc.RootElement;
+        var root = jsonDoc.RootElement;
 
         if (!root.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
         {
-            Logger?.LogWarning("OpenAI stream chunk missing or invalid 'type' property: {RawJson}", rawJson);
+            Logger?.LogWarning("OpenAI stream chunk missing or invalid 'type' property: {RawJson}", jsonDoc.RootElement.GetRawText());
             return new ParsedChunkInfo(); // Or perhaps a specific error finish reason
         }
 

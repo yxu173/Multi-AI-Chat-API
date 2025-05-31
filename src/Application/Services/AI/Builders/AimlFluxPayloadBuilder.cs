@@ -54,18 +54,4 @@ public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         return Task.FromResult(new AiRequestPayload(requestObj)); 
     }
-
-    private string ExtractTextFromMessage(string? messageContent)
-    {
-        if (string.IsNullOrWhiteSpace(messageContent))
-        {
-            return string.Empty;
-        }
-       var textOnly = System.Text.RegularExpressions.Regex.Replace(messageContent,
-             @"<(image|file)-base64:(?:[^:]*?:)?([^;]*?);base64,([^>]*?)>",
-             string.Empty,
-             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-             
-        return textOnly.Trim();
-    }
 } 

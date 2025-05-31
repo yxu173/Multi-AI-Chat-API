@@ -235,8 +235,10 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return processedMessages;
     }
     
-    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    protected override void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
+        base.CustomizePayload(requestObj, context);
+
         bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
         
         requestObj["enable_thinking"] = useThinking;
@@ -245,7 +247,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         {
             Logger?.LogDebug("Enabled Qwen native 'enable_thinking' parameter for model {ModelCode}", 
                 context.SpecificModel.ModelCode);
-            
+
             if (requestObj.ContainsKey("temperature") && requestObj["temperature"] is double temp && temp < 0.7)
             {
                 requestObj["temperature"] = 0.7;

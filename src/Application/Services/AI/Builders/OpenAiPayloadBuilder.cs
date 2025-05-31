@@ -176,7 +176,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return processedMessages;
     }
 
-    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    protected override void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         // Only enable thinking if both the model supports it and it's compatible with reasoning parameters
         bool useEffectiveThinking =

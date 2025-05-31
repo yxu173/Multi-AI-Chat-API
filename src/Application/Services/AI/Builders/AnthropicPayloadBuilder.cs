@@ -48,14 +48,6 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         CustomizePayload(requestObj, context);
 
-        // Ensure max_tokens is set
-        if (!requestObj.ContainsKey("max_tokens"))
-        {
-            const int defaultMaxTokens = 4096; 
-            requestObj["max_tokens"] = defaultMaxTokens;
-            Logger?.LogWarning("Anthropic request payload was missing 'max_tokens'. Added default value: {DefaultMaxTokens}", defaultMaxTokens);
-        }
-
         return new AiRequestPayload(requestObj);
     }
 
@@ -144,12 +136,19 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return (finalSystemPrompt?.Trim(), otherMessages);
     }
 
-
-    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    protected override void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        bool useThinking =  context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
-        
-        if (useThinking && !requestObj.ContainsKey("thinking"))
+        // Anthropic-specific logic: handle max_tokens mapping and thinking mode
+        if (!requestObj.ContainsKey("max_tokens"))
+        {
+            if (requestObj.TryGetValue("max_output_tokens", out var maxOutputTokens))
+            {
+                requestObj["max_tokens"] = maxOutputTokens;
+                Logger?.LogDebug("Mapped 'max_output_tokens' to 'max_tokens' for Anthropic");
+            }
+        }
+        bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        if (useThinking)
         {
             const int defaultThinkingBudget = 1024;
             requestObj["thinking"] = new { type = "enabled", budget_tokens = defaultThinkingBudget };

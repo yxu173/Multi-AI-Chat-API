@@ -50,7 +50,7 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                 tools.Count, model.ModelCode);
         }
 
-        // Apply DeepSeek-specific thinking parameters
+        // Override the base CustomizePayload method with DeepSeek-specific logic
         CustomizePayload(requestObj, context);
 
         return new AiRequestPayload(requestObj);
@@ -137,29 +137,21 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         return processedMessages;
     }
 
-    /// <summary>
-    /// Customize the payload with DeepSeek-specific parameters, particularly for thinking mode
-    /// </summary>
-    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    protected override void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
-        
         if (useThinking)
         {
             if (!requestObj.ContainsKey("enable_cot"))
             {
                 requestObj["enable_cot"] = true;
-                Logger?.LogDebug("Enabled DeepSeek 'enable_cot' parameter for model {ModelCode}", 
-                    context.SpecificModel.ModelCode);
+                Logger?.LogDebug("Enabled DeepSeek 'enable_cot' parameter for model {ModelCode}", context.SpecificModel.ModelCode);
             }
-
             if (!requestObj.ContainsKey("enable_reasoning"))
             {
                 requestObj["enable_reasoning"] = true;
-                Logger?.LogDebug("Enabled DeepSeek 'enable_reasoning' parameter for model {ModelCode}", 
-                    context.SpecificModel.ModelCode);
+                Logger?.LogDebug("Enabled DeepSeek 'enable_reasoning' parameter for model {ModelCode}", context.SpecificModel.ModelCode);
             }
-            
             if (!requestObj.ContainsKey("reasoning_mode"))
             {
                 requestObj["reasoning_mode"] = "detailed";

@@ -13,10 +13,9 @@ public class DeepseekStreamChunkParser : BaseStreamChunkParser<DeepseekStreamChu
 
     public override ModelType SupportedModelType => ModelType.DeepSeek;
 
-    protected override ParsedChunkInfo ParseModelSpecificChunk(string rawJson)
+    protected override ParsedChunkInfo ParseModelSpecificChunkInternal(JsonDocument jsonDoc)
     {
-        using var doc = JsonDocument.Parse(rawJson);
-        var root = doc.RootElement;
+        var root = jsonDoc.RootElement;
 
         string? textDelta = null;
         string? thinkingDelta = null;
@@ -25,7 +24,7 @@ public class DeepseekStreamChunkParser : BaseStreamChunkParser<DeepseekStreamChu
         int? outputTokens = null;
         string? finishReason = null;
 
-        Logger?.LogInformation("[DeepseekDebug] Raw chunk content: {RawContent}", rawJson);
+        Logger?.LogInformation("[DeepseekDebug] Raw chunk content: {RawContent}", jsonDoc.RootElement.GetRawText());
 
         if (root.TryGetProperty("error", out var errorElement))
         {
@@ -40,7 +39,6 @@ public class DeepseekStreamChunkParser : BaseStreamChunkParser<DeepseekStreamChu
             if (firstChoice.TryGetProperty("finish_reason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String)
             {
                 finishReason = reasonElement.GetString();
-                // DeepSeek finish reasons: "stop", "length", "tool_calls"
                 Logger?.LogInformation("Parsed Deepseek finishReason: {FinishReason}", finishReason);
             }
 
@@ -51,9 +49,6 @@ public class DeepseekStreamChunkParser : BaseStreamChunkParser<DeepseekStreamChu
                     textDelta = contentElement.GetString();
                     Logger?.LogTrace("Parsed Deepseek text delta: '{TextDelta}'", textDelta);
                 }
-
-                // Deepseek might use a specific field for "thinking" or it might be part of system messages/prompts not in stream delta.
-                // The provided original code checks for "reasoning_content", let's assume this is their thinking indicator if present.
                 if (delta.TryGetProperty("reasoning_content", out var reasoningElement) && reasoningElement.ValueKind == JsonValueKind.String)
                 {
                     thinkingDelta = reasoningElement.GetString();
@@ -62,12 +57,11 @@ public class DeepseekStreamChunkParser : BaseStreamChunkParser<DeepseekStreamChu
 
                 if (delta.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array && toolCalls.GetArrayLength() > 0)
                 {
-                    // Assuming Deepseek tool calls in delta are similar to OpenAI's, usually one per relevant chunk part.
-                    var firstToolCall = toolCalls[0]; // Process the first tool call in the array if multiple are sent (unlikely for delta)
+                    var firstToolCall = toolCalls[0]; 
                     string? toolCallId = null;
                     string? toolCallName = null;
-                    string? toolCallArgsChunk = null; // Argument part for this chunk
-                    bool isToolCallComplete = finishReason == "tool_calls"; // If finish_reason is tool_calls, this specific call part is for a completed call object.
+                    string? toolCallArgsChunk = null; 
+                    bool isToolCallComplete = finishReason == "tool_calls"; 
 
                     if (firstToolCall.TryGetProperty("id", out var idElement))
                     {
@@ -81,15 +75,12 @@ public class DeepseekStreamChunkParser : BaseStreamChunkParser<DeepseekStreamChu
                         }
                         if (function.TryGetProperty("arguments", out var argsElement))
                         {
-                            // Arguments might be a partial string or a full JSON string if the tool call is complete in this chunk.
                             toolCallArgsChunk = argsElement.GetString(); 
                         }
                     }
 
                     if (toolCallId != null || toolCallName != null)
                     {
-                        // Deepseek might not provide an explicit index in the same way as OpenAI/Anthropic for chunked tool calls.
-                        // Using a default index of 0, assuming StreamProcessor can handle re-assembly if needed.
                         toolCallInfo = new ToolCallChunk(0, toolCallId, toolCallName, toolCallArgsChunk, isToolCallComplete);
                         Logger?.LogDebug("Parsed Deepseek tool call. Id: {Id}, Name: {Name}, ArgsChunk: {HasArgs}", toolCallId, toolCallName, !string.IsNullOrEmpty(toolCallArgsChunk));
                     }

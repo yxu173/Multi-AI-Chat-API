@@ -41,5 +41,21 @@ public abstract class BaseStreamChunkParser<TParser> : IStreamChunkParser where 
         }
     }
 
-    protected abstract ParsedChunkInfo ParseModelSpecificChunk(string rawJson);
-} 
+    protected virtual ParsedChunkInfo ParseModelSpecificChunk(string rawJson)
+    {
+        try
+        {
+            // Implement shared parsing logic here
+            var jsonDoc = JsonDocument.Parse(rawJson);
+            // Add more shared logic as needed
+            return ParseModelSpecificChunkInternal(jsonDoc);
+        }
+        catch (JsonException jsonEx)
+        {
+            Logger.LogError(jsonEx, "Failed to parse stream chunk JSON. RawChunk: {RawChunk}", rawJson);
+            return new ParsedChunkInfo(FinishReason: "error_json_parsing");
+        }
+    }
+
+    protected abstract ParsedChunkInfo ParseModelSpecificChunkInternal(JsonDocument jsonDoc);
+}
