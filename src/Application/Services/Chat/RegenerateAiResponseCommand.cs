@@ -12,14 +12,11 @@ namespace Application.Services.Chat;
 /// <summary>
 /// Handles deleting previous AI response(s) for a user message and generating a new fresh response.
 /// </summary>
-public sealed class RegenerateAiResponseCommand
+public sealed class RegenerateAiResponseCommand : BaseAiChatCommand
 {
     private readonly ChatSessionService _chatSessionService;
     private readonly MessageService _messageService;
     private readonly IMessageStreamer _messageStreamer;
-    private readonly IAiModelServiceFactory _aiModelServiceFactory;
-    private readonly IAiAgentRepository _aiAgentRepository;
-    private readonly IUserAiModelSettingsRepository _userAiModelSettingsRepository;
 
     public RegenerateAiResponseCommand(
         ChatSessionService chatSessionService,
@@ -28,13 +25,11 @@ public sealed class RegenerateAiResponseCommand
         IAiModelServiceFactory aiModelServiceFactory,
         IAiAgentRepository aiAgentRepository,
         IUserAiModelSettingsRepository userAiModelSettingsRepository)
+        : base(aiModelServiceFactory, aiAgentRepository, userAiModelSettingsRepository)
     {
         _chatSessionService = chatSessionService ?? throw new ArgumentNullException(nameof(chatSessionService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _messageStreamer = messageStreamer ?? throw new ArgumentNullException(nameof(messageStreamer));
-        _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
-        _aiAgentRepository = aiAgentRepository ?? throw new ArgumentNullException(nameof(aiAgentRepository));
-        _userAiModelSettingsRepository = userAiModelSettingsRepository ?? throw new ArgumentNullException(nameof(userAiModelSettingsRepository));
     }
 
     public async Task ExecuteAsync(
@@ -63,8 +58,8 @@ public sealed class RegenerateAiResponseCommand
         var newAiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
         chatSession.AddMessage(newAiMessage);
 
-        var (aiService, aiAgent) = await PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
-        var userSettings = await _userAiModelSettingsRepository.GetDefaultByUserIdAsync(userId, cancellationToken);
+        var (aiService, apiKey, aiAgent) = await base.PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
+        var userSettings = await UserAiModelSettingsRepository.GetDefaultByUserIdAsync(userId, cancellationToken);
 
         var requestContext = new AiRequestContext(
             UserId: userId,
@@ -83,24 +78,5 @@ public sealed class RegenerateAiResponseCommand
         requestContext = requestContext with { History = HistoryBuilder.BuildHistory(requestContext, newAiMessage) };
 
         await _messageStreamer.StreamResponseAsync(requestContext, newAiMessage, aiService, cancellationToken);
-    }
-
-    private async Task<(IAiModelService AiService, AiAgent? AiAgent)> PrepareForAiInteractionAsync(
-        Guid userId,
-        ChatSession chatSession,
-        CancellationToken cancellationToken)
-    {
-        AiAgent? aiAgent = null;
-        if (chatSession.AiAgentId.HasValue)
-        {
-            aiAgent = await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken);
-        }
-
-        var aiService = _aiModelServiceFactory.GetService(
-            userId,
-            chatSession.AiModelId,
-            chatSession.AiAgentId);
-
-        return (aiService, aiAgent);
     }
 }

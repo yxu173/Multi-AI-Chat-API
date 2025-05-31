@@ -16,15 +16,12 @@ namespace Application.Services.Chat;
 /// <summary>
 /// Handles the end-to-end flow of sending a new user message and streaming the AI response.
 /// </summary>
-public sealed class SendUserMessageCommand
+public sealed class SendUserMessageCommand : BaseAiChatCommand
 {
     private readonly ChatSessionService _chatSessionService;
     private readonly MessageService _messageService;
     private readonly IMessageStreamer _messageStreamer;
-    private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IProviderKeyManagementService _providerKeyManagementService;
-    private readonly IAiAgentRepository _aiAgentRepository;
-    private readonly IUserAiModelSettingsRepository _userAiModelSettingsRepository;
     private readonly ILogger<SendUserMessageCommand> _logger;
 
     private const int MaxRetries = 3;
@@ -40,14 +37,12 @@ public sealed class SendUserMessageCommand
         IAiAgentRepository aiAgentRepository,
         IUserAiModelSettingsRepository userAiModelSettingsRepository,
         ILogger<SendUserMessageCommand> logger)
+        : base(aiModelServiceFactory, aiAgentRepository, userAiModelSettingsRepository)
     {
         _chatSessionService = chatSessionService ?? throw new ArgumentNullException(nameof(chatSessionService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _messageStreamer = messageStreamer ?? throw new ArgumentNullException(nameof(messageStreamer));
-        _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _providerKeyManagementService = providerKeyManagementService ?? throw new ArgumentNullException(nameof(providerKeyManagementService));
-        _aiAgentRepository = aiAgentRepository ?? throw new ArgumentNullException(nameof(aiAgentRepository));
-        _userAiModelSettingsRepository = userAiModelSettingsRepository ?? throw new ArgumentNullException(nameof(userAiModelSettingsRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -77,12 +72,8 @@ public sealed class SendUserMessageCommand
         var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
         chatSession.AddMessage(aiMessage);
 
-        AiAgent? aiAgent = null;
-        if (chatSession.AiAgentId.HasValue)
-        {
-            aiAgent = await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken);
-        }
-        var userSettings = await _userAiModelSettingsRepository.GetDefaultByUserIdAsync(userId, cancellationToken);
+        var (aiService, apiKey, aiAgent) = await base.PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
+        var userSettings = await UserAiModelSettingsRepository.GetDefaultByUserIdAsync(userId, cancellationToken);
 
         var requestContext = new AiRequestContext(
             UserId: userId,
@@ -97,7 +88,6 @@ public sealed class SendUserMessageCommand
             OutputFormat: outputFormat,
             EnableSafetyChecker: enableSafetyChecker,
             SafetyTolerance: safetyTolerance);
-
         requestContext = requestContext with { History = HistoryBuilder.BuildHistory(requestContext, aiMessage) };
 
         bool streamSucceeded = false;
@@ -111,7 +101,7 @@ public sealed class SendUserMessageCommand
             try
             {
                 _logger.LogInformation("Attempt {Attempt}/{MaxRetries} to get AI service for chat {ChatSessionId}", attempt, MaxRetries, chatSessionId);
-                var serviceContext = await _aiModelServiceFactory.GetServiceContextAsync(userId, chatSession.AiModelId, chatSession.AiAgentId, cancellationToken);
+                var serviceContext = await AiModelServiceFactory.GetServiceContextAsync(userId, chatSession.AiModelId, chatSession.AiAgentId, cancellationToken);
 
                 if (serviceContext?.Service == null)
                 {
@@ -141,7 +131,7 @@ public sealed class SendUserMessageCommand
             }
             catch (ProviderRateLimitException ex)
             {
-                _logger.LogWarning(ex, "Provider rate limit hit on attempt {Attempt} for chat {ChatSessionId}. Key ID: {ApiKeyId}", attempt, chatSessionId, ex.ApiKeyIdUsed);
+                _logger.LogWarning(ex, "Provider rate limit hit on attempt {Attempt} for chat {ChatSessionId}. Key ID: {ApiKeyIdUsed}", attempt, chatSessionId, ex.ApiKeyIdUsed);
                 if (ex.ApiKeyIdUsed.HasValue)
                 {
                     await _providerKeyManagementService.ReportKeyRateLimitedAsync(ex.ApiKeyIdUsed.Value, ex.RetryAfter ?? delayForThisAttempt, CancellationToken.None);
