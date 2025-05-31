@@ -19,6 +19,7 @@ public class AiAgentController : BaseController
     [Microsoft.AspNetCore.Mvc.HttpPost("Create")]
     public async Task<IResult> CreateAiAgent([Microsoft.AspNetCore.Mvc.FromBody] CreateAiAgentRequest request)
     {
+        if (request.SystemInstructions == null) { throw new ArgumentNullException(nameof(request.SystemInstructions)); }
         var result = await new CreateAiAgentCommand(
             UserId,
             request.Name,
@@ -60,6 +61,7 @@ public class AiAgentController : BaseController
     [Microsoft.AspNetCore.Mvc.HttpPut("{id}")]
     public async Task<IResult> UpdateAiAgent(Guid id, [Microsoft.AspNetCore.Mvc.FromBody] CreateAiAgentRequest request)
     {
+        if (request.SystemInstructions == null) { throw new ArgumentNullException(nameof(request.SystemInstructions)); }
         var result = await new UpdateAiAgentCommand(
             UserId,
             id,

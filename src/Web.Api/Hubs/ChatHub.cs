@@ -56,7 +56,7 @@ public class ChatHub : Hub
         if (exception != null)
         {
             activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
-            activity?.RecordException(exception);
+            activity?.AddException(exception);
             _logger.LogInformation(exception, "User {UserId} disconnected from chat hub with ConnectionId {ConnectionId}. Reason: {Reason}", userId, Context.ConnectionId, exception.Message);
         }
         else
@@ -75,6 +75,22 @@ public class ChatHub : Hub
 
         try
         {
+            if (string.IsNullOrWhiteSpace(chatSessionId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Chat session ID is empty.");
+                _logger.LogWarning("JoinChatSession called with empty chat session ID");
+                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid chat session ID format.");
+                _logger.LogWarning("JoinChatSession called with invalid chat session ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
+                return;
+            }
+
             await Groups.AddToGroupAsync(Context.ConnectionId, chatSessionId);
             _logger.LogInformation("User {UserId} joined chat session {ChatSessionId}", Context.UserIdentifier, chatSessionId);
             activity?.AddEvent(new ActivityEvent("Added to SignalR group."));
@@ -82,7 +98,6 @@ public class ChatHub : Hub
             try
             {
                 using var fetchHistoryActivity = ActivitySource.StartActivity("FetchChatHistory");
-                var chatGuid = Guid.Parse(chatSessionId);
                 fetchHistoryActivity?.SetTag("chat_session.guid", chatGuid.ToString());
                 var chatResult = await new GetChatByIdQuery(chatGuid).ExecuteAsync();
 
@@ -103,7 +118,7 @@ public class ChatHub : Hub
             catch (Exception historyEx)
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Error loading chat history.");
-                activity?.RecordException(historyEx);
+                activity?.AddException(historyEx);
                 _logger.LogError(historyEx, "Error loading chat history for session {ChatSessionId}", chatSessionId);
                 await Clients.Caller.SendAsync("Error", $"Joined chat but failed to load history: {historyEx.Message}");
             }
@@ -111,7 +126,7 @@ public class ChatHub : Hub
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Error joining chat session.");
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error joining chat session {ChatSessionId}", chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to join chat session: {ex.Message}");
         }
@@ -136,6 +151,22 @@ public class ChatHub : Hub
 
         try
         {
+            if (string.IsNullOrWhiteSpace(chatSessionId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Chat session ID is empty.");
+                _logger.LogWarning("SendMessage called with empty chat session ID");
+                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid chat session ID format.");
+                _logger.LogWarning("SendMessage called with invalid chat session ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(content))
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Message content empty.");
@@ -144,9 +175,23 @@ public class ChatHub : Hub
                 return;
             }
 
-            var userId = Guid.Parse(Context.UserIdentifier);
+            if (Context.UserIdentifier == null)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "User identifier is null.");
+                _logger.LogWarning("Method called with null user identifier");
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid user identifier format.");
+                _logger.LogWarning("Method called with invalid user identifier");
+                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
+                return;
+            }
+
             await _chatService.SendUserMessageAsync(
-                Guid.Parse(chatSessionId),
+                chatGuid,
                 userId,
                 content,
                 enableThinking,
@@ -161,7 +206,7 @@ public class ChatHub : Hub
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Error sending message.");
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error sending message in session {ChatSessionId}", chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to send message: {ex.Message}");
         }
@@ -188,11 +233,40 @@ public class ChatHub : Hub
         activity?.SetTag("message.content_length", content?.Length ?? 0);
         activity?.SetTag("message.attachment_count", fileAttachmentIds?.Count ?? 0);
 
-        var userId = Guid.Parse(Context.UserIdentifier);
-
         try
         {
-            string processedContent = content;
+            if (string.IsNullOrWhiteSpace(chatSessionId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Chat session ID is empty.");
+                _logger.LogWarning("SendMessageWithAttachments called with empty chat session ID");
+                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid chat session ID format.");
+                _logger.LogWarning("SendMessageWithAttachments called with invalid chat session ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
+                return;
+            }
+
+            if (Context.UserIdentifier == null)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "User identifier is null.");
+                _logger.LogWarning("Method called with null user identifier");
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid user identifier format.");
+                _logger.LogWarning("Method called with invalid user identifier");
+                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
+                return;
+            }
+
+            string processedContent = content ?? string.Empty;
 
             if (fileAttachmentIds != null && fileAttachmentIds.Any())
             {
@@ -202,7 +276,7 @@ public class ChatHub : Hub
             }
 
             await _chatService.SendUserMessageAsync(
-                Guid.Parse(chatSessionId),
+                chatGuid,
                 userId,
                 processedContent,
                 enableThinking,
@@ -217,7 +291,7 @@ public class ChatHub : Hub
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Error sending message with attachments.");
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error sending message with attachments in session {ChatSessionId}", chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to send message: {ex.Message}");
         }
@@ -236,6 +310,38 @@ public class ChatHub : Hub
 
         try
         {
+            if (string.IsNullOrWhiteSpace(chatSessionId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Chat session ID is empty.");
+                _logger.LogWarning("EditMessage called with empty chat session ID");
+                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid chat session ID format.");
+                _logger.LogWarning("EditMessage called with invalid chat session ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(messageId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Message ID is empty.");
+                _logger.LogWarning("EditMessage called with empty message ID");
+                await Clients.Caller.SendAsync("Error", "Message ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(messageId, out Guid messageGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid message ID format.");
+                _logger.LogWarning("EditMessage called with invalid message ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid message ID format");
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(newContent))
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "New message content empty.");
@@ -244,15 +350,29 @@ public class ChatHub : Hub
                 return;
             }
 
-            var userId = Guid.Parse(Context.UserIdentifier);
-            await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId),
+            if (Context.UserIdentifier == null)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "User identifier is null.");
+                _logger.LogWarning("Method called with null user identifier");
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid user identifier format.");
+                _logger.LogWarning("Method called with invalid user identifier");
+                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
+                return;
+            }
+
+            await _chatService.EditUserMessageAsync(chatGuid, userId, messageGuid,
                 newContent);
             activity?.AddEvent(new ActivityEvent("Edit message request sent to ChatService."));
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Error editing message.");
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error editing message {MessageId} in session {ChatSessionId}", messageId, chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
         }
@@ -271,11 +391,56 @@ public class ChatHub : Hub
         activity?.SetTag("message.new_content_length", newContent?.Length ?? 0);
         activity?.SetTag("message.attachment_count", fileAttachmentIds?.Count ?? 0);
 
-        var userId = Guid.Parse(Context.UserIdentifier);
-
         try
         {
-            string processedContent = newContent;
+            if (string.IsNullOrWhiteSpace(chatSessionId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Chat session ID is empty.");
+                _logger.LogWarning("EditMessageWithAttachments called with empty chat session ID");
+                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid chat session ID format.");
+                _logger.LogWarning("EditMessageWithAttachments called with invalid chat session ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(messageId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Message ID is empty.");
+                _logger.LogWarning("EditMessageWithAttachments called with empty message ID");
+                await Clients.Caller.SendAsync("Error", "Message ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(messageId, out Guid messageGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid message ID format.");
+                _logger.LogWarning("EditMessageWithAttachments called with invalid message ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid message ID format");
+                return;
+            }
+
+            if (Context.UserIdentifier == null)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "User identifier is null.");
+                _logger.LogWarning("Method called with null user identifier");
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid user identifier format.");
+                _logger.LogWarning("Method called with invalid user identifier");
+                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
+                return;
+            }
+
+            string processedContent = newContent ?? string.Empty;
 
             if (fileAttachmentIds != null && fileAttachmentIds.Any())
             {
@@ -284,14 +449,14 @@ public class ChatHub : Hub
                 processAttachmentsActivity?.SetTag("content_length_after_processing", processedContent.Length);
             }
 
-            await _chatService.EditUserMessageAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(messageId),
+            await _chatService.EditUserMessageAsync(chatGuid, userId, messageGuid,
                 processedContent);
             activity?.AddEvent(new ActivityEvent("Edit message with attachments request sent to ChatService."));
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Error editing message with attachments.");
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error editing message {MessageId} with attachments in session {ChatSessionId}", messageId, chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
         }
@@ -308,7 +473,23 @@ public class ChatHub : Hub
 
         try
         {
-            var attachments = await _messageService.GetMessageAttachmentsAsync(Guid.Parse(messageId));
+            if (string.IsNullOrWhiteSpace(messageId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Message ID is empty.");
+                _logger.LogWarning("GetMessageAttachments called with empty message ID");
+                await Clients.Caller.SendAsync("Error", "Message ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(messageId, out Guid messageGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid message ID format.");
+                _logger.LogWarning("GetMessageAttachments called with invalid message ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid message ID format");
+                return;
+            }
+
+            var attachments = await _messageService.GetMessageAttachmentsAsync(messageGuid);
             activity?.SetTag("attachments.count", attachments.Count);
 
             foreach (var attachment in attachments)
@@ -329,7 +510,7 @@ public class ChatHub : Hub
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Error retrieving message attachments.");
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error retrieving message attachments for message {MessageId}", messageId);
             await Clients.Caller.SendAsync("Error", $"Failed to get message attachments: {ex.Message}");
         }
@@ -347,14 +528,60 @@ public class ChatHub : Hub
 
         try
         {
-            var userId = Guid.Parse(Context.UserIdentifier);
-            await _chatService.RegenerateAiResponseAsync(Guid.Parse(chatSessionId), userId, Guid.Parse(userMessageId));
+            if (string.IsNullOrWhiteSpace(chatSessionId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Chat session ID is empty.");
+                _logger.LogWarning("RegenerateResponse called with empty chat session ID");
+                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid chat session ID format.");
+                _logger.LogWarning("RegenerateResponse called with invalid chat session ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(userMessageId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "User message ID is empty.");
+                _logger.LogWarning("RegenerateResponse called with empty user message ID");
+                await Clients.Caller.SendAsync("Error", "User message ID cannot be empty");
+                return;
+            }
+
+            if (!Guid.TryParse(userMessageId, out Guid userMessageGuid))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid user message ID format.");
+                _logger.LogWarning("RegenerateResponse called with invalid user message ID format");
+                await Clients.Caller.SendAsync("Error", "Invalid user message ID format");
+                return;
+            }
+
+            if (Context.UserIdentifier == null)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "User identifier is null.");
+                _logger.LogWarning("Method called with null user identifier");
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid user identifier format.");
+                _logger.LogWarning("Method called with invalid user identifier");
+                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
+                return;
+            }
+
+            await _chatService.RegenerateAiResponseAsync(chatGuid, userId, userMessageGuid);
             activity?.AddEvent(new ActivityEvent("Regenerate response request sent to ChatService."));
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Error regenerating response.");
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error regenerating response for message {UserMessageId} in session {ChatSessionId}", userMessageId, chatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to regenerate response: {ex.Message}");
         }
@@ -368,7 +595,7 @@ public class ChatHub : Hub
         // This is a private helper method. Activities within it will be parented to the calling public method's activity.
         // So, starting a new top-level activity here might be redundant unless it represents a very distinct, long-running sub-operation.
         // For now, let operations within be part of the caller's span. Logging within will be correlated.
-        var processedContent = content;
+        var processedContent = content ?? string.Empty;
 
         foreach (var fileId in fileAttachmentIds)
         {

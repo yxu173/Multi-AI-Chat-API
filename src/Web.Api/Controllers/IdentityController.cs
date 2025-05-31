@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Application.Abstractions.Authentication;
 using Application.Features.Identity.ForgetPassword;
 using Application.Features.Identity.Login;
@@ -160,6 +160,7 @@ public class IdentityController : BaseController
         }
 
         var currentUser = await _userManager.FindByLoginAsync(info.LoginProvider, info.ProviderKey);
+        if (currentUser == null) { return BadRequest("User cannot be null"); }
         var token = _tokenProvider.Create(currentUser);
         return Ok(new { Token = token });
     }

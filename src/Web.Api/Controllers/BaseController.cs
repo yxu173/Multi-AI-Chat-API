@@ -6,5 +6,14 @@ namespace Web.Api.Controllers;
 [Route("api/[controller]")]
 public class BaseController : ControllerBase
 {
-    protected Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+    protected Guid UserId 
+    { 
+        get 
+        {
+            var input = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (input == null) { throw new ArgumentNullException(nameof(input)); }
+            if (!Guid.TryParse(input, out Guid parsedGuid)) { throw new FormatException("Invalid GUID format."); }
+            return parsedGuid;
+        } 
+    }
 }
