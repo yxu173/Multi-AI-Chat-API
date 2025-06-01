@@ -98,8 +98,8 @@ namespace Infrastructure.Database.Migrations
                     b.Property<DateTime?>("LastModified")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("MaxRequestsPerDay")
-                        .HasColumnType("integer");
+                    b.Property<double>("MaxRequestsPerMonth")
+                        .HasColumnType("double precision");
 
                     b.Property<int>("MaxTokensPerRequest")
                         .HasColumnType("integer");
@@ -123,10 +123,10 @@ namespace Infrastructure.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<int>("CurrentDayUsage")
+                    b.Property<double>("CurrentMonthUsage")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
+                        .HasColumnType("double precision")
+                        .HasDefaultValue(0.0);
 
                     b.Property<DateTime>("ExpiryDate")
                         .HasColumnType("timestamp with time zone");
@@ -281,6 +281,9 @@ namespace Infrastructure.Database.Migrations
 
                     b.Property<bool>("PromptCachingSupported")
                         .HasColumnType("boolean");
+
+                    b.Property<double>("RequestCost")
+                        .HasColumnType("double precision");
 
                     b.Property<bool>("SupportsThinking")
                         .HasColumnType("boolean");

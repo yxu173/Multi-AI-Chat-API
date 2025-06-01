@@ -35,7 +35,8 @@ public class AiModelController : BaseController
             request.ContextLength,
             request.PluginsSupported,
             request.SystemRoleSupported,
-            request.PromptCachingSupported
+            request.PromptCachingSupported,
+            request.RequestCost
         ).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }

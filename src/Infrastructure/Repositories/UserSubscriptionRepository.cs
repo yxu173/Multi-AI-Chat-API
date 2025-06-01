@@ -93,12 +93,11 @@ public class UserSubscriptionRepository : IUserSubscriptionRepository
         }
     }
 
-    public async Task ResetAllDailyUsageAsync(CancellationToken cancellationToken = default)
+    public Task ResetAllMonthlyUsageAsync(CancellationToken cancellationToken = default)
     {
-       
-        await _dbContext.UserSubscriptions
+        return _dbContext.UserSubscriptions
             .ExecuteUpdateAsync(s => s
-                .SetProperty(u => u.CurrentDayUsage, 0)
+                .SetProperty(u => u.CurrentMonthUsage, 0)
                 .SetProperty(u => u.LastUsageReset, DateTime.UtcNow.Date),
                 cancellationToken);
     }

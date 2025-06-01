@@ -16,4 +16,5 @@ public sealed record CreateAiModelCommand(
     int ContextLength,
     bool PluginsSupported,
     bool SystemRoleSupported,
-    bool PromptCachingSupported) : ICommand<Guid>;
+    bool PromptCachingSupported,
+    double RequestCost) : ICommand<Guid>;

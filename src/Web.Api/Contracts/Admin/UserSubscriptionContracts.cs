@@ -9,7 +9,7 @@ public record UserSubscriptionResponse(
     string SubscriptionPlanName,
     DateTime StartDate,
     DateTime ExpiryDate,
-    int CurrentDayUsage,
+    double CurrentMonthUsage,
     bool IsActive,
     bool IsExpired,
     string? PaymentReference

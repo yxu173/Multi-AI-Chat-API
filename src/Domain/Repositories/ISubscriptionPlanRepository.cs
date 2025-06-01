@@ -14,4 +14,5 @@ public interface ISubscriptionPlanRepository
     Task<SubscriptionPlan> AddAsync(SubscriptionPlan subscriptionPlan, CancellationToken cancellationToken = default);
     Task<SubscriptionPlan> UpdateAsync(SubscriptionPlan subscriptionPlan, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<SubscriptionPlan?> GetByNameAsync(string name, CancellationToken cancellationToken = default);
 }

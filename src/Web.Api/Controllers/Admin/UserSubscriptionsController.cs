@@ -106,7 +106,7 @@ public class UserSubscriptionsController : AdminControllerBase
             plan?.Name ?? "Unknown Plan",
             subscription.StartDate,
             subscription.ExpiryDate,
-            subscription.CurrentDayUsage,
+            subscription.CurrentMonthUsage,
             subscription.IsActive,
             subscription.IsExpired(),
             subscription.PaymentReference

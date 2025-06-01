@@ -16,5 +16,6 @@ public interface IUserSubscriptionRepository
     Task<UserSubscription> AddAsync(UserSubscription userSubscription, CancellationToken cancellationToken = default);
     Task<UserSubscription> UpdateAsync(UserSubscription userSubscription, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
-    Task ResetAllDailyUsageAsync(CancellationToken cancellationToken = default);
+  //  Task ResetAllDailyUsageAsync(CancellationToken cancellationToken = default);
+    Task ResetAllMonthlyUsageAsync(CancellationToken cancellationToken = default);
 }

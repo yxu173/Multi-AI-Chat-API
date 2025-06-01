@@ -57,7 +57,7 @@ public class SubscriptionPlansController : AdminControllerBase
         var command = new CreateSubscriptionPlanCommand(
             request.Name,
             request.Description,
-            request.MaxRequestsPerDay,
+            request.MaxRequestsPerMonth,
             request.MaxTokensPerRequest,
             request.MonthlyPrice
         );
@@ -80,7 +80,7 @@ public class SubscriptionPlansController : AdminControllerBase
             id,
             request.Name,
             request.Description,
-            request.MaxRequestsPerDay,
+            request.MaxRequestsPerMonth,
             request.MaxTokensPerRequest,
             request.MonthlyPrice,
             request.IsActive
@@ -103,7 +103,7 @@ public static class SubscriptionPlanExtensions
             plan.Id,
             plan.Name,
             plan.Description,
-            plan.MaxRequestsPerDay,
+            plan.MaxRequestsPerMonth,
             plan.MaxTokensPerRequest,
             plan.MonthlyPrice,
             plan.IsActive,

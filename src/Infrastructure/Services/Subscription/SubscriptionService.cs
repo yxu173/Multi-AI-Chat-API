@@ -1,4 +1,5 @@
 using Domain.Repositories;
+using Domain.Aggregates.Admin;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -25,23 +26,25 @@ public class SubscriptionService : ISubscriptionService
 
     public async Task<(bool HasQuota, string? ErrorMessage)> CheckUserQuotaAsync(
         Guid userId, 
+        double requestCost, 
         int requiredTokens = 0,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("Checking quota for user {UserId} with request cost {RequestCost}", userId, requestCost);
         var subscription = await _userSubscriptionRepository.GetActiveSubscriptionAsync(userId, cancellationToken);
         
-        //TODO : Need To Handle Well
-        // If no subscription is found, use default free tier limits
         if (subscription == null)
         {
-            _logger.LogInformation("No active subscription found for user {UserId}. Using free tier limits.", userId);
-            // Default free tier: 10 requests per day, max 2000 tokens per request
-            return requiredTokens <= 2000 ? 
-                (true, null) : 
-                (false, "Exceeded token limit for free tier. Please upgrade your subscription.");
+            var freePlan = await _subscriptionPlanRepository.GetByNameAsync("Free Tier", cancellationToken) ?? SubscriptionPlan.CreateFreeTier();
+            if (freePlan.Id == Guid.Empty)
+            {
+                await _subscriptionPlanRepository.AddAsync(freePlan, cancellationToken);
+            }
+            var userSubscription = UserSubscription.Create(userId, freePlan.Id, DateTime.UtcNow, DateTime.UtcNow.AddYears(1));
+            await _userSubscriptionRepository.AddAsync(userSubscription, cancellationToken);
+            subscription = userSubscription;
         }
 
-        
         if (!subscription.IsActive || subscription.IsExpired())
         {
             return (false, "Your subscription has expired or is inactive. Please renew your subscription.");
@@ -60,14 +63,14 @@ public class SubscriptionService : ISubscriptionService
             return (false, $"Request exceeds the token limit ({plan.MaxTokensPerRequest}) for your plan. Please reduce prompt size or upgrade your subscription.");
         }
 
-        if (!subscription.HasAvailableQuota(plan.MaxRequestsPerDay))
+        if (!subscription.HasAvailableQuota(plan.MaxRequestsPerMonth))
         {
-            return (false, $"You've reached your daily limit of {plan.MaxRequestsPerDay} requests. Your quota will reset tomorrow.");
+            return (false, $"You've reached your monthly limit of {plan.MaxRequestsPerMonth} requests. Your quota will reset at the beginning of the next month.");
         }
 
-     
-        var subscriptionId = subscription.Id;
+        var subscriptionIdCapture = subscription.Id;
         var userIdCapture = userId;
+        var requestCostCapture = requestCost; 
         
         _ = Task.Run(async () => 
         {
@@ -76,12 +79,12 @@ public class SubscriptionService : ISubscriptionService
             
             try
             {
-                var freshSubscription = await subscriptionRepo.GetByIdAsync(subscriptionId, CancellationToken.None);
+                var freshSubscription = await subscriptionRepo.GetByIdAsync(subscriptionIdCapture, CancellationToken.None);
                 if (freshSubscription != null)
                 {
-                    freshSubscription.IncrementUsage();
+                    freshSubscription.IncrementUsage(requestCostCapture); 
                     await subscriptionRepo.UpdateAsync(freshSubscription, CancellationToken.None);
-                    _logger.LogDebug("Updated usage for user {UserId}, subscription {SubscriptionId}", userIdCapture, subscriptionId);
+                    _logger.LogInformation("Incremented usage for user {UserId}, subscription {SubscriptionId}, new usage: {Usage}, cost: {RequestCost}", userIdCapture, subscriptionIdCapture, freshSubscription.CurrentMonthUsage, requestCostCapture);
                 }
             }
             catch (Exception ex)
@@ -93,16 +96,16 @@ public class SubscriptionService : ISubscriptionService
         return (true, null);
     }
 
-    public async Task ResetDailyUsageAsync(CancellationToken cancellationToken = default)
+    public async Task ResetMonthlyUsageAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            await _userSubscriptionRepository.ResetAllDailyUsageAsync(cancellationToken);
-            _logger.LogInformation("Successfully reset daily usage for all user subscriptions");
+            await _userSubscriptionRepository.ResetAllMonthlyUsageAsync(cancellationToken);
+            _logger.LogInformation("Successfully reset monthly usage for all user subscriptions");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to reset daily usage for user subscriptions");
+            _logger.LogError(ex, "Failed to reset monthly usage for user subscriptions");
             throw;
         }
     }

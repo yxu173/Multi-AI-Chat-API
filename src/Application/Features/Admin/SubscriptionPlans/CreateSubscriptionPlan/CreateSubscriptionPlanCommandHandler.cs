@@ -14,12 +14,12 @@ internal sealed class CreateSubscriptionPlanCommandHandler : ICommandHandler<Cre
         _subscriptionPlanRepository = subscriptionPlanRepository;
     }
 
-    public async Task<Result<System.Guid>> ExecuteAsync(CreateSubscriptionPlanCommand command, CancellationToken ct)
+    public async Task<Result<Guid>> ExecuteAsync(CreateSubscriptionPlanCommand command, CancellationToken ct)
     {
         var subscriptionPlan = SubscriptionPlan.Create(
             command.Name,
             command.Description,
-            command.MaxRequestsPerDay,
+            command.MaxRequestsPerMonth,
             command.MaxTokensPerRequest,
             command.MonthlyPrice);
 

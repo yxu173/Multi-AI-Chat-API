@@ -24,6 +24,7 @@ public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelC
             request.OutputTokenPricePer1M,
             request.ModelCode,
             request.ContextLength,
+            request.RequestCost,
             request.MaxOutputTokens,
             request.IsEnabled,
             request.SupportsThinking,

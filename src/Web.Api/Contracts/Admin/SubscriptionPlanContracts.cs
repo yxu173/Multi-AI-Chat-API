@@ -6,7 +6,7 @@ public record SubscriptionPlanResponse(
     Guid Id,
     string Name,
     string Description,
-    int MaxRequestsPerDay,
+    double MaxRequestsPerMonth,
     int MaxTokensPerRequest,
     decimal MonthlyPrice,
     bool IsActive,
@@ -17,7 +17,7 @@ public record SubscriptionPlanResponse(
 public record CreateSubscriptionPlanRequest(
     string Name,
     string Description,
-    int MaxRequestsPerDay,
+    double MaxRequestsPerMonth,
     int MaxTokensPerRequest,
     decimal MonthlyPrice
 );
@@ -25,7 +25,7 @@ public record CreateSubscriptionPlanRequest(
 public record UpdateSubscriptionPlanRequest(
     string? Name = null,
     string? Description = null,
-    int? MaxRequestsPerDay = null,
+    double? MaxRequestsPerMonth = null,
     int? MaxTokensPerRequest = null,
     decimal? MonthlyPrice = null,
     bool? IsActive = null

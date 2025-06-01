@@ -5,6 +5,6 @@ namespace Application.Features.Admin.SubscriptionPlans.CreateSubscriptionPlan;
 public sealed record CreateSubscriptionPlanCommand(
     string Name,
     string Description,
-    int MaxRequestsPerDay,
+    double MaxRequestsPerMonth,
     int MaxTokensPerRequest,
     decimal MonthlyPrice) : ICommand<Guid>;

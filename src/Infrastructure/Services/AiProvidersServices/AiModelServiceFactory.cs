@@ -58,14 +58,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         Guid? aiAgentId,
         CancellationToken cancellationToken = default)
     {
-        var (hasQuota, quotaErrorMessage) =
-            await _subscriptionService.CheckUserQuotaAsync(userId, cancellationToken: cancellationToken);
-        if (!hasQuota)
-        {
-            throw new QuotaExceededException(quotaErrorMessage ?? "Quota exceeded for user subscription.");
-        }
-
-        string cacheKey = $"aimodel:{modelId}";
+        string cacheKey = "aimodel:" + modelId;
         var aiModel = await _cacheService.GetAsync<AiModel>(cacheKey, cancellationToken);
 
         if (aiModel == null)
@@ -82,12 +75,14 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             }
             else
             {
-                 throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
+                throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
             }
         }
-        else
+
+        var (hasQuota, quotaErrorMessage) = await _subscriptionService.CheckUserQuotaAsync(userId, aiModel.RequestCost, cancellationToken: cancellationToken);
+        if (!hasQuota)
         {
-            _logger.LogDebug("AiModel {ModelId} retrieved from cache.", modelId);
+            throw new QuotaExceededException(quotaErrorMessage ?? "Quota exceeded for user subscription.");
         }
 
         string? apiKeySecretToUse = null;

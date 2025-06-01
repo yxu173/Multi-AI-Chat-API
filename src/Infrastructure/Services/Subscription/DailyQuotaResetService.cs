@@ -46,7 +46,7 @@ public class DailyQuotaResetService : BackgroundService
                     var keyManagementService = scope.ServiceProvider.GetRequiredService<IProviderKeyManagementService>();
 
                     _logger.LogInformation("Attempting to reset daily usage for user subscriptions and API keys...");
-                    await subscriptionService.ResetDailyUsageAsync(stoppingToken);
+                    await subscriptionService.ResetMonthlyUsageAsync(stoppingToken);
                     await keyManagementService.ResetDailyUsageAsync(stoppingToken);
                     _logger.LogInformation("Successfully reset all daily usage counters.");
 

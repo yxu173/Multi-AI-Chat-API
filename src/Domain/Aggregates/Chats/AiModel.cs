@@ -25,6 +25,7 @@ public sealed class AiModel
     public bool PluginsSupported { get; private set; }
     public bool SystemRoleSupported { get; private set; }
     public bool PromptCachingSupported { get; private set; }
+    public double RequestCost { get; private set; }
 
     [JsonIgnore]
     public IReadOnlyCollection<UserAiModel> UserAiModels => _userAiModels;
@@ -37,7 +38,7 @@ public sealed class AiModel
     public AiModel(Guid id, string name, ModelType modelType, Guid aiProviderId, double inputTokenPricePer1M,
         double outputTokenPricePer1M, string modelCode, int? maxOutputTokens,
         bool isEnabled, bool supportsThinking, bool supportsVision, int contextLength,
-        bool pluginsSupported, bool systemRoleSupported, bool promptCachingSupported)
+        bool pluginsSupported, bool systemRoleSupported, bool promptCachingSupported, double requestCost)
     {
         Id = id;
         Name = name;
@@ -54,10 +55,11 @@ public sealed class AiModel
         PluginsSupported = pluginsSupported;
         SystemRoleSupported = systemRoleSupported;
         PromptCachingSupported = promptCachingSupported;
+        RequestCost = requestCost;
     }
 
     public static AiModel Create(string name, string modelType, Guid aiProviderId, double inputTokenPricePer1M,
-        double outputTokenPricePer1M, string modelCode, int contextLength, int? maxOutputTokens = null,
+        double outputTokenPricePer1M, string modelCode, int contextLength, double requestCost, int? maxOutputTokens = null,
         bool isEnabled = true, bool supportsThinking = false, bool supportsVision = false,
           bool pluginsSupported = false,
          bool systemRoleSupported = false, bool promptCachingSupported = false)
@@ -79,7 +81,8 @@ public sealed class AiModel
             ContextLength = contextLength,
             PluginsSupported = pluginsSupported,
             SystemRoleSupported = systemRoleSupported,
-            PromptCachingSupported = promptCachingSupported
+            PromptCachingSupported = promptCachingSupported,
+            RequestCost = requestCost
         };
     }
 

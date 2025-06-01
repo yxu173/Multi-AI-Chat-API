@@ -25,14 +25,14 @@ internal sealed class UpdateSubscriptionPlanCommandHandler : ICommandHandler<Upd
 
         var name = command.Name ?? subscriptionPlan.Name;
         var description = command.Description ?? subscriptionPlan.Description;
-        var maxRequestsPerDay = command.MaxRequestsPerDay ?? subscriptionPlan.MaxRequestsPerDay;
+        var maxRequestsPerMonth = command.MaxRequestsPerMonth ?? subscriptionPlan.MaxRequestsPerMonth;
         var maxTokensPerRequest = command.MaxTokensPerRequest ?? subscriptionPlan.MaxTokensPerRequest;
         var monthlyPrice = command.MonthlyPrice ?? subscriptionPlan.MonthlyPrice;
 
         subscriptionPlan.Update(
             name, 
             description, 
-            maxRequestsPerDay, 
+            maxRequestsPerMonth, 
             maxTokensPerRequest, 
             monthlyPrice);
 

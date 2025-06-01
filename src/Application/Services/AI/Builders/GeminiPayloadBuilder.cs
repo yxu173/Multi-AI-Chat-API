@@ -53,7 +53,15 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
     private async Task<List<object>> ProcessMessagesForGeminiAsync(AiRequestContext context, CancellationToken cancellationToken)
     {
         bool useThinking =  context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
-        string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ?? context.UserSettings?.ModelParameters.SystemInstructions;
+        string? systemMessage = null;
+        if (context.AiAgent != null && context.AiAgent.ModelParameter != null)
+        {
+            systemMessage = context.AiAgent.ModelParameter.SystemInstructions;
+        }
+        else if (context.UserSettings != null && context.UserSettings.ModelParameters != null)
+        {
+            systemMessage = context.UserSettings.ModelParameters.SystemInstructions;
+        }
         var geminiContents = new List<object>();
 
         var systemPrompts = new List<string>();

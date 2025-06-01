@@ -11,7 +11,7 @@ public sealed class UserSubscription : BaseEntity
     public Guid SubscriptionPlanId { get; private set; }
     public DateTime StartDate { get; private set; }
     public DateTime ExpiryDate { get; private set; }
-    public int CurrentDayUsage { get; private set; }
+    public double CurrentMonthUsage { get; private set; }
     public DateTime? LastUsageReset { get; private set; }
     public bool IsActive { get; private set; }
     public string? PaymentReference { get; private set; }
@@ -49,8 +49,8 @@ public sealed class UserSubscription : BaseEntity
             SubscriptionPlanId = subscriptionPlanId,
             StartDate = startDate,
             ExpiryDate = expiryDate,
-            CurrentDayUsage = 0,
-            LastUsageReset = DateTime.UtcNow.Date,
+            CurrentMonthUsage = 0.0,
+            LastUsageReset = DateTime.UtcNow,
             IsActive = true,
             PaymentReference = paymentReference
         };
@@ -72,16 +72,16 @@ public sealed class UserSubscription : BaseEntity
         SubscriptionPlanId = newPlanId;
     }
 
-    public void IncrementUsage()
+    public void IncrementUsage(double cost)
     {
         EnsureUsageResetIfNeeded();
-        CurrentDayUsage++;
+        CurrentMonthUsage += cost;
     }
 
-    public void ResetDailyUsage()
+    public void ResetMonthlyUsage()
     {
-        CurrentDayUsage = 0;
-        LastUsageReset = DateTime.UtcNow.Date;
+        CurrentMonthUsage = 0.0;
+        LastUsageReset = DateTime.UtcNow;
     }
 
     public void SetActive(bool isActive)
@@ -89,10 +89,10 @@ public sealed class UserSubscription : BaseEntity
         IsActive = isActive;
     }
 
-    public bool HasAvailableQuota(int planMaxRequests)
+    public bool HasAvailableQuota(double planMaxRequests)
     {
         EnsureUsageResetIfNeeded();
-        return CurrentDayUsage < planMaxRequests;
+        return CurrentMonthUsage < planMaxRequests;
     }
 
     public bool IsExpired()
@@ -102,10 +102,10 @@ public sealed class UserSubscription : BaseEntity
 
     private void EnsureUsageResetIfNeeded()
     {
-        var today = DateTime.UtcNow.Date;
-        if (LastUsageReset?.Date != today)
+        var now = DateTime.UtcNow;
+        if (LastUsageReset == null || LastUsageReset?.Year != now.Year || LastUsageReset?.Month != now.Month)
         {
-            ResetDailyUsage();
+            ResetMonthlyUsage();
         }
     }
 }

@@ -20,7 +20,7 @@ public class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Subscripti
             .IsRequired()
             .HasMaxLength(500);
 
-        builder.Property(p => p.MaxRequestsPerDay)
+        builder.Property(p => p.MaxRequestsPerMonth)
             .IsRequired();
 
         builder.Property(p => p.MaxTokensPerRequest)

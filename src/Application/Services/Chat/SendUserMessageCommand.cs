@@ -101,30 +101,20 @@ public sealed class SendUserMessageCommand : BaseAiChatCommand
             try
             {
                 _logger.LogInformation("Attempt {Attempt}/{MaxRetries} to get AI service for chat {ChatSessionId}", attempt, MaxRetries, chatSessionId);
-                var serviceContext = await AiModelServiceFactory.GetServiceContextAsync(userId, chatSession.AiModelId, chatSession.AiAgentId, cancellationToken);
+                // aiService and apiKey are already fetched by base.PrepareForAiInteractionAsync outside the loop.
+                // No need to call GetServiceContextAsync again here.
 
-                if (serviceContext?.Service == null)
-                {
-                    _logger.LogWarning("Failed to get AI service or key on attempt {Attempt} for chat {ChatSessionId}. No key available or service instantiation failed.", attempt, chatSessionId);
-                    if (attempt == MaxRetries) throw new Exception("Failed to obtain AI service after multiple retries: No API key available or service setup failed.");
-                    _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to service/key acquisition failure.", delayForThisAttempt, chatSessionId);
-                    await Task.Delay(delayForThisAttempt, cancellationToken); 
-                    continue;
-                }
-
-                _logger.LogInformation("Successfully obtained AI service. Attempting to stream response for chat {ChatSessionId}, attempt {Attempt}", chatSessionId, attempt);
-                
                 await _messageStreamer.StreamResponseAsync(
                     requestContext, 
                     aiMessage, 
-                    serviceContext.Service, 
+                    aiService, // Use aiService from PrepareForAiInteractionAsync
                     cancellationToken, 
-                    serviceContext.ApiKey?.Id);
+                    apiKey?.Id); // Use apiKey from PrepareForAiInteractionAsync
                 
                 streamSucceeded = true;
-                if (serviceContext.ApiKey != null) // Only report success for managed keys
+                if (apiKey != null) // Only report success for managed keys, using apiKey from PrepareForAiInteractionAsync
                 {
-                    await _providerKeyManagementService.ReportKeySuccessAsync(serviceContext.ApiKey.Id, CancellationToken.None); 
+                    await _providerKeyManagementService.ReportKeySuccessAsync(apiKey.Id, CancellationToken.None); 
                 }
                 _logger.LogInformation("Successfully streamed AI response for chat {ChatSessionId} on attempt {Attempt}", chatSessionId, attempt);
                 break; // Success, exit retry loop

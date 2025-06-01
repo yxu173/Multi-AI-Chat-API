@@ -8,6 +8,8 @@ using System.Runtime;
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Application.Abstractions.PreProcessors;
+using Domain.Aggregates.Admin;
+using Domain.Repositories;
 using Web.Api.Extensions;
 using Hangfire;
 using Hangfire.PostgreSql;
@@ -161,6 +163,15 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await dbContext.Database.EnsureCreatedAsync();
+
+    // Seed default 'Free Tier' subscription plan if it doesn't exist
+    var planRepo = scope.ServiceProvider.GetRequiredService<ISubscriptionPlanRepository>();
+    var freePlan = await planRepo.GetByNameAsync("Free Tier", default);
+    if (freePlan == null)
+    {
+        var newFreePlan = SubscriptionPlan.CreateFreeTier();
+        await planRepo.AddAsync(newFreePlan, default);
+    }
 }
 
 app.UseSerilogRequestLogging();

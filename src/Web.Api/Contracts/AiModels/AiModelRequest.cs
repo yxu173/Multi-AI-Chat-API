@@ -7,6 +7,7 @@ public sealed record AiModelRequest(
     double InputTokenPricePer1M,
     double OutputTokenPricePer1M,
     string ModelCode,
+    double RequestCost,
     int MaxOutputTokens,
     bool IsEnabled,
     bool SupportsThinking,

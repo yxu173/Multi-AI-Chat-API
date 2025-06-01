@@ -64,4 +64,11 @@ public class SubscriptionPlanRepository : ISubscriptionPlanRepository
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
     }
+
+    public async Task<SubscriptionPlan?> GetByNameAsync(string name, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.SubscriptionPlans
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Name == name, cancellationToken);
+    }
 }

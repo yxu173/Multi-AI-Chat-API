@@ -24,7 +24,7 @@ public class UserSubscriptionConfiguration : IEntityTypeConfiguration<UserSubscr
         builder.Property(s => s.ExpiryDate)
             .IsRequired();
 
-        builder.Property(s => s.CurrentDayUsage)
+        builder.Property(s => s.CurrentMonthUsage)
             .IsRequired()
             .HasDefaultValue(0);
 
