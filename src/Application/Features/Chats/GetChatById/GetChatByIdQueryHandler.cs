@@ -28,6 +28,7 @@ public class GetChatByIdQueryHandler : IQueryHandler<GetChatByIdQuery, ChatDto>
                 .Select(m => new MessageDto
                 (
                     m.Id,
+                    m.ThinkingContent,
                     m.Content,
                     m.IsFromAi,
                     m.CreatedAt,

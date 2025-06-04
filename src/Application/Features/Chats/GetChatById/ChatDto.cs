@@ -9,6 +9,7 @@ public record ChatDto(
 
 public record MessageDto(
     Guid Id,
+    string ThinkingContent,
     string Content,
     bool IsFromAi,
     DateTime CreatedAt,
