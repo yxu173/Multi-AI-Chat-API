@@ -28,7 +28,7 @@ public record AiRequestContext(
     int? NumImages = null,
     string? OutputFormat = null,
     bool? EnableSafetyChecker = null,
-    string? SafetyTolerance = null,
+    int? SafetyTolerance = null,
     List<FunctionDefinitionDto>? Functions = null,
     string? FunctionCall = null
 );

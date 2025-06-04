@@ -9,5 +9,6 @@ public enum ModelType
     AimlFlux,
     Imagen,
     Grok,
-    Qwen
+    Qwen,
+    BflApi
 }

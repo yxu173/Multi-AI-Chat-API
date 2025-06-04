@@ -140,14 +140,15 @@ public class ChatHub : Hub
         int? numImages = null,
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
-        string? safetyTolerance = null
+        int? safetyTolerance = null
     )
     {
         using var activity = ActivitySource.StartActivity(nameof(SendMessage));
         activity?.SetTag("chat_session.id", chatSessionId);
         activity?.SetTag("user.id", Context.UserIdentifier);
         activity?.SetTag("message.content_length", content?.Length ?? 0);
-        // Add other relevant parameters as tags if needed, e.g., enableThinking, imageSize
+        activity?.SetTag("image.num_images", numImages?.ToString() ?? "null");
+        _logger.LogInformation("SendMessage called with numImages: {NumImages}", numImages);
 
         try
         {
@@ -224,7 +225,7 @@ public class ChatHub : Hub
         int? numImages = null,
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
-        string? safetyTolerance = null
+        int? safetyTolerance = null
     )
     {
         using var activity = ActivitySource.StartActivity(nameof(SendMessageWithAttachments));
