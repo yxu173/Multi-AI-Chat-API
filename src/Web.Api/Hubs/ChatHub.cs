@@ -9,6 +9,8 @@ using Application.Services.Messaging;
 using FastEndpoints;
 using System.Diagnostics;
 using OpenTelemetry.Trace;
+using System.Text.Json.Nodes;
+using Application.Services.Plugins;
 
 namespace Web.Api.Hubs;
 
@@ -19,6 +21,7 @@ public class ChatHub : Hub
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly MessageService _messageService;
     private readonly ILogger<ChatHub> _logger;
+    private readonly PluginService _pluginService;
 
     private static readonly ActivitySource ActivitySource = new("Web.Api.Hubs.ChatHub", "1.0.0");
     private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024;
@@ -27,13 +30,14 @@ public class ChatHub : Hub
         ChatService chatService,
         IFileAttachmentRepository fileAttachmentRepository,
         MessageService messageService,
-        ILogger<ChatHub> logger)
+        ILogger<ChatHub> logger, PluginService pluginService)
     {
         _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
         _fileAttachmentRepository = fileAttachmentRepository ??
                                     throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _pluginService = pluginService;
     }
 
 
@@ -140,76 +144,96 @@ public class ChatHub : Hub
         int? numImages = null,
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
-        int? safetyTolerance = null
-    )
+        int? safetyTolerance = null,
+        bool enableDeepSearch = false) // Add this parameter
     {
-        using var activity = ActivitySource.StartActivity(nameof(SendMessage));
-        activity?.SetTag("chat_session.id", chatSessionId);
-        activity?.SetTag("user.id", Context.UserIdentifier);
-        activity?.SetTag("message.content_length", content?.Length ?? 0);
-        activity?.SetTag("image.num_images", numImages?.ToString() ?? "null");
-        _logger.LogInformation("SendMessage called with numImages: {NumImages}", numImages);
-
         try
         {
-            if (string.IsNullOrWhiteSpace(chatSessionId))
+            if (!Guid.TryParse(chatSessionId, out var chatSessionGuid))
             {
-                activity?.SetStatus(ActivityStatusCode.Error, "Chat session ID is empty.");
-                _logger.LogWarning("SendMessage called with empty chat session ID");
-                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
+                await Clients.Caller.SendAsync("Error", "Invalid chat session ID");
                 return;
             }
 
-            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
+            var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value; // convert it to Guid 
+            if (userId == null)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, "Invalid chat session ID format.");
-                _logger.LogWarning("SendMessage called with invalid chat session ID format");
-                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, "Message content empty.");
-                _logger.LogWarning("SendMessage called with empty content for session {ChatSessionId}", chatSessionId);
-                await Clients.Caller.SendAsync("Error", "Message content cannot be empty");
-                return;
-            }
-
-            if (Context.UserIdentifier == null)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, "User identifier is null.");
-                _logger.LogWarning("Method called with null user identifier");
                 await Clients.Caller.SendAsync("Error", "User not authenticated");
                 return;
             }
-            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, "Invalid user identifier format.");
-                _logger.LogWarning("Method called with invalid user identifier");
-                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
-                return;
-            }
 
-            await _chatService.SendUserMessageAsync(
-                chatGuid,
-                userId,
-                content,
-                enableThinking,
-                imageSize,
-                numImages,
-                outputFormat,
-                enableSafetyChecker,
-                safetyTolerance,
-                cancellationToken: default);
-            activity?.AddEvent(new ActivityEvent("Message sent to ChatService."));
+            // If deep search is enabled, execute the plugin first
+            if (enableDeepSearch)
+            {
+                await ExecuteDeepSearchAndSendMessage(chatSessionGuid, Guid.Parse(userId), content, 
+                    enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
+            }
+            else
+            {
+                await _chatService.SendUserMessageAsync(chatSessionGuid, Guid.Parse(userId), content,
+                    enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
+            }
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "Error sending message.");
-            activity?.AddException(ex);
-            _logger.LogError(ex, "Error sending message in session {ChatSessionId}", chatSessionId);
-            await Clients.Caller.SendAsync("Error", $"Failed to send message: {ex.Message}");
+            _logger.LogError(ex, "Error sending message in chat {ChatSessionId}", chatSessionId);
+            await Clients.Caller.SendAsync("Error", "Failed to send message");
+        }
+    }
+
+    private async Task ExecuteDeepSearchAndSendMessage(
+        Guid chatSessionId,
+        Guid userId,
+        string content,
+        bool enableThinking,
+        string? imageSize,
+        int? numImages,
+        string? outputFormat,
+        bool? enableSafetyChecker,
+        int? safetyTolerance)
+    {
+        try
+        {
+            // Stream the deep search execution
+            await Clients.Group(chatSessionId.ToString()).SendAsync("DeepSearchStarted", "Starting deep search...");
+
+            // Execute the JinaDeepSearchPlugin
+            var pluginId = new Guid("235979c5-cec1-4af2-9d61-6c1079c80be5"); // JinaDeepSearchPlugin ID
+            var arguments = new JsonObject
+            {
+                ["query"] = content
+            };
+
+            var pluginResult = await _pluginService.ExecutePluginByIdAsync(pluginId, arguments);
+
+            if (pluginResult.Success)
+            {
+                // Stream the search results
+                await Clients.Group(chatSessionId.ToString()).SendAsync("DeepSearchResults", pluginResult.Result);
+
+                // Combine original content with search results for AI processing
+                var enhancedContent = $"{content}\n\nDeep Search Results:\n{pluginResult.Result}";
+
+                // Send enhanced message to AI
+                await _chatService.SendUserMessageAsync(chatSessionId, userId, enhancedContent,
+                    enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
+            }
+            else
+            {
+                // If deep search fails, send original message and notify about the failure
+                await Clients.Group(chatSessionId.ToString()).SendAsync("DeepSearchError", $"Deep search failed: {pluginResult.ErrorMessage}");
+                await _chatService.SendUserMessageAsync(chatSessionId, userId, content,
+                    enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing deep search for chat {ChatSessionId}", chatSessionId);
+            await Clients.Group(chatSessionId.ToString()).SendAsync("DeepSearchError", "Deep search execution failed");
+            
+            // Fallback to sending original message
+            await _chatService.SendUserMessageAsync(chatSessionId, userId, content,
+                enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
         }
     }
 

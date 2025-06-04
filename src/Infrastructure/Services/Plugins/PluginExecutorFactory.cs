@@ -178,7 +178,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
       """;
 
         RegisterPlugin(
-            id: new Guid("b8d00934-726c-4cc2-8198-ee25ab2f3154"),
+            id: new Guid("235979c5-cec1-4af2-9d61-6c1079c80be5"),
             pluginType: typeof(JinaDeepSearchPlugin),
             name: "jina_deepsearch",
             description: "Search the web with Jina's DeepSearch for real-time, comprehensive information.",
