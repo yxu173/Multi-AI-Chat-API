@@ -17,7 +17,7 @@ public static class RateLimitingExtensions
     {
         services.AddRateLimiter(options =>
         {
-            // Global rate limiting - prevent DoS attacks
+            // Global IP-based rate limiting - prevent DoS attacks
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -27,6 +27,34 @@ public static class RateLimitingExtensions
                         PermitLimit = 200,  // Max 200 requests
                         Window = TimeSpan.FromMinutes(1) // Per minute
                     }));
+            
+            // Per-user rate limiting for authenticated users
+            options.AddPolicy("per-user", httpContext =>
+            {
+                var userId = httpContext.User.Identity?.Name;
+                if (string.IsNullOrEmpty(userId))
+                {
+                    // If not authenticated, fall back to IP-based limiting
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                        factory: partition => new FixedWindowRateLimiterOptions
+                        {
+                            AutoReplenishment = true,
+                            PermitLimit = 100,   // Max 100 requests
+                            Window = TimeSpan.FromMinutes(1) // Per minute
+                        });
+                }
+                
+                // For authenticated users, use their user ID as the partition key
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: userId,
+                    factory: partition => new FixedWindowRateLimiterOptions
+                    {
+                        AutoReplenishment = true,
+                        PermitLimit = 500,   // Max 500 requests
+                        Window = TimeSpan.FromMinutes(1) // Per minute
+                    });
+            });
             
             // Add specific limiters for sensitive endpoints
             options.AddPolicy("login", httpContext =>
@@ -40,7 +68,7 @@ public static class RateLimitingExtensions
                     }));
                     
             // Add specific limiters for password-reset endpoints
-            options.AddPolicy("password", httpContext =>
+            options.AddPolicy("password-reset", httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                     factory: partition => new FixedWindowRateLimiterOptions
@@ -50,16 +78,33 @@ public static class RateLimitingExtensions
                         Window = TimeSpan.FromMinutes(10) // Per 10 minute window
                     }));
                     
-            // Add specific limiters for AI completion endpoints to prevent token abuse
+            // Add specific limiters for AI completion endpoints
             options.AddPolicy("ai-completion", httpContext =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            {
+                var userId = httpContext.User.Identity?.Name;
+                if (string.IsNullOrEmpty(userId))
+                {
+                    // If not authenticated, use IP-based limiting
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                        factory: partition => new FixedWindowRateLimiterOptions
+                        {
+                            AutoReplenishment = true,
+                            PermitLimit = 20,   // 20 AI completions
+                            Window = TimeSpan.FromMinutes(5) // Per 5 minute window
+                        });
+                }
+                
+                // For authenticated users, use their user ID
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: userId,
                     factory: partition => new FixedWindowRateLimiterOptions
                     {
                         AutoReplenishment = true,
                         PermitLimit = 50,   // 50 AI completions
                         Window = TimeSpan.FromMinutes(5) // Per 5 minute window
-                    }));
+                    });
+            });
             
             // Add handler for when rate limit is hit
             options.OnRejected = async (context, token) =>
@@ -67,8 +112,15 @@ public static class RateLimitingExtensions
                 context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 context.HttpContext.Response.ContentType = "application/json";
                 
-                var logMessage = $"Rate limit exceeded for IP: {context.HttpContext.Connection.RemoteIpAddress}, Endpoint: {context.HttpContext.Request.Path}";  
-                await context.HttpContext.Response.WriteAsJsonAsync(new { error = "Too many requests. Please try again later." }, token);
+                var userId = context.HttpContext.User.Identity?.Name;
+                var ipAddress = context.HttpContext.Connection.RemoteIpAddress?.ToString();
+                var logMessage = $"Rate limit exceeded - User: {userId ?? "anonymous"}, IP: {ipAddress}, Endpoint: {context.HttpContext.Request.Path}";
+                
+                await context.HttpContext.Response.WriteAsJsonAsync(new 
+                { 
+                    error = "Too many requests. Please try again later.",
+                    retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter) ? (double?)retryAfter.TotalSeconds : null
+                }, token);
             };
         });
 
