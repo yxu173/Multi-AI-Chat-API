@@ -68,7 +68,6 @@ public class FileUploadService
 
         if (contentType.StartsWith("image/"))
         {
-            // _logger.LogInformation removed, activity start implies this
             activity?.AddEvent(new ActivityEvent("Attempting image processing."));
             try
             {
@@ -106,14 +105,13 @@ public class FileUploadService
                 imageProcessingActivity?.SetTag("image.final_size", finalFileSize);
                 imageProcessingActivity?.SetTag("image.final_content_type", contentType);
                 activity?.AddEvent(new ActivityEvent("Image processed successfully.", tags: new ActivityTagsCollection { { "final_size", finalFileSize }, { "final_content_type", contentType } }));
-                // _logger.LogInformation removed
             }
-            catch (SixLabors.ImageSharp.UnknownImageFormatException ex)
+            catch (UnknownImageFormatException ex)
             {
                 activity?.AddEvent(new ActivityEvent("Image processing failed: Unknown format.", tags: new ActivityTagsCollection { { "exception", ex.Message } }));
                 _logger.LogWarning(ex, "Could not determine image format for {FileName}. Will save as original.", originalFileName);
             }
-            catch (SixLabors.ImageSharp.ImageFormatException ex)
+            catch (ImageFormatException ex)
             {
                 activity?.AddEvent(new ActivityEvent("Image processing failed: Invalid format.", tags: new ActivityTagsCollection { { "exception", ex.Message } }));
                 _logger.LogWarning(ex, "Invalid image format for {FileName}. Will save as original.", originalFileName);
@@ -130,7 +128,6 @@ public class FileUploadService
         if (!processedAsImage)
         {
             activity?.AddEvent(new ActivityEvent("Streaming file directly to disk."));
-            // _logger.LogInformation removed
             await using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, StreamBufferSize, useAsync: true))
             {
                 await using var uploadStream = file.OpenReadStream();
@@ -138,7 +135,6 @@ public class FileUploadService
                 finalFileSize = fileStream.Length;
             }
             activity?.AddEvent(new ActivityEvent("File streamed directly.", tags: new ActivityTagsCollection{ {"final_size", finalFileSize} }));
-            // _logger.LogInformation removed
         }
         activity?.SetTag("file.final_size", finalFileSize);
         activity?.SetTag("file.final_content_type", contentType);
@@ -154,13 +150,10 @@ public class FileUploadService
 
         await _fileAttachmentRepository.AddAsync(fileAttachment, cancellationToken);
         activity?.AddEvent(new ActivityEvent("File attachment saved to DB."));
-        // _logger.LogInformation removed
 
-        // Note: For Hangfire, context propagation needs to be handled. See Phase 2, Step 3.
         var jobId = _backgroundJobClient.Enqueue<IBackgroundFileProcessor>(processor =>
             processor.ProcessFileAttachmentAsync(fileAttachment.Id, CancellationToken.None));
         activity?.AddEvent(new ActivityEvent("Enqueued background file processing.", tags: new ActivityTagsCollection { { "hangfire.job_id", jobId } }));
-        // _logger.LogInformation removed
 
         return fileAttachment;
     }
@@ -177,9 +170,9 @@ public class FileUploadService
         }
         activity?.SetTag("file.path", fileAttachment.FilePath);
 
-        if (System.IO.File.Exists(fileAttachment.FilePath))
+        if (File.Exists(fileAttachment.FilePath))
         {
-            System.IO.File.Delete(fileAttachment.FilePath);
+            File.Delete(fileAttachment.FilePath);
             activity?.AddEvent(new ActivityEvent("Physical file deleted from disk."));
         }
 
