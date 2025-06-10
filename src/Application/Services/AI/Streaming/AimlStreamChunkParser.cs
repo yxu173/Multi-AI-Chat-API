@@ -20,28 +20,36 @@ public class AimlStreamChunkParser : BaseStreamChunkParser<AimlStreamChunkParser
         string? textDelta = null;
         string? finishReason = null;
 
-        Logger?.LogInformation("[BflApiDebug] Raw chunk content: {RawContent}", jsonDoc.RootElement.GetRawText());
+        Logger?.LogInformation("[AimlDebug] Raw chunk content: {RawContent}", jsonDoc.RootElement.GetRawText());
 
         if (root.TryGetProperty("error", out var errorElement))
         {
-            Logger?.LogError("BFL API stream reported error: {ErrorJson}", errorElement.GetRawText());
+            Logger?.LogError("AIML stream reported error: {ErrorJson}", errorElement.GetRawText());
             return new ParsedChunkInfo(FinishReason: "error");
         }
 
-        // Handle markdown image response
-        if (root.TryGetProperty("text", out var textElement) && textElement.ValueKind == JsonValueKind.String)
+        if (root.TryGetProperty("rawContent", out var rawContentElement) && rawContentElement.ValueKind == JsonValueKind.String)
         {
-            string text = textElement.GetString()!;
-            if (text.StartsWith("![generated image]"))
-            {
-                textDelta = text;
-                finishReason = "stop";
-                Logger?.LogInformation("Parsed BFL API image markdown: '{TextDelta}'", textDelta);
-                return new ParsedChunkInfo(textDelta, finishReason);
-            }
+            textDelta = rawContentElement.GetString();
+            Logger?.LogInformation("Parsed AIML text content: '{TextDelta}'", textDelta);
+        }
+        else if (root.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.String)
+        {
+            textDelta = deltaElement.GetString();
+            Logger?.LogInformation("Parsed AIML delta content: '{TextDelta}'", textDelta);
+        }
+        else if (root.TryGetProperty("text", out var textElement) && textElement.ValueKind == JsonValueKind.String)
+        {
+            textDelta = textElement.GetString();
+            Logger?.LogInformation("Parsed AIML text content (from 'text' field): '{TextDelta}'", textDelta);
         }
 
-        // Handle polling response format
+        if (root.TryGetProperty("isCompletion", out var completionElement) && completionElement.ValueKind == JsonValueKind.True)
+        {
+            finishReason = "stop"; 
+            Logger?.LogInformation("AIML stream chunk indicates completion via isCompletion=true.");
+        }
+
         if (root.TryGetProperty("status", out var statusElement) && statusElement.ValueKind == JsonValueKind.String)
         {
             var status = statusElement.GetString()?.ToLowerInvariant();
@@ -50,10 +58,8 @@ public class AimlStreamChunkParser : BaseStreamChunkParser<AimlStreamChunkParser
                 switch (status)
                 {
                     case "error":
-                    case "failed":
                         finishReason = "error";
                         break;
-                    case "ready":
                     case "completed":
                     case "done": 
                         finishReason = "stop";
@@ -61,17 +67,21 @@ public class AimlStreamChunkParser : BaseStreamChunkParser<AimlStreamChunkParser
                     case "interrupted":
                         finishReason = "interrupted"; 
                         break;
-                    case "processing":
-                    case "queued":
-                        textDelta = "Image generation in progress...";
-                        break;
                     default:
-                        Logger?.LogWarning("Unknown BFL API status: {Status}", status);
+                        Logger?.LogWarning("Unknown AIML status: {Status}", status);
                         break;
                 }
-                Logger?.LogInformation("Parsed BFL API status: {Status}, mapped to FinishReason: {FinishReason}", status, finishReason);
+                Logger?.LogInformation("Parsed AIML status: {Status}, mapped to FinishReason: {FinishReason}", status, finishReason);
             }
         }
+        
+        if (root.TryGetProperty("done", out var doneFlag) && doneFlag.ValueKind == JsonValueKind.True && string.IsNullOrEmpty(finishReason))
+        {
+            finishReason = "stop";
+             Logger?.LogInformation("AIML stream chunk indicates completion via done=true.");
+        }
+
+        
 
         return new ParsedChunkInfo(
             TextDelta: textDelta,

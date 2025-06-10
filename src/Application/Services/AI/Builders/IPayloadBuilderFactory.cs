@@ -12,5 +12,4 @@ public interface IPayloadBuilderFactory
     IAiRequestBuilder CreateImagenBuilder();
     IAiRequestBuilder CreateGrokBuilder();
     IAiRequestBuilder CreateQwenBuilder();
-    IAiRequestBuilder CreateBflApiBuilder();
 }

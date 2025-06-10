@@ -31,7 +31,7 @@ public class ChatService
         int? numImages = null,
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
-        int? safetyTolerance = null,
+        string? safetyTolerance = null,
         CancellationToken cancellationToken = default)
         => _sendUserMessageCommand.ExecuteAsync(chatSessionId, userId, content, enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance, cancellationToken);
 
@@ -44,7 +44,7 @@ public class ChatService
         int? numImages = null,
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
-        int? safetyTolerance = null,
+        string? safetyTolerance = null,
         CancellationToken cancellationToken = default)
         => _editUserMessageCommand.ExecuteAsync(chatSessionId, userId, messageId, newContent, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance, cancellationToken);
 

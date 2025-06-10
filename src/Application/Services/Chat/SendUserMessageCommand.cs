@@ -55,7 +55,7 @@ public sealed class SendUserMessageCommand : BaseAiChatCommand
         int? numImages = null,
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
-        int? safetyTolerance = null,
+        string? safetyTolerance = null,
         CancellationToken cancellationToken = default)
     {
         var chatSession = await _chatSessionService.GetChatSessionAsync(chatSessionId, cancellationToken);

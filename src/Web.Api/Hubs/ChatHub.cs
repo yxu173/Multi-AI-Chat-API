@@ -144,7 +144,7 @@ public class ChatHub : Hub
         int? numImages = null,
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
-        int? safetyTolerance = null,
+        string? safetyTolerance = null,
         bool enableDeepSearch = false) // Add this parameter
     {
         try
@@ -190,7 +190,7 @@ public class ChatHub : Hub
         int? numImages,
         string? outputFormat,
         bool? enableSafetyChecker,
-        int? safetyTolerance)
+        string? safetyTolerance)
     {
         try
         {
@@ -249,7 +249,7 @@ public class ChatHub : Hub
         int? numImages = null,
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
-        int? safetyTolerance = null
+        string? safetyTolerance = null
     )
     {
         using var activity = ActivitySource.StartActivity(nameof(SendMessageWithAttachments));

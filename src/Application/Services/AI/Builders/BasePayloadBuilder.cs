@@ -83,11 +83,10 @@ public abstract class BasePayloadBuilder
         },
         [ModelType.AimlFlux] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "top_p", "top_k", "max_tokens", "frequency_penalty", "presence_penalty"
         },
         [ModelType.Imagen] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "max_output_tokens", "seed"
+           
         }
     };
     

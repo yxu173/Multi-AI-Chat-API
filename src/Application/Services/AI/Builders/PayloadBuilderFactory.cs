@@ -56,12 +56,6 @@ public class PayloadBuilderFactory : IPayloadBuilderFactory
     {
         return _serviceProvider.GetRequiredService<QwenPayloadBuilder>();
     }
-
-    public IAiRequestBuilder CreateBflApiBuilder()
-    {
-        return _serviceProvider.GetRequiredService<BflApiPayloadBuilder>();
-    }
-
     public IAiRequestBuilder GetBuilder(ModelType modelType)
     {
         _logger.LogDebug("Getting payload builder for model type {ModelType}", modelType);
@@ -73,9 +67,8 @@ public class PayloadBuilderFactory : IPayloadBuilderFactory
             ModelType.Imagen => CreateImagenBuilder(),
             ModelType.DeepSeek => CreateDeepSeekBuilder(),
             ModelType.Grok => CreateGrokBuilder(),
-          //  ModelType.AimlFlux => CreateAimlFluxBuilder(),
+            ModelType.AimlFlux => CreateAimlFluxBuilder(),
             ModelType.Qwen => CreateQwenBuilder(),
-            ModelType.AimlFlux => CreateBflApiBuilder(),
             _ => throw new NotSupportedException($"Payload builder for model type {modelType} is not supported.")
         };
     }

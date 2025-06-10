@@ -8,14 +8,12 @@ using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Diagnostics;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
 public class AimlApiService : BaseAiService
 {
-    private const string BaseUrl = "https://api.bfl.ai/";
+    private const string BaseUrl = "https://api.aimlapi.com/v1/";
     private readonly string _imageSavePath = Path.Combine("wwwroot", "images", "aiml");
     private readonly ILogger<AimlApiService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
@@ -43,18 +41,17 @@ public class AimlApiService : BaseAiService
         using var activity = ActivitySource.StartActivity(nameof(ConfigureHttpClient));
         if (!string.IsNullOrEmpty(ApiKey))
         {
-            HttpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            HttpClient.DefaultRequestHeaders.Add("x-key", ApiKey);
-            activity?.SetTag("auth.method", "X-Key");
+            HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
+            activity?.SetTag("auth.method", "Bearer");
         }
         else
         {
             activity?.AddEvent(new ActivityEvent("API key not configured."));
-            _logger.LogWarning("BFL API key is not configured. Image generation requests will likely fail.");
+            _logger.LogWarning("AimlApi API key is not configured. Image generation requests will likely fail.");
         }
     }
 
-    protected override string GetEndpointPath() => $"v1/{ModelCode}";
+    protected override string GetEndpointPath() => "images/generations";
 
     protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -131,20 +128,7 @@ public class AimlApiService : BaseAiService
                 using var parsingActivity = ActivitySource.StartActivity("ParseImageResponse");
                 try
                 {
-                    // Parse the initial response to get the request ID
-                    using var document = JsonDocument.Parse(fullJsonResponse);
-                    var root = document.RootElement;
-                    
-                    if (!root.TryGetProperty("id", out var idElement) || idElement.ValueKind != JsonValueKind.String)
-                    {
-                        throw new JsonException("Request ID not found in response");
-                    }
-                    
-                    string requestId = idElement.GetString()!;
-                    activity?.SetTag("request.id", requestId);
-                    
-                    // Poll for the result
-                    string resultMarkdown = await PollForImageResultAsync(requestId, parsingActivity, cancellationToken);
+                    string resultMarkdown = ParseImageResponseAndGetMarkdown(fullJsonResponse, parsingActivity);
                     resultChunk = new AiRawStreamChunk(resultMarkdown, IsCompletion: true);
                     operationSuccessful = true;
                     parsingActivity?.SetTag("parsing.success", true);
@@ -156,7 +140,7 @@ public class AimlApiService : BaseAiService
                     parsingActivity?.AddException(ex);
                     activity?.SetStatus(ActivityStatusCode.Error, "Failed to parse image response");
                     activity?.AddException(ex);
-                    _logger.LogError(ex, "Error parsing BFL API image response after successful API call.");
+                    _logger.LogError(ex, "Error parsing AimlApi image response after successful API call.");
                     resultChunk = new AiRawStreamChunk("Error: Could not process the image data from the provider.", IsCompletion: true);
                 }
             }
@@ -204,144 +188,99 @@ public class AimlApiService : BaseAiService
         }
     }
 
-    private async Task<string> PollForImageResultAsync(string requestId, Activity? parentActivity, CancellationToken cancellationToken)
+    private string ParseImageResponseAndGetMarkdown(string jsonResponse, Activity? parentActivity)
     {
-        using var activity = ActivitySource.StartActivity(nameof(PollForImageResultAsync), ActivityKind.Internal, parentActivity?.Context ?? default);
-        activity?.SetTag("request.id", requestId);
+        using var activity = ActivitySource.StartActivity(nameof(ParseImageResponseAndGetMarkdown), ActivityKind.Internal, parentActivity?.Context ?? default);
+        activity?.SetTag("response.json_length", jsonResponse.Length);
 
         try
         {
-            int maxAttempts = 30;  // Adjust as needed
-            int attempt = 0;
-            int delayMs = 1000;  // Start with 1 second delay
+            using var document = JsonDocument.Parse(jsonResponse);
+            var root = document.RootElement;
+            var markdownResult = new StringBuilder();
 
-            while (attempt < maxAttempts && !cancellationToken.IsCancellationRequested)
+            if (root.TryGetProperty("images", out var imagesArray) && imagesArray.ValueKind == JsonValueKind.Array)
             {
-                attempt++;
-                activity?.SetTag("polling_attempt", attempt);
-                
-                // Wait before polling (except for first attempt)
-                if (attempt > 1)
+                activity?.SetTag("images.count", imagesArray.GetArrayLength());
+                foreach (var imageObject in imagesArray.EnumerateArray())
                 {
-                    await Task.Delay(delayMs, cancellationToken);
-                    // Increase delay for next attempt, capped at 5 seconds
-                    delayMs = Math.Min(delayMs * 2, 5000);
-                }
-                
-                using var pollingRequest = new HttpRequestMessage(HttpMethod.Get, $"v1/get_result?id={requestId}");
-                if (!string.IsNullOrEmpty(ApiKey))
-                {
-                    pollingRequest.Headers.Add("x-key", ApiKey);
-                }
-                
-                var pollingResponse = await HttpClient.SendAsync(pollingRequest, cancellationToken);
-                
-                if (!pollingResponse.IsSuccessStatusCode)
-                {
-                    activity?.SetTag($"polling_attempt_{attempt}_status", (int)pollingResponse.StatusCode);
-                    continue;
-                }
-                
-                var pollingJsonResponse = await pollingResponse.Content.ReadAsStringAsync(cancellationToken);
-                using var pollingDocument = JsonDocument.Parse(pollingJsonResponse);
-                var pollingRoot = pollingDocument.RootElement;
-                
-                // Check status
-                if (pollingRoot.TryGetProperty("status", out var statusElement) && 
-                    statusElement.ValueKind == JsonValueKind.String)
-                {
-                    string status = statusElement.GetString()!;
-                    activity?.SetTag($"polling_attempt_{attempt}_status", status);
-                    
-                    if (status.Equals("Ready", StringComparison.OrdinalIgnoreCase))
+                    string? url = null;
+                    string? base64Data = null;
+                    string contentType = "image/png";
+
+                    if (imageObject.TryGetProperty("content_type", out var contentTypeElement) && contentTypeElement.ValueKind == JsonValueKind.String)
                     {
-                        // Success! We have the image data
-                        if (pollingRoot.TryGetProperty("result", out var resultElement) &&
-                            resultElement.TryGetProperty("sample", out var sampleElement))
+                        contentType = contentTypeElement.GetString() ?? "image/png";
+                    }
+                    activity?.SetTag("image.declared_content_type", contentType);
+
+                    if (imageObject.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String)
+                    {
+                        url = urlElement.GetString();
+                        activity?.AddEvent(new ActivityEvent("Found image URL.", tags: new ActivityTagsCollection{ {"image.source", "url"} }));
+                    }
+                    else if (imageObject.TryGetProperty("b64_json", out var base64Element) && base64Element.ValueKind == JsonValueKind.String)
+                    {
+                        base64Data = base64Element.GetString();
+                        activity?.AddEvent(new ActivityEvent("Found image b64_json data.", tags: new ActivityTagsCollection{ {"image.source", "base64"} }));
+                    }
+
+                    if (!string.IsNullOrEmpty(url))
+                    {
+                        markdownResult.AppendLine($"![generated image]({url})");
+                    }
+                    else if (!string.IsNullOrEmpty(base64Data))
+                    {
+                        using var saveActivity = ActivitySource.StartActivity("SaveBase64ImageLocally");
+                        try
                         {
-                            var imageUrls = new List<string>();
-                            
-                            // Handle both single image and array of images
-                            if (sampleElement.ValueKind == JsonValueKind.String)
-                            {
-                                imageUrls.Add(sampleElement.GetString()!);
-                            }
-                            else if (sampleElement.ValueKind == JsonValueKind.Array)
-                            {
-                                // Limit to maximum 4 images
-                                foreach (var imageUrl in sampleElement.EnumerateArray().Take(4))
-                                {
-                                    if (imageUrl.ValueKind == JsonValueKind.String)
-                                    {
-                                        imageUrls.Add(imageUrl.GetString()!);
-                                    }
-                                }
-                            }
-
-                            if (imageUrls.Count == 0)
-                            {
-                                throw new JsonException("No image URLs found in result");
-                            }
-
-                            var markdownImages = new List<string>();
-                            foreach (var imageUrl in imageUrls)
-                            {
-                                // Download and save the image locally
-                                using var imageResponse = await HttpClient.GetAsync(imageUrl, cancellationToken);
-                                if (imageResponse.IsSuccessStatusCode)
-                                {
-                                    var imageBytes = await imageResponse.Content.ReadAsByteArrayAsync(cancellationToken);
-                                    var contentType = imageResponse.Content.Headers.ContentType?.MediaType ?? "image/png";
-                                    var extension = contentType.Split('/').LastOrDefault()?.TrimStart('.') ?? "png";
-                                    var fileName = $"{Guid.NewGuid()}.{extension}";
-                                    
-                                    var localUrl = SaveImageLocally(imageBytes, fileName, activity);
-                                    markdownImages.Add($"![generated image]({localUrl})");
-                                }
-                                else
-                                {
-                                    _logger.LogWarning("Failed to download image from URL: {Url}", imageUrl);
-                                    markdownImages.Add($"![generated image]({imageUrl})");
-                                }
-                            }
-                            
-                            // Join all markdown images with newlines
-                            var markdownImage = string.Join("\n\n", markdownImages);
-                            
-                            // Wrap the markdown in a JSON structure
-                            return JsonSerializer.Serialize(new { text = markdownImage });
+                            var imageBytes = Convert.FromBase64String(base64Data);
+                            var extension = contentType.Split('/').LastOrDefault()?.TrimStart('.') ?? "png";
+                            var fileName = $"{Guid.NewGuid()}.{extension}";
+                            saveActivity?.SetTag("file.name", fileName);
+                            var localUrl = SaveImageLocally(imageBytes, fileName, saveActivity);
+                            markdownResult.AppendLine($"![generated image]({localUrl})");
+                            saveActivity?.SetTag("file.saved_url", localUrl);
                         }
-                        else
+                        catch (FormatException ex)
                         {
-                            throw new JsonException("Image URL not found in result");
+                            saveActivity?.SetStatus(ActivityStatusCode.Error, "Base64 format error.");
+                            saveActivity?.AddException(ex);
+                            _logger.LogError(ex, "Error decoding base64 image from AimlApi. Base64 snippet: {Snippet}", base64Data.Substring(0, Math.Min(base64Data.Length, 50)));
+                            markdownResult.AppendLine("Error processing generated image data (base64 format error).");
                         }
                     }
-                    else if (status.Equals("Failed", StringComparison.OrdinalIgnoreCase) || 
-                             status.Equals("Error", StringComparison.OrdinalIgnoreCase))
+                    else
                     {
-                        // Handle error
-                        string errorMessage = "Image generation failed";
-                        if (pollingRoot.TryGetProperty("error", out var errorElement))
-                        {
-                            errorMessage = errorElement.GetString() ?? errorMessage;
-                        }
-                        activity?.SetStatus(ActivityStatusCode.Error, errorMessage);
-                        return JsonSerializer.Serialize(new { error = errorMessage });
+                        activity?.AddEvent(new ActivityEvent("Image data found but no URL or base64 content."));
+                        markdownResult.AppendLine("Received image data but couldn't find URL or base64 content.");
                     }
-                    // For "Processing" or "Queued" statuses, continue polling
                 }
             }
-            
-            // If we reach here, we've timed out
-            activity?.SetStatus(ActivityStatusCode.Error, "Polling timed out");
-            return JsonSerializer.Serialize(new { error = "Image generation timed out" });
+            else
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "'images' array not found or not an array.");
+                _logger.LogWarning("AimlApi Unexpected Response Structure. Full response length: {Length}. Body: {Body}", jsonResponse.Length, jsonResponse.Length < 2000 ? jsonResponse : jsonResponse.Substring(0,2000) + "... (truncated)");
+                markdownResult.AppendLine("Error: 'images' array not found or not an array in AimlApi response.");
+            }
+
+            var resultString = markdownResult.ToString().Trim();
+            activity?.SetTag("parsed_markdown_length", resultString.Length);
+            return resultString;
         }
-        catch (Exception ex)
+        catch (JsonException jsonEx)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "Error polling for image result");
-            activity?.AddException(ex);
-            _logger.LogError(ex, "Error polling for image result from BFL API");
-            return JsonSerializer.Serialize(new { error = "Failed to retrieve generated image" });
+            activity?.SetStatus(ActivityStatusCode.Error, "JSON parsing error.");
+            activity?.AddException(jsonEx);
+            _logger.LogError(jsonEx, "Error parsing AimlApi JSON response. Response snippet: {Snippet}", jsonResponse.Substring(0, Math.Min(jsonResponse.Length, 500)));
+            return "Error parsing image generation response.";
+        }
+         catch (Exception ex)
+        {
+             activity?.SetStatus(ActivityStatusCode.Error, "Unexpected error processing response.");
+             activity?.AddException(ex);
+             _logger.LogError(ex, "Unexpected error processing AimlApi response. Response snippet: {Snippet}", jsonResponse.Substring(0, Math.Min(jsonResponse.Length, 500)));
+             return "Unexpected error processing image generation response.";
         }
     }
 
@@ -360,22 +299,10 @@ public class AimlApiService : BaseAiService
         }
         catch (Exception ex)
         { 
-            activity?.SetStatus(ActivityStatusCode.Error, "Error saving image to disk.");
-            activity?.AddException(ex);
-            _logger.LogError(ex, "Error saving image locally to {FilePath}", filePath);
-            return "/images/error.png"; 
+             activity?.SetStatus(ActivityStatusCode.Error, "Error saving image to disk.");
+             activity?.AddException(ex);
+             _logger.LogError(ex, "Error saving image locally to {FilePath}", filePath);
+             return "/images/error.png"; 
         }
-    }
-
-    private HttpRequestMessage CreateRequest(AiRequestPayload payload)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, GetEndpointPath());
-        var content = new StringContent(
-            JsonSerializer.Serialize(payload.Payload),
-            Encoding.UTF8,
-            "application/json"
-        );
-        request.Content = content;
-        return request;
     }
 } 

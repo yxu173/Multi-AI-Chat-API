@@ -39,7 +39,7 @@ public static class DependencyInjection
                 configuration.GetConnectionString("Database")));
 
         services.AddHttpContextAccessor();
-
+        
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
