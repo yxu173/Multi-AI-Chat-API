@@ -1,12 +1,14 @@
+using Application.Abstractions.Interfaces;
 using Application.Services.Helpers;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
-using System.Collections.Generic; 
-using System.Threading; 
-using System.Threading.Tasks; 
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Application.Services.AI.Interfaces;
 
-namespace Application.Services.AI.Builders; 
+namespace Application.Services.AI.Builders;
 
 public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 {
@@ -23,8 +25,8 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
     public async Task<AiRequestPayload> PreparePayloadAsync(
         AiRequestContext context,
-        List<object>? tools = null, 
-        CancellationToken cancellationToken = default) 
+        List<PluginDefinition>? tools = null,
+        CancellationToken cancellationToken = default)
     {
         // Create the base request object
         var requestObj = new Dictionary<string, object>();
@@ -42,9 +44,20 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["messages"] = processedMessages;
 
         // Add tools only if not in thinking mode
-        if ( tools?.Any() == true)
+        if (tools?.Any() == true)
         {
-            requestObj["tools"] = tools;
+            var formattedTools = tools.Select(def => new
+            {
+                type = "function",
+                function = new
+                {
+                    name = def.Name,
+                    description = def.Description,
+                    parameters = def.ParametersSchema
+                }
+            }).ToList();
+            
+            requestObj["tools"] = formattedTools;
             requestObj["tool_choice"] = "auto";
             Logger?.LogInformation("Adding {ToolCount} tool definitions to DeepSeek payload for model {ModelCode}",
                 tools.Count, model.ModelCode);
@@ -57,7 +70,7 @@ public class DeepSeekPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
     }
 
     private async Task<List<object>> ProcessMessagesForDeepSeekAsync(AiRequestContext context,
-        CancellationToken cancellationToken) 
+        CancellationToken cancellationToken)
     {
         var processedMessages = new List<object>();
         string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ?? context.UserSettings?.ModelParameters.SystemInstructions;

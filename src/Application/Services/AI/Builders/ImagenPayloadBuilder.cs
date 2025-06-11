@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Application.Abstractions.Interfaces;
 
 namespace Application.Services.AI.Builders;
 
@@ -21,7 +22,7 @@ public class ImagenPayload
 
 public class ImagenPayloadBuilder : IAiRequestBuilder
 {
-    private AiRequestPayload PreparePayload(AiRequestContext context, List<object>? tools = null)
+    private AiRequestPayload PreparePayload(AiRequestContext context, List<PluginDefinition>? tools = null)
     {
         if (context == null) throw new ArgumentNullException(nameof(context));
         if (context.History == null || !context.History.Any()) throw new ArgumentException("History cannot be null or empty", nameof(context.History));
@@ -52,7 +53,7 @@ public class ImagenPayloadBuilder : IAiRequestBuilder
         return new AiRequestPayload(payload);
     }
     
-    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
+    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(PreparePayload(context, tools));
     }

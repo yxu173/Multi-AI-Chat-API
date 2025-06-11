@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Application.Abstractions.Interfaces;
 using Application.Services.AI.Interfaces;
 
 namespace Application.Services.AI.Builders;
@@ -14,7 +15,7 @@ public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
     {
     }
 
-    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
+    public Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
         Logger?.LogInformation("Preparing payload for AIMLAPI Flux model {ModelCode}", context.SpecificModel.ModelCode);
 

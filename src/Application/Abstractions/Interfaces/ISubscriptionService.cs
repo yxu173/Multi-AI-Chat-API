@@ -1,4 +1,4 @@
-namespace Infrastructure.Services.Subscription;
+namespace Application.Abstractions.Interfaces;
 
 public interface ISubscriptionService
 {
@@ -7,7 +7,6 @@ public interface ISubscriptionService
         double requestCost,
         int requiredTokens = 0,
         CancellationToken cancellationToken = default);
-
-
+        
     Task ResetMonthlyUsageAsync(CancellationToken cancellationToken = default);
-}
+} 

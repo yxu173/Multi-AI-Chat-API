@@ -21,7 +21,6 @@ public class ChatHub : Hub
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly MessageService _messageService;
     private readonly ILogger<ChatHub> _logger;
-    private readonly PluginService _pluginService;
 
     private static readonly ActivitySource ActivitySource = new("Web.Api.Hubs.ChatHub", "1.0.0");
     private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024;
@@ -30,14 +29,13 @@ public class ChatHub : Hub
         ChatService chatService,
         IFileAttachmentRepository fileAttachmentRepository,
         MessageService messageService,
-        ILogger<ChatHub> logger, PluginService pluginService)
+        ILogger<ChatHub> logger)
     {
         _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
         _fileAttachmentRepository = fileAttachmentRepository ??
                                     throw new ArgumentNullException(nameof(fileAttachmentRepository));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _pluginService = pluginService;
     }
 
 
@@ -145,7 +143,7 @@ public class ChatHub : Hub
         string? outputFormat = null,
         bool? enableSafetyChecker = null,
         string? safetyTolerance = null,
-        bool enableDeepSearch = false) // Add this parameter
+        bool enableDeepSearch = false)
     {
         try
         {
@@ -165,7 +163,7 @@ public class ChatHub : Hub
             // If deep search is enabled, execute the plugin first
             if (enableDeepSearch)
             {
-                await ExecuteDeepSearchAndSendMessage(chatSessionGuid, Guid.Parse(userId), content, 
+                await _chatService.DeepSearchAndSendMessageAsync(chatSessionGuid, Guid.Parse(userId), content, 
                     enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
             }
             else
@@ -178,62 +176,6 @@ public class ChatHub : Hub
         {
             _logger.LogError(ex, "Error sending message in chat {ChatSessionId}", chatSessionId);
             await Clients.Caller.SendAsync("Error", "Failed to send message");
-        }
-    }
-
-    private async Task ExecuteDeepSearchAndSendMessage(
-        Guid chatSessionId,
-        Guid userId,
-        string content,
-        bool enableThinking,
-        string? imageSize,
-        int? numImages,
-        string? outputFormat,
-        bool? enableSafetyChecker,
-        string? safetyTolerance)
-    {
-        try
-        {
-            // Stream the deep search execution
-            await Clients.Group(chatSessionId.ToString()).SendAsync("DeepSearchStarted", "Starting deep search...");
-
-            // Execute the JinaDeepSearchPlugin
-            var pluginId = new Guid("235979c5-cec1-4af2-9d61-6c1079c80be5"); // JinaDeepSearchPlugin ID
-            var arguments = new JsonObject
-            {
-                ["query"] = content
-            };
-
-            var pluginResult = await _pluginService.ExecutePluginByIdAsync(pluginId, arguments);
-
-            if (pluginResult.Success)
-            {
-                // Stream the search results
-                await Clients.Group(chatSessionId.ToString()).SendAsync("DeepSearchResults", pluginResult.Result);
-
-                // Combine original content with search results for AI processing
-                var enhancedContent = $"{content}\n\nDeep Search Results:\n{pluginResult.Result}";
-
-                // Send enhanced message to AI
-                await _chatService.SendUserMessageAsync(chatSessionId, userId, enhancedContent,
-                    enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
-            }
-            else
-            {
-                // If deep search fails, send original message and notify about the failure
-                await Clients.Group(chatSessionId.ToString()).SendAsync("DeepSearchError", $"Deep search failed: {pluginResult.ErrorMessage}");
-                await _chatService.SendUserMessageAsync(chatSessionId, userId, content,
-                    enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error executing deep search for chat {ChatSessionId}", chatSessionId);
-            await Clients.Group(chatSessionId.ToString()).SendAsync("DeepSearchError", "Deep search execution failed");
-            
-            // Fallback to sending original message
-            await _chatService.SendUserMessageAsync(chatSessionId, userId, content,
-                enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
         }
     }
 

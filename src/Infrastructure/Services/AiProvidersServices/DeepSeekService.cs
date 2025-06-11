@@ -2,10 +2,12 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services.AI;
+using Application.Services.AI.Streaming;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Diagnostics;
+using Application.Services.Messaging;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -22,8 +24,9 @@ public class DeepSeekService : BaseAiService
         string? apiKey,
         string modelCode,
         ILogger<DeepSeekService> logger,
-        IResilienceService resilienceService)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
+        IResilienceService resilienceService,
+        DeepseekStreamChunkParser chunkParser)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
@@ -45,6 +48,23 @@ public class DeepSeekService : BaseAiService
             activity?.AddEvent(new ActivityEvent("API key not configured."));
             _logger.LogWarning("DeepSeek API key is not configured. Requests may fail.");
         }
+    }
+
+    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Formatting DeepSeek tool result for ToolCallId {ToolCallId}, ToolName {ToolName}", context.ToolCallId, context.ToolName);
+
+        var messagePayload = new
+        {
+            role = "tool",
+            tool_call_id = context.ToolCallId,
+            content = context.Result
+        };
+
+        string contentJson = JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
+        var messageDto = new MessageDto(contentJson, false, Guid.NewGuid());
+
+        return Task.FromResult(messageDto);
     }
 
     protected override string GetEndpointPath() => "chat/completions";
@@ -91,7 +111,7 @@ public class DeepSeekService : BaseAiService
         activity?.AddEvent(new ActivityEvent("Finished reading stream."));
     }
 
-    public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+    public override async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
         AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
@@ -102,7 +122,6 @@ public class DeepSeekService : BaseAiService
         activity?.SetTag("ai.provider_api_key_id", providerApiKeyId?.ToString());
 
         HttpResponseMessage? response = null;
-        bool initialRequestSuccess = false;
         Uri? requestUriForLogging = null;
 
         try
@@ -127,7 +146,6 @@ public class DeepSeekService : BaseAiService
                 await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
                 yield break;
             }
-            initialRequestSuccess = true;
         }
         catch (Polly.CircuitBreaker.BrokenCircuitException ex)
         {
@@ -158,18 +176,15 @@ public class DeepSeekService : BaseAiService
             throw;
         }
 
-        if (!initialRequestSuccess || response == null)
+        if (response == null)
         {
-            response?.Dispose();
             yield break;
         }
 
         var successfulRequestUri = response.RequestMessage?.RequestUri;
         try
         {
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                               .WithCancellation(cancellationToken)
-                               .ConfigureAwait(false))
+            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -177,33 +192,12 @@ public class DeepSeekService : BaseAiService
                     break;
                 }
 
-                bool isCompletion = false;
-                try
-                {
-                    using var doc = JsonDocument.Parse(jsonChunk);
-                    if (doc.RootElement.TryGetProperty("choices", out var choices) &&
-                        choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
-                    {
-                        if (choices[0].TryGetProperty("finish_reason", out var finishReason) &&
-                           finishReason.ValueKind != JsonValueKind.Null &&
-                           finishReason.ValueKind != JsonValueKind.Undefined &&
-                           !string.IsNullOrEmpty(finishReason.GetString()))
-                        {
-                            var reason = finishReason.GetString();
-                            activity?.AddEvent(new ActivityEvent("Stream indicates completion.", tags: new ActivityTagsCollection { { "ai.finish_reason", reason } }));
-                            isCompletion = true;
-                        }
-                    }
-                }
-                catch (JsonException jsonEx)
-                {
-                    activity?.AddEvent(new ActivityEvent("JSON parsing error in stream chunk.", tags: new ActivityTagsCollection { { "json_chunk_preview", jsonChunk.Substring(0, Math.Min(jsonChunk.Length,100)) } }));
-                    activity?.AddException(jsonEx);
-                    _logger.LogWarning(jsonEx, "Failed to parse JSON chunk from {ProviderName}: {JsonChunk}. URI: {SuccessfulRequestUri}", ProviderName, jsonChunk, successfulRequestUri);
-                }
+                if (string.IsNullOrWhiteSpace(jsonChunk)) continue;
 
-                yield return new AiRawStreamChunk(jsonChunk, isCompletion);
-                if (isCompletion)
+                var parsedChunk = ChunkParser.ParseChunk(jsonChunk);
+                yield return parsedChunk;
+                
+                if (parsedChunk.FinishReason is not null)
                 {
                     activity?.AddEvent(new ActivityEvent("Stream processing completed due to finish_reason."));
                     break;

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services.AI;
+using Application.Services.AI.Streaming;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -26,7 +27,7 @@ public class AimlApiService : BaseAiService
         string modelCode,
         ILogger<AimlApiService> logger,
         IResilienceService resilienceService)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, null)
     {
         Directory.CreateDirectory(_imageSavePath);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -53,19 +54,7 @@ public class AimlApiService : BaseAiService
 
     protected override string GetEndpointPath() => "images/generations";
 
-    protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        using var activity = ActivitySource.StartActivity(nameof(ReadStreamAsync));
-        activity?.SetTag("http.response_status_code", response.StatusCode.ToString());
-        
-        var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        
-        activity?.SetTag("response.content_length", jsonResponse.Length);
-        activity?.AddEvent(new ActivityEvent("Full response content read."));
-        yield return jsonResponse;
-    }
-
-    public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+    public override async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
         AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
@@ -78,7 +67,7 @@ public class AimlApiService : BaseAiService
 
         HttpResponseMessage? response = null;
         string fullJsonResponse = string.Empty;
-        AiRawStreamChunk? resultChunk = null;
+        ParsedChunkInfo? resultChunk = null;
         bool operationSuccessful = false;
         Uri? requestUriForLogging = null;
 
@@ -92,10 +81,10 @@ public class AimlApiService : BaseAiService
                     requestUriForLogging = attemptRequest.RequestUri;
                     attemptActivity?.SetTag("http.url", requestUriForLogging?.ToString());
                     attemptActivity?.SetTag("http.method", attemptRequest.Method.ToString());
-                    return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct); 
+                    return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
                 },
                 cancellationToken).ConfigureAwait(false);
-            
+
             activity?.SetTag("http.response_status_code", ((int)response.StatusCode).ToString());
 
             if (!response.IsSuccessStatusCode)
@@ -105,18 +94,7 @@ public class AimlApiService : BaseAiService
                 yield break;
             }
 
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                                .WithCancellation(cancellationToken)
-                                .ConfigureAwait(false))
-            {
-                 if (cancellationToken.IsCancellationRequested)
-                 {
-                    activity?.AddEvent(new ActivityEvent("Response processing cancelled by token.", tags: new ActivityTagsCollection { { "http.url", response.RequestMessage?.RequestUri?.ToString() } }));
-                    break;
-                 }
-                 fullJsonResponse = jsonChunk;
-                 break;
-            }
+            fullJsonResponse = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
             if (cancellationToken.IsCancellationRequested || string.IsNullOrEmpty(fullJsonResponse))
             {
@@ -129,7 +107,7 @@ public class AimlApiService : BaseAiService
                 try
                 {
                     string resultMarkdown = ParseImageResponseAndGetMarkdown(fullJsonResponse, parsingActivity);
-                    resultChunk = new AiRawStreamChunk(resultMarkdown, IsCompletion: true);
+                    resultChunk = new ParsedChunkInfo(resultMarkdown) { FinishReason = "stop" };
                     operationSuccessful = true;
                     parsingActivity?.SetTag("parsing.success", true);
                     activity?.AddEvent(new ActivityEvent("Image response parsed successfully."));
@@ -141,7 +119,7 @@ public class AimlApiService : BaseAiService
                     activity?.SetStatus(ActivityStatusCode.Error, "Failed to parse image response");
                     activity?.AddException(ex);
                     _logger.LogError(ex, "Error parsing AimlApi image response after successful API call.");
-                    resultChunk = new AiRawStreamChunk("Error: Could not process the image data from the provider.", IsCompletion: true);
+                    resultChunk = new ParsedChunkInfo("Error: Could not process the image data from the provider.") { FinishReason = "error" };
                 }
             }
         }
@@ -184,7 +162,7 @@ public class AimlApiService : BaseAiService
         }
         else if (!operationSuccessful && !cancellationToken.IsCancellationRequested)
         {
-            yield return new AiRawStreamChunk("Error: Failed to generate image or process response.", IsCompletion: true);
+            yield return new ParsedChunkInfo("Error: Failed to generate image or process response.") { FinishReason = "error" };
         }
     }
 

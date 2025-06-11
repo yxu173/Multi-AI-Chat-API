@@ -1,21 +1,22 @@
-using Application.Services.AI;
 using Application.Services.Messaging;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Users;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Application.Services.Helpers;
 
 internal static class HistoryBuilder
 {
     public static List<MessageDto> BuildHistory(
-        AiRequestContext context,
-        Message currentAiMessagePlaceholder)
+        ChatSession chatSession,
+        AiAgent? aiAgent,
+        UserAiModelSettings? userSettings,
+        MessageDto currentAiMessagePlaceholder)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(chatSession);
         ArgumentNullException.ThrowIfNull(currentAiMessagePlaceholder);
-
-        var chatSession = context.ChatSession;
-        var aiAgent = context.AiAgent;
-        var userSettings = context.UserSettings;
 
         var contextLimit = 0;
         if (aiAgent?.AssignCustomModelParameters == true && aiAgent.ModelParameter != null)
@@ -28,7 +29,7 @@ internal static class HistoryBuilder
         }
 
         var messagesQuery = chatSession.Messages
-            .Where(m => m.Id != currentAiMessagePlaceholder.Id)
+            .Where(m => m.Id != currentAiMessagePlaceholder.MessageId)
             .OrderBy(m => m.CreatedAt);
 
         IEnumerable<Message> limitedMessages = contextLimit > 0

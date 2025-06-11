@@ -5,6 +5,9 @@ using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Diagnostics;
+using Application.Services.AI.Streaming;
+using System.Text.Json;
+using Application.Services.Messaging;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -23,8 +26,9 @@ public class OpenAiService : BaseAiService
         string? apiKey, 
         string modelCode, 
         ILogger<OpenAiService> logger,
-        IResilienceService resilienceService)
-        : base(httpClientFactory, apiKey, modelCode, OpenAiBaseUrl)
+        IResilienceService resilienceService,
+        OpenAiStreamChunkParser chunkParser)
+        : base(httpClientFactory, apiKey, modelCode, OpenAiBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName) 
@@ -44,46 +48,27 @@ public class OpenAiService : BaseAiService
 
     protected override string GetEndpointPath()
     {
-        _logger.LogWarning("OpenAI GetEndpointPath is returning 'responses'. Verify this is correct for the intended OpenAI API endpoint.");
         return "responses";
     }
 
-    protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
     {
-        using var activity = ActivitySource.StartActivity(nameof(ReadStreamAsync));
-        activity?.SetTag("http.response_status_code", response.StatusCode.ToString());
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        _logger.LogInformation("Formatting OpenAI tool result for ToolCallId {ToolCallId}, ToolName {ToolName}", context.ToolCallId, context.ToolName);
+        
+        var messagePayload = new
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (cancellationToken.IsCancellationRequested)
-            {
-                activity?.AddEvent(new ActivityEvent("Stream reading cancelled."));
-                break;
-            }
+            role = "tool",
+            tool_call_id = context.ToolCallId,
+            content = context.Result
+        };
 
-            if (string.IsNullOrWhiteSpace(line) || line.StartsWith("event:"))
-            {
-                continue;
-            }
-            
-            if (line.StartsWith("data:"))
-            {
-                var jsonData = line["data:".Length..].Trim();
-                
-                if (!string.IsNullOrEmpty(jsonData))
-                {
-                    activity?.AddEvent(new ActivityEvent("Yielding data chunk"));
-                    yield return jsonData;
-                }
-            }
-        }
+        string contentJson = JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
+        var messageDto = new MessageDto(contentJson, false, Guid.NewGuid());
+        
+        return Task.FromResult(messageDto);
     }
 
-    public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+    public override async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
         AiRequestPayload requestPayload, 
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
@@ -94,7 +79,6 @@ public class OpenAiService : BaseAiService
         activity?.SetTag("ai.provider_api_key_id", providerApiKeyId?.ToString());
 
         HttpResponseMessage? response = null;
-        bool initialRequestSuccess = false;
         Uri? requestUriForLogging = null;
 
         try
@@ -120,7 +104,6 @@ public class OpenAiService : BaseAiService
                 await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
                 yield break;
             }
-            initialRequestSuccess = true;
         }
         catch (Polly.CircuitBreaker.BrokenCircuitException ex)
         {
@@ -151,19 +134,24 @@ public class OpenAiService : BaseAiService
             throw; 
         }
         
-        if (!initialRequestSuccess || response == null) 
+        if (response == null) 
         {
-            response?.Dispose();
             yield break;
         }
 
         try
         {
-            var successfulRequestUri = response.RequestMessage?.RequestUri;
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                               .WithCancellation(cancellationToken).ConfigureAwait(false))
+            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
             {
-                yield return new AiRawStreamChunk(jsonChunk);
+                if (string.IsNullOrWhiteSpace(jsonChunk)) continue;
+                
+                if (jsonChunk == "[DONE]")
+                {
+                    activity?.AddEvent(new ActivityEvent("Stream finished with [DONE] marker."));
+                    break;
+                }
+                
+                yield return ChunkParser.ParseChunk(jsonChunk);
             }
             if (!cancellationToken.IsCancellationRequested)
             {

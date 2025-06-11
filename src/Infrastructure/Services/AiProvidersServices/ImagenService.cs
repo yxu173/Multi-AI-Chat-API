@@ -2,33 +2,41 @@ using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
 using Application.Abstractions.Interfaces;
-using Application.Services;
 using Application.Services.AI;
+using Application.Services.AI.Streaming;
 using Google.Apis.Auth.OAuth2;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
-public class ImagenService : BaseAiService 
+public class ImagenService : BaseAiService
 {
     private readonly string _projectId;
     private readonly string _region;
     private readonly string _imageSavePath = "wwwroot/images/imagen";
     private readonly ILogger<ImagenService> _logger;
+    private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
+
+    private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.ImagenService", "1.0.0");
 
     public ImagenService(
         IHttpClientFactory httpClientFactory,
         string projectId,
         string region,
         string modelCode,
-        ILogger<ImagenService> logger)
-        : base(httpClientFactory, null, modelCode, $"https://{region}-aiplatform.googleapis.com/")
+        ILogger<ImagenService> logger,
+        IResilienceService resilienceService)
+        : base(httpClientFactory, null, modelCode, $"https://{region}-aiplatform.googleapis.com/", null)
     {
         _projectId = projectId;
         _region = region;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
+                            ?? throw new ArgumentNullException(nameof(resilienceService));
         Directory.CreateDirectory(_imageSavePath);
     }
 
@@ -36,7 +44,8 @@ public class ImagenService : BaseAiService
 
     protected override void ConfigureHttpClient()
     {
-        try 
+        using var activity = ActivitySource.StartActivity(nameof(ConfigureHttpClient));
+        try
         {
              var credential = GoogleCredential.GetApplicationDefault();
              if (credential.IsCreateScopedRequired)
@@ -45,117 +54,141 @@ public class ImagenService : BaseAiService
              }
              var token = credential.UnderlyingCredential.GetAccessTokenForRequestAsync().GetAwaiter().GetResult();
              HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+             activity?.SetTag("auth.method", "Bearer");
              _logger.LogInformation("Successfully configured Google Cloud authentication token for Imagen.");
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, "Failed to configure Google Cloud authentication token.");
+            activity?.AddException(ex);
             _logger.LogError(ex, "Failed to configure Google Cloud authentication token for Imagen.");
             throw new InvalidOperationException("Failed to configure Google Cloud authentication for Imagen.", ex);
         }
     }
 
-    protected override string GetEndpointPath() 
+    protected override string GetEndpointPath()
     {
-        string publisher = "google";
+        const string publisher = "google";
         return $"v1/projects/{_projectId}/locations/{_region}/publishers/{publisher}/models/{ModelCode}:predict";
     }
 
-    protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("[Imagen Raw Response] Status: {StatusCode}, Body Length: {Length}", response.StatusCode, jsonResponse.Length);
-        if (jsonResponse.Length < 1000) // Log small full responses for debugging
-        {
-            _logger.LogDebug("[Imagen Raw Response Body]: {ResponseBody}", jsonResponse);
-        }
-        yield return jsonResponse;
-    }
-
-    public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+    public override async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
         AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
     {
+        using var activity = ActivitySource.StartActivity(nameof(StreamResponseAsync));
+        activity?.SetTag("ai.provider", ProviderName);
+        activity?.SetTag("ai.model", ModelCode);
+        activity?.SetTag("ai.request_type", "image_generation");
+        activity?.SetTag("ai.provider_api_key_id", providerApiKeyId?.ToString());
+
         HttpResponseMessage? response = null;
         string fullJsonResponse = string.Empty;
-        AiRawStreamChunk? resultChunk = null;
-        bool operationSuccessful = false;
+        ParsedChunkInfo? resultChunk = null;
+        Uri? requestUriForLogging = null;
 
         try
         {
-            var request = CreateRequest(requestPayload); 
-            _logger.LogInformation("Sending image generation request to {ProviderName} model {ModelCode} in project {ProjectId}, region {Region}.", 
-                                 ProviderName, ModelCode, _projectId, _region);
+            response = await _resiliencePipeline.ExecuteAsync(async ct =>
+            {
+                using var attemptActivity = ActivitySource.StartActivity("SendHttpRequestAttempt");
+                var attemptRequest = CreateRequest(requestPayload);
+                requestUriForLogging = attemptRequest.RequestUri;
+                attemptActivity?.SetTag("http.url", requestUriForLogging?.ToString());
+                attemptActivity?.SetTag("http.method", attemptRequest.Method.ToString());
+                _logger.LogInformation("Sending image generation request to {ProviderName} model {ModelCode} at {Uri}.",
+                    ProviderName, ModelCode, requestUriForLogging?.ToString());
+                return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+            }, cancellationToken).ConfigureAwait(false);
 
-            response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            
-            cancellationToken.ThrowIfCancellationRequested(); 
-            
+            activity?.SetTag("http.response_status_code", ((int)response.StatusCode).ToString());
+
             if (!response.IsSuccessStatusCode)
             {
-                await HandleApiErrorAsync(response, providerApiKeyId: null).ConfigureAwait(false); 
+                activity?.SetStatus(ActivityStatusCode.Error, $"API call failed with status {response.StatusCode}");
+                await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
                 yield break;
             }
-            
+
             _logger.LogDebug("Successfully received response from {ProviderName} model {ModelCode}", ProviderName, ModelCode);
 
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                                .WithCancellation(cancellationToken)
-                                .ConfigureAwait(false))
-            {
-                 if (cancellationToken.IsCancellationRequested) 
-                 {
-                    _logger.LogInformation("{ProviderName} response processing cancelled by token for model {ModelCode}.", ProviderName, ModelCode);
-                    break;
-                 }
-                 fullJsonResponse = jsonChunk;
-                 break; 
-            }
+            fullJsonResponse = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
             if (cancellationToken.IsCancellationRequested || string.IsNullOrEmpty(fullJsonResponse))
             {
-                 _logger.LogInformation("{ProviderName} request cancelled or received empty/no response data before parsing for model {ModelCode}.", ProviderName, ModelCode);
-                 // operationSuccessful remains false
+                 if (!cancellationToken.IsCancellationRequested) activity?.SetStatus(ActivityStatusCode.Error, "Empty response from API.");
+                 else activity?.AddEvent(new ActivityEvent("Operation cancelled before processing response body."));
             }
             else
             {
-                 string resultMarkdown = ParseImageResponseAndGetMarkdown(fullJsonResponse); // This can throw
-                 resultChunk = new AiRawStreamChunk(resultMarkdown, IsCompletion: true); 
-                 operationSuccessful = true;
+                using var parsingActivity = ActivitySource.StartActivity("ParseImageResponse");
+                try
+                {
+                    string resultMarkdown = ParseImageResponseAndGetMarkdown(fullJsonResponse, parsingActivity);
+                    resultChunk = new ParsedChunkInfo(resultMarkdown) { FinishReason = "stop" };
+                    parsingActivity?.SetTag("parsing.success", true);
+                    activity?.AddEvent(new ActivityEvent("Image response parsed successfully."));
+                }
+                catch (Exception ex)
+                {
+                    parsingActivity?.SetStatus(ActivityStatusCode.Error, "Failed to parse image response");
+                    parsingActivity?.AddException(ex);
+                    activity?.SetStatus(ActivityStatusCode.Error, "Failed to parse image response");
+                    activity?.AddException(ex);
+                    _logger.LogError(ex, "Error parsing Imagen image response after successful API call.");
+                    resultChunk = new ParsedChunkInfo("Error: Could not process the image data from the provider.") { FinishReason = "error" };
+                }
             }
+        }
+        catch (Polly.CircuitBreaker.BrokenCircuitException ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, "Circuit breaker open");
+            activity?.AddException(ex);
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString());
+            throw;
+        }
+        catch (Polly.Timeout.TimeoutRejectedException ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, "Request timed out by Polly");
+            activity?.AddException(ex);
+            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString());
+            throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
-             _logger.LogInformation(ex, "{ProviderName} request cancelled during HTTP send or initial processing for model {ModelCode}.", ProviderName, ModelCode);
-             // operationSuccessful remains false
+            activity?.SetStatus(ActivityStatusCode.Ok, "Operation cancelled by user");
+            activity?.AddEvent(new ActivityEvent("Image generation request operation was cancelled by user."));
+            _logger.LogInformation(ex, "{ProviderName} image generation request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString());
         }
-        // ProviderRateLimitException should propagate if HandleApiErrorAsync throws it.
-        // HttpRequestException and other general exceptions during SendAsync or parsing:
-        catch (Exception ex) 
+        catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during {ProviderName} API request or processing for model {ModelCode}.", ProviderName, ModelCode);
-            // operationSuccessful remains false.
-            // If HandleApiErrorAsync was called and threw something other than ProviderRateLimitException,
-            // or if parsing failed, we land here.
-            // Depending on policy, create an error chunk or rethrow.
-            // For now, rethrow to allow command-level handling.
-            throw; 
+            activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during image generation.");
+            activity?.AddException(ex);
+            _logger.LogError(ex, "Unhandled exception during {ProviderName} image generation for model {ModelCode}. URI: {Uri}",
+                             ProviderName, ModelCode, requestUriForLogging?.ToString());
+            throw;
         }
         finally
-        { 
+        {
             response?.Dispose();
         }
 
-        if (operationSuccessful && resultChunk != null)
+        if (resultChunk != null)
         {
             yield return resultChunk;
         }
-        // If not successful or no chunk, completes without items.
+        else if (!cancellationToken.IsCancellationRequested)
+        {
+            yield return new ParsedChunkInfo("Error: Failed to generate image or process response.") { FinishReason = "error" };
+        }
     }
 
-    private string ParseImageResponseAndGetMarkdown(string jsonResponse)
+    private string ParseImageResponseAndGetMarkdown(string jsonResponse, Activity? parentActivity)
     {
-         try
+        using var activity = ActivitySource.StartActivity(nameof(ParseImageResponseAndGetMarkdown), ActivityKind.Internal, parentActivity?.Context ?? default);
+        activity?.SetTag("response.json_length", jsonResponse.Length);
+        try
         {
             using var document = JsonDocument.Parse(jsonResponse);
             var root = document.RootElement;
@@ -179,7 +212,7 @@ public class ImagenService : BaseAiService
                                 var imageBytes = Convert.FromBase64String(base64Image);
                                 var extension = mimeType.Split('/').LastOrDefault()?.TrimStart('.') ?? "png";
                                 var fileName = $"{Guid.NewGuid()}.{extension}";
-                                var localUrl = SaveImageLocally(imageBytes, fileName);
+                                var localUrl = SaveImageLocally(imageBytes, fileName, activity);
                                 markdownResult.AppendLine($"![generated image]({localUrl})");
                                 imageCount++;
                             }
@@ -238,8 +271,9 @@ public class ImagenService : BaseAiService
         }
     }
 
-    private string SaveImageLocally(byte[] imageBytes, string fileName)
+    private string SaveImageLocally(byte[] imageBytes, string fileName, Activity? parentActivity)
     {
+        using var activity = ActivitySource.StartActivity("SaveBase64ImageLocally", ActivityKind.Internal, parentActivity?.Context ?? default);
         var filePath = Path.Combine(_imageSavePath, fileName);
         try
         {

@@ -1,11 +1,14 @@
 using System.Runtime.CompilerServices;
 using Application.Abstractions.Interfaces;
 using Application.Services.AI;
+using Application.Services.AI.Streaming;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Net.Http.Headers;
 using System.Diagnostics;
+using System.Text.Json;
+using Application.Services.Messaging;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -22,8 +25,9 @@ public class QwenService : BaseAiService
         string? apiKey, 
         string modelCode, 
         ILogger<QwenService> logger,
-        IResilienceService resilienceService)
-        : base(httpClientFactory, apiKey, modelCode, QwenBaseUrl)
+        IResilienceService resilienceService,
+        QwenStreamChunkParser chunkParser)
+        : base(httpClientFactory, apiKey, modelCode, QwenBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
@@ -45,6 +49,23 @@ public class QwenService : BaseAiService
             HttpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
             activity?.SetTag("auth.method", "Bearer");
         }
+    }
+
+    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Formatting Qwen tool result for ToolCallId {ToolCallId}, ToolName {ToolName}", context.ToolCallId, context.ToolName);
+
+        var messagePayload = new
+        {
+            role = "tool",
+            tool_call_id = context.ToolCallId,
+            content = context.Result
+        };
+
+        string contentJson = JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
+        var messageDto = new MessageDto(contentJson, false, Guid.NewGuid());
+
+        return Task.FromResult(messageDto);
     }
 
     protected override string GetEndpointPath() => "chat/completions";
@@ -91,7 +112,7 @@ public class QwenService : BaseAiService
         activity?.AddEvent(new ActivityEvent("Finished reading stream."));
     }
 
-    public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+    public override async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
         AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
@@ -102,7 +123,6 @@ public class QwenService : BaseAiService
         activity?.SetTag("ai.provider_api_key_id", providerApiKeyId?.ToString());
 
         HttpResponseMessage? response = null;
-        bool initialRequestSuccess = false;
         Uri? requestUriForLogging = null;
 
         try
@@ -131,7 +151,6 @@ public class QwenService : BaseAiService
                 await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
                 yield break;
             }
-            initialRequestSuccess = true;
         }
         catch (Polly.CircuitBreaker.BrokenCircuitException ex)
         {
@@ -164,25 +183,32 @@ public class QwenService : BaseAiService
             throw;
         }
 
-        if (!initialRequestSuccess || response == null)
+        if (response == null)
         {
-            response?.Dispose();
             yield break;
         }
         
         var successfulRequestUri = response.RequestMessage?.RequestUri;
         try
         {
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                                .WithCancellation(cancellationToken)
-                                .ConfigureAwait(false))
+            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
                     activity?.AddEvent(new ActivityEvent("Stream processing cancelled by token.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
                     break;
                 }
-                yield return new AiRawStreamChunk(jsonChunk);
+                
+                if (string.IsNullOrWhiteSpace(jsonChunk)) continue;
+
+                var parsedChunk = ChunkParser.ParseChunk(jsonChunk);
+                yield return parsedChunk;
+                
+                if (parsedChunk.FinishReason is not null)
+                {
+                    activity?.AddEvent(new ActivityEvent("Stream processing completed due to finish_reason."));
+                    break;
+                }
             }
             if (!cancellationToken.IsCancellationRequested)
             {

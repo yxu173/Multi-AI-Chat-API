@@ -39,9 +39,9 @@ public static class DependencyInjection
         services.AddScoped<IFileAttachmentService, FileAttachmentService>();
         services.AddScoped<IToolDefinitionService, ToolDefinitionService>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
+        services.AddScoped<IAiRequestOrchestrator, AiRequestOrchestrator>();
 
 
-        services.AddScoped<StreamProcessor>();
         services.AddScoped<ToolCallHandler>();
         services.AddScoped<IStreamChunkParser, OpenAiStreamChunkParser>();
         services.AddScoped<IStreamChunkParser, AnthropicStreamChunkParser>();

@@ -1,11 +1,11 @@
+using Application.Abstractions.Interfaces;
 using Domain.Enums;
 
 namespace Application.Services.AI.RequestHandling.Interfaces;
 
 public interface IToolDefinitionService
 {
-    Task<List<object>?> GetToolDefinitionsAsync(
+    Task<List<PluginDefinition>?> GetToolDefinitionsAsync(
         Guid userId,
-        ModelType modelType,
         CancellationToken cancellationToken = default);
 }

@@ -87,7 +87,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
       """;
 
         RegisterPlugin(
-            id: new Guid("0f568eca-9d8e-4ab5-a1e9-0c16be2b52c8"),
+            id: new Guid("758ca6d5-75a2-487b-b929-52489d3b1d2d"),
             pluginType: typeof(WebSearchPlugin),
             name: "google_search",
             description: "Search the web using Google for real-time information.",
@@ -111,7 +111,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         );
 
         RegisterPlugin(
-            id: new Guid("7f3ca05c-0d72-4480-915f-9b8bc538983a"),
+            id: new Guid("a6801802-2361-4ffd-ba43-4083d1ea5de2"),
             pluginType: typeof(HackerNewsSearchPlugin),
             name: "search_hacker_news",
             description: "Search Hacker News posts and comments using various filters like relevance, date, tags and more.",
@@ -119,7 +119,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         );
         
         RegisterPlugin(
-            id: new Guid("7edcc319-45ea-4a93-bf2b-77f24842bd8c"),
+            id: new Guid("8cadae36-bd7b-40d0-85d9-4070a4cea51f"),
             pluginType: typeof(WikipediaPlugin),
             name: "wikipedia_search",
             description: "Search Wikipedia for information on a specific topic or term",
@@ -157,7 +157,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
       """;
 
         RegisterPlugin(
-            id: new Guid("665ceec6-d8ed-473e-b1ff-5f4326652fe7"),
+            id: new Guid("00fb0c45-ba1b-469d-8c2d-072fb8025b44"),
             pluginType: typeof(CsvReaderPlugin),
             name: "csv_reader",
             description: "Read and analyze CSV files that have been uploaded to the chat.",

@@ -1,8 +1,10 @@
+using Application.Abstractions.Interfaces;
 using Application.Services.Helpers;
 using Application.Services.Messaging;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Services.AI.Interfaces;
@@ -21,7 +23,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         _multimodalContentParser = multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
+    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -42,7 +44,15 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to Anthropic payload for model {ModelCode}",
                 tools.Count, model.ModelCode);
-            requestObj["tools"] = tools;
+            
+            var formattedTools = tools.Select(def => new
+            {
+                name = def.Name,
+                description = def.Description,
+                input_schema = def.ParametersSchema
+            }).ToList();
+            
+            requestObj["tools"] = formattedTools;
             requestObj["tool_choice"] = new { type = "auto" };
         }
 

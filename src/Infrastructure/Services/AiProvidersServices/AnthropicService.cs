@@ -3,10 +3,12 @@ using System.Text;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services.AI;
+using Application.Services.AI.Streaming;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Diagnostics;
+using Application.Services.Messaging;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -26,8 +28,9 @@ public class AnthropicService : BaseAiService
         string? apiKey, 
         string modelCode, 
         ILogger<AnthropicService> logger,
-        IResilienceService resilienceService)
-        : base(httpClientFactory, apiKey, modelCode, AnthropicBaseUrl)
+        IResilienceService resilienceService,
+        AnthropicStreamChunkParser chunkParser)
+        : base(httpClientFactory, apiKey, modelCode, AnthropicBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName) 
@@ -44,6 +47,31 @@ public class AnthropicService : BaseAiService
         }
         HttpClient.DefaultRequestHeaders.Add("anthropic-version", AnthropicApiVersion);
         HttpClient.DefaultRequestHeaders.Add("Content-Type", "application/json");
+    }
+
+    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Formatting Anthropic tool result for ToolCallId {ToolCallId}, ToolName {ToolName}", context.ToolCallId, context.ToolName);
+
+        var messagePayload = new
+        {
+            role = "user",
+            content = new[]
+            {
+                new
+                {
+                    type = "tool_result",
+                    tool_use_id = context.ToolCallId,
+                    content = context.Result,
+                    is_error = !context.WasSuccessful
+                }
+            }
+        };
+        
+        string contentJson = JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
+        var messageDto = new MessageDto(contentJson, false, Guid.NewGuid());
+        
+        return Task.FromResult(messageDto);
     }
 
     protected override string GetEndpointPath() => "messages";
@@ -101,7 +129,7 @@ public class AnthropicService : BaseAiService
         }
     }
 
-    public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+    public override async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
         AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
@@ -112,7 +140,6 @@ public class AnthropicService : BaseAiService
         activity?.SetTag("ai.provider_api_key_id", providerApiKeyId?.ToString());
 
         HttpResponseMessage? response = null;
-        bool initialRequestSuccess = false;
         Uri? requestUriForLogging = null;
 
         try
@@ -137,7 +164,6 @@ public class AnthropicService : BaseAiService
                 await HandleApiErrorAsync(response, providerApiKeyId).ConfigureAwait(false);
                 yield break;
             }
-            initialRequestSuccess = true;
         }
         catch (Polly.CircuitBreaker.BrokenCircuitException ex)
         {
@@ -168,9 +194,8 @@ public class AnthropicService : BaseAiService
             throw;
         }
 
-        if (!initialRequestSuccess || response == null)
+        if (response == null)
         {
-            response?.Dispose();
             yield break;
         }
 
@@ -178,38 +203,18 @@ public class AnthropicService : BaseAiService
         activity?.AddEvent(new ActivityEvent("Anthropic request successful, beginning to process stream.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() }, { "http.status_code", response.StatusCode.ToString()} }));
         try
         {
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                               .WithCancellation(cancellationToken).ConfigureAwait(false))
+            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
             {
-                bool isCompletion = false;
-                string? eventTypeWithinJson = null;
-                try
+                if (string.IsNullOrWhiteSpace(jsonChunk)) continue;
+
+                var parsedChunk = ChunkParser.ParseChunk(jsonChunk);
+                yield return parsedChunk;
+
+                if (parsedChunk.FinishReason is not null)
                 {
-                    using var doc = JsonDocument.Parse(jsonChunk);
-                    if (doc.RootElement.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)
-                    {
-                        eventTypeWithinJson = typeElement.GetString();
-                        activity?.AddEvent(new ActivityEvent("Parsed Anthropic JSON chunk event.", tags: new ActivityTagsCollection { { "anthropic.json_event_type", eventTypeWithinJson } }));
-                        if (eventTypeWithinJson == "message_stop")
-                        {
-                            isCompletion = true;
-                            activity?.AddEvent(new ActivityEvent("Anthropic message_stop event received."));
-                        }
-                        if (eventTypeWithinJson == "error")
-                        {
-                            activity?.SetStatus(ActivityStatusCode.Error, "Error event in Anthropic stream");
-                            _logger.LogError("Error event received in Anthropic stream: {JsonChunk}", jsonChunk);
-                        }
-                    }
+                    activity?.AddEvent(new ActivityEvent("Anthropic stream finished.", tags: new ActivityTagsCollection { { "finish_reason", parsedChunk.FinishReason } }));
+                    break;
                 }
-                catch (JsonException jsonEx)
-                {
-                    activity?.AddEvent(new ActivityEvent("JSON parsing error in Anthropic stream chunk.", tags: new ActivityTagsCollection { { "json_chunk_preview", jsonChunk.Substring(0, Math.Min(jsonChunk.Length,100)) } }));
-                    activity?.AddException(jsonEx);
-                    _logger.LogWarning(jsonEx, "JSON parsing error in Anthropic stream chunk. Raw chunk: {JsonChunk}", jsonChunk);
-                }
-                yield return new AiRawStreamChunk(jsonChunk, isCompletion);
-                if (isCompletion) break;
             }
 
             if (!cancellationToken.IsCancellationRequested)

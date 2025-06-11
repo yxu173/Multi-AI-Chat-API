@@ -1,35 +1,39 @@
 using Application.Abstractions.Interfaces;
 using Application.Notifications;
 using Application.Services.AI;
-using Application.Services.Helpers;
+using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using FastEndpoints;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Application.Services.Chat;
 
 /// <summary>
 /// Handles deleting previous AI response(s) for a user message and generating a new fresh response.
 /// </summary>
-public sealed class RegenerateAiResponseCommand : BaseAiChatCommand
+public sealed class RegenerateAiResponseCommand
 {
     private readonly ChatSessionService _chatSessionService;
     private readonly MessageService _messageService;
-    private readonly IMessageStreamer _messageStreamer;
+    private readonly IAiRequestOrchestrator _aiRequestOrchestrator;
+    private readonly ILogger<RegenerateAiResponseCommand> _logger;
 
     public RegenerateAiResponseCommand(
         ChatSessionService chatSessionService,
         MessageService messageService,
-        IMessageStreamer messageStreamer,
-        IAiModelServiceFactory aiModelServiceFactory,
-        IAiAgentRepository aiAgentRepository,
-        IUserAiModelSettingsRepository userAiModelSettingsRepository)
-        : base(aiModelServiceFactory, aiAgentRepository, userAiModelSettingsRepository)
+        IAiRequestOrchestrator aiRequestOrchestrator,
+        ILogger<RegenerateAiResponseCommand> logger)
     {
         _chatSessionService = chatSessionService ?? throw new ArgumentNullException(nameof(chatSessionService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
-        _messageStreamer = messageStreamer ?? throw new ArgumentNullException(nameof(messageStreamer));
+        _aiRequestOrchestrator = aiRequestOrchestrator ?? throw new ArgumentNullException(nameof(aiRequestOrchestrator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task ExecuteAsync(
@@ -56,27 +60,28 @@ public sealed class RegenerateAiResponseCommand : BaseAiChatCommand
         }
 
         var newAiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
-        chatSession.AddMessage(newAiMessage);
+        
+        try
+        {
+            var request = new AiOrchestrationRequest(
+                ChatSessionId: chatSessionId,
+                UserId: userId,
+                AiMessageId: newAiMessage.Id,
+                EnableThinking: false,
+                ImageSize: null,
+                NumImages: null,
+                OutputFormat: null,
+                EnableSafetyChecker: null,
+                SafetyTolerance: null
+            );
 
-        var (aiService, apiKey, aiAgent) = await base.PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
-        var userSettings = await UserAiModelSettingsRepository.GetDefaultByUserIdAsync(userId, cancellationToken);
-
-        var requestContext = new AiRequestContext(
-            UserId: userId,
-            ChatSession: chatSession,
-            History: new List<MessageDto>(),
-            AiAgent: aiAgent,
-            UserSettings: userSettings,
-            SpecificModel: chatSession.AiModel,
-            RequestSpecificThinking: false,
-            ImageSize: null,
-            NumImages: null,
-            OutputFormat: null,
-            EnableSafetyChecker: null,
-            SafetyTolerance: null);
-
-        requestContext = requestContext with { History = HistoryBuilder.BuildHistory(requestContext, newAiMessage) };
-
-        await _messageStreamer.StreamResponseAsync(requestContext, newAiMessage, aiService, cancellationToken);
+            await _aiRequestOrchestrator.ProcessRequestAsync(request, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to regenerate AI response for chat {ChatSessionId}. Failing message.", chatSessionId);
+            await _messageService.FailMessageAsync(newAiMessage, ex.Message, CancellationToken.None);
+            throw;
+        }
     }
 }

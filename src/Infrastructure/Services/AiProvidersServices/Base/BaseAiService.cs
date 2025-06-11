@@ -8,6 +8,8 @@ using Application.Services.AI;
 using Application.Exceptions;
 using System.Net;
 using System.Net.Http.Headers;
+using Application.Services.AI.Streaming;
+using Application.Services.Messaging;
 
 namespace Infrastructure.Services.AiProvidersServices.Base;
 
@@ -33,6 +35,11 @@ public abstract class BaseAiService : IAiModelService
     /// </summary>
     protected readonly string ModelCode;
 
+    /// <summary>
+    /// Parser for handling provider-specific stream chunk formats.
+    /// </summary>
+    protected readonly IStreamChunkParser? ChunkParser;
+
     #endregion
 
     #region Constructor
@@ -44,7 +51,8 @@ public abstract class BaseAiService : IAiModelService
         HttpClient httpClient,
         string? apiKey,
         string modelCode,
-        string baseUrl)
+        string baseUrl,
+        IStreamChunkParser? chunkParser)
     {
         HttpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         
@@ -56,6 +64,7 @@ public abstract class BaseAiService : IAiModelService
         
         ApiKey = apiKey;
         ModelCode = modelCode;
+        ChunkParser = chunkParser;
         
         // Set default timeout if not set by typed client
         if (HttpClient.Timeout == TimeSpan.Zero || HttpClient.Timeout == Timeout.InfiniteTimeSpan)
@@ -74,13 +83,15 @@ public abstract class BaseAiService : IAiModelService
         IHttpClientFactory httpClientFactory,
         string? apiKey,
         string modelCode,
-        string baseUrl)
+        string baseUrl,
+        IStreamChunkParser? chunkParser)
     {
         HttpClient = httpClientFactory.CreateClient();
         HttpClient.BaseAddress = new Uri(baseUrl);
         ApiKey = apiKey;
         ModelCode = modelCode;
-        
+        ChunkParser = chunkParser;
+
         // Set default timeout
         HttpClient.Timeout = TimeSpan.FromSeconds(60);
         
@@ -109,10 +120,60 @@ public abstract class BaseAiService : IAiModelService
     /// <summary>
     /// Streams a response from the AI model based on a pre-formatted request payload.
     /// </summary>
-    public abstract IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
-        AiRequestPayload request,
-        CancellationToken cancellationToken,
-        Guid? providerApiKeyId = null);
+    public virtual async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
+        AiRequestPayload requestPayload,
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        Guid? providerApiKeyId = null)
+    {
+        if (ChunkParser is null)
+        {
+            // This base implementation requires a parser. 
+            // If a service (like an image service) doesn't use a parser, 
+            // it must provide its own complete override of this method.
+            yield break;
+        }
+
+        var request = CreateRequest(requestPayload);
+
+        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        
+        if (!response.IsSuccessStatusCode)
+        {
+            await HandleApiErrorAsync(response, providerApiKeyId);
+            yield break; // Unreachable, but compiler needs it
+        }
+
+        await foreach (var rawJson in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken))
+        {
+            if (string.IsNullOrWhiteSpace(rawJson))
+            {
+                continue;
+            }
+
+            ParsedChunkInfo? parsedChunk = null;
+            try
+            {
+                parsedChunk = ChunkParser.ParseChunk(rawJson);
+            }
+            catch (JsonException ex)
+            {
+                // Log the problematic JSON and continue if possible
+                Console.WriteLine($"[BaseAiService] Failed to parse JSON chunk: {rawJson}. Error: {ex.Message}");
+                // Depending on strictness, you might want to re-throw or just skip the chunk.
+                // For now, we skip the malformed chunk.
+            }
+
+            if (parsedChunk != null)
+            {
+                yield return parsedChunk;
+            }
+        }
+    }
+
+    public virtual Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
+    {
+        return Task.FromException<MessageDto>(new NotSupportedException($"{ProviderName} does not support tool result formatting."));
+    }
 
     #endregion
 

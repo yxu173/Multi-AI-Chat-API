@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Application.Abstractions.Interfaces;
 using Application.Services.AI.Builders;
 using Application.Services.AI.Interfaces;
 using Application.Services.AI.RequestHandling.Interfaces;
@@ -9,12 +10,6 @@ using Domain.Enums;
 using Microsoft.Extensions.Logging;
 
 namespace Application.Services.AI;
-
-public record FunctionDefinitionDto(
-    string Name,
-    string? Description,
-    object? Parameters
-);
 
 public record AiRequestContext(
     Guid UserId,
@@ -29,7 +24,6 @@ public record AiRequestContext(
     string? OutputFormat = null,
     bool? EnableSafetyChecker = null,
     string? SafetyTolerance = null,
-    List<FunctionDefinitionDto>? Functions = null,
     string? FunctionCall = null
 );
 
@@ -63,7 +57,7 @@ public class AiRequestHandler : IAiRequestHandler
         var processedHistory = await _historyProcessor.ProcessAsync(context.History, cancellationToken);
         var updatedContext = context with { History = processedHistory };
 
-        List<object>? toolDefinitions = null;
+        List<PluginDefinition>? toolDefinitions = null;
         var modelType = updatedContext.SpecificModel.ModelType;
         bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or 
                                               ModelType.Gemini or ModelType.DeepSeek or 
@@ -74,7 +68,7 @@ public class AiRequestHandler : IAiRequestHandler
         {
             _logger.LogDebug("Model {ModelType} supports tools and functions are defined", modelType);
             toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(
-                updatedContext.UserId, modelType, cancellationToken);
+                updatedContext.UserId, cancellationToken);
                 
           
             // If we have tool definitions, make sure we set FunctionCall to "auto" to enable them
@@ -82,65 +76,8 @@ public class AiRequestHandler : IAiRequestHandler
             {
                 _logger.LogInformation("Found {Count} plugin tools available for this request", toolDefinitions.Count);
                 
-                // Initialize Functions if not already set and set FunctionCall
-                if (updatedContext.Functions == null)
-                {
-                    _logger.LogDebug("Initializing Functions property in context");
-                    updatedContext = updatedContext with { Functions = new List<FunctionDefinitionDto>(), FunctionCall = "auto" };
-                }
-            }
-            
-            // Special handling for Grok and Qwen models
-            if ((modelType == ModelType.Grok || modelType == ModelType.Qwen) && 
-                toolDefinitions != null && toolDefinitions.Any())
-            {
-                try
-                {
-                    var functions = new List<FunctionDefinitionDto>();
-                    
-                    foreach (var tool in toolDefinitions)
-                    {
-                        string json = JsonSerializer.Serialize(tool);
-                        using JsonDocument doc = JsonDocument.Parse(json);
-                        
-                        string? name = null;
-                        string? description = null;
-                        object? parameters = null;
-                        
-                        if (doc.RootElement.TryGetProperty("function", out var functionElement))
-                        {
-                            if (functionElement.TryGetProperty("name", out var nameElement))
-                            {
-                                name = nameElement.GetString();
-                            }
-                            
-                            if (functionElement.TryGetProperty("description", out var descElement))
-                            {
-                                description = descElement.GetString();
-                            }
-                            
-                            if (functionElement.TryGetProperty("parameters", out var paramsElement))
-                            {
-                                parameters = JsonSerializer.Deserialize<object>(paramsElement.GetRawText());
-                            }
-                        }
-                        
-                        if (!string.IsNullOrEmpty(name))
-                        {
-                            functions.Add(new FunctionDefinitionDto(name, description, parameters));
-                        }
-                    }
-                    
-                    if (functions.Any())
-                    {
-                        _logger.LogDebug("Adding {Count} functions to context for {ModelType}", functions.Count, modelType);
-                        updatedContext = updatedContext with { Functions = functions, FunctionCall = "auto" };
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error converting tool definitions to function definitions for {ModelType}", modelType);
-                }
+                // Set FunctionCall to "auto" to enable tool use
+                updatedContext = updatedContext with { FunctionCall = "auto" };
             }
         }
 

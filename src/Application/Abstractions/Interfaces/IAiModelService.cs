@@ -2,24 +2,25 @@ using System.Collections.Generic;
 using System.Threading;
 using Application.Services;
 using Application.Services.AI;
+using Application.Services.AI.Streaming;
+using Domain.Aggregates.Chats;
+using Domain.Enums;
+using Application.Services.Messaging;
 
 namespace Application.Abstractions.Interfaces;
 
 
-//public record AiRequestPayload(object Payload);
 
-public record AiRawStreamChunk(
-    string RawContent, 
-    bool IsCompletion = false, 
-    int? InputTokens = null, 
-    int? OutputTokens = null);
+public record ToolResultFormattingContext(string ToolCallId, string ToolName, string Result, bool WasSuccessful);
 
 public interface IAiModelService
 {
-    IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+    IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
         AiRequestPayload request,
         CancellationToken cancellationToken,
         Guid? providerApiKeyId = null);
+
+    Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken);
 }
 
 /// <summary>

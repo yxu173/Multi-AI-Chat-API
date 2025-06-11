@@ -7,6 +7,7 @@ using Application.Services.AI.Interfaces;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Application.Abstractions.Interfaces;
 
 namespace Application.Services.AI.Builders;
 
@@ -23,7 +24,7 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null, CancellationToken cancellationToken = default)
+    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -41,7 +42,17 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
         if ( tools != null && tools.Any())
         {
-            requestObj["tools"] = tools;
+            var formattedTools = tools.Select(def => new 
+            {
+                type = "function",
+                function = new
+                {
+                    name = def.Name,
+                    description = def.Description,
+                    parameters = def.ParametersSchema
+                }
+            }).ToList();
+            requestObj["tools"] = formattedTools;
 
             if (!string.IsNullOrEmpty(context.FunctionCall))
             {
@@ -68,33 +79,6 @@ public class QwenPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         }
 
         return new AiRequestPayload(requestObj);
-    }
-
-    private object[] PrepareFunctionDefinitions(List<FunctionDefinitionDto> functions)
-    {
-        var tools = new List<object>();
-
-        foreach (var function in functions)
-        {
-            var functionDef = new Dictionary<string, object>
-            {
-                ["type"] = "function",
-                ["function"] = new Dictionary<string, object>
-                {
-                    ["name"] = function.Name,
-                    ["description"] = function.Description ?? string.Empty
-                }
-            };
-
-            if (function.Parameters != null)
-            {
-                ((Dictionary<string, object>)functionDef["function"])["parameters"] = function.Parameters;
-            }
-
-            tools.Add(functionDef);
-        }
-
-        return tools.ToArray();
     }
 
     private async Task<List<object>> ProcessMessagesForQwenInputAsync(

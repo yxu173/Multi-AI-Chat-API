@@ -23,7 +23,7 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
     public async Task<AiRequestPayload> PreparePayloadAsync(
         AiRequestContext context,
-        List<object>? tools = null,
+        List<PluginDefinition>? tools = null,
         CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
@@ -44,10 +44,20 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         {
             Logger?.LogInformation("Adding {ToolCount} tool declarations to Gemini payload for model {ModelCode}",
                  tools.Count, context.SpecificModel.ModelCode);
-            requestObj["tools"] = new[] { new { functionDeclarations = tools } };
+            requestObj["tools"] = new[] { new { functionDeclarations = TransformToolsForGemini(tools) } };
         }
         
         return new AiRequestPayload(requestObj);
+    }
+
+    private List<object> TransformToolsForGemini(List<PluginDefinition> tools)
+    {
+        return tools.Select(t => new
+        {
+            name = t.Name,
+            description = t.Description,
+            parameters = t.ParametersSchema
+        }).Cast<object>().ToList();
     }
 
     private async Task<List<object>> ProcessMessagesForGeminiAsync(AiRequestContext context, CancellationToken cancellationToken)

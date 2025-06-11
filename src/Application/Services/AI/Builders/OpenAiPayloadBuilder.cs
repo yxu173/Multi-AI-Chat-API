@@ -1,3 +1,4 @@
+using Application.Abstractions.Interfaces;
 using Application.Services.Helpers;
 using Application.Services.Messaging;
 using Domain.Enums;
@@ -6,6 +7,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Services.AI.Interfaces;
+using System.Linq;
 
 namespace Application.Services.AI.Builders;
 
@@ -22,7 +24,7 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
     }
 
-    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<object>? tools = null,
+    public async Task<AiRequestPayload> PreparePayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null,
         CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
@@ -49,15 +51,23 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
                 tools.Count, model.ModelCode);
-                
-            // Log the actual structure of the first tool to diagnose issues
-            if (tools.Count > 0)
+
+            var formattedTools = tools.Select(def => new
             {
-                var firstTool = System.Text.Json.JsonSerializer.Serialize(tools[0]);
+                type = "function",
+                name = def.Name,
+                description = def.Description,
+                parameters = def.ParametersSchema
+            }).ToList();
+
+            // Log the actual structure of the first tool to diagnose issues
+            if (formattedTools.Any())
+            {
+                var firstTool = System.Text.Json.JsonSerializer.Serialize(formattedTools[0]);
                 Logger?.LogDebug("First tool structure: {FirstTool}", firstTool);
             }
-            
-            requestObj["tools"] = tools;
+
+            requestObj["tools"] = formattedTools;
             
             // Set tool_choice to auto if we have functions available
             if (!string.IsNullOrEmpty(context.FunctionCall))

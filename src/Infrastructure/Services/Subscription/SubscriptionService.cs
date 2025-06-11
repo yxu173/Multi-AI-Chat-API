@@ -2,6 +2,7 @@ using Domain.Repositories;
 using Domain.Aggregates.Admin;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Application.Abstractions.Interfaces;
 
 namespace Infrastructure.Services.Subscription;
 
@@ -25,8 +26,8 @@ public class SubscriptionService : ISubscriptionService
     }
 
     public async Task<(bool HasQuota, string? ErrorMessage)> CheckUserQuotaAsync(
-        Guid userId, 
-        double requestCost, 
+        Guid userId,
+        double requestCost,
         int requiredTokens = 0,
         CancellationToken cancellationToken = default)
     {

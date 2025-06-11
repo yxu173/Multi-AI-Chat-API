@@ -1,7 +1,7 @@
 using Application.Abstractions.Interfaces;
 using Application.Exceptions;
 using Application.Services.AI;
-using Application.Services.Helpers;
+using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
@@ -16,33 +16,22 @@ namespace Application.Services.Chat;
 /// <summary>
 /// Handles the end-to-end flow of sending a new user message and streaming the AI response.
 /// </summary>
-public sealed class SendUserMessageCommand : BaseAiChatCommand
+public sealed class SendUserMessageCommand
 {
     private readonly ChatSessionService _chatSessionService;
     private readonly MessageService _messageService;
-    private readonly IMessageStreamer _messageStreamer;
-    private readonly IProviderKeyManagementService _providerKeyManagementService;
+    private readonly IAiRequestOrchestrator _aiRequestOrchestrator;
     private readonly ILogger<SendUserMessageCommand> _logger;
-
-    private const int MaxRetries = 3;
-    private readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(2); // Initial delay
-    private const double RetryBackoffFactor = 2.0; // Factor to multiply delay by each time
 
     public SendUserMessageCommand(
         ChatSessionService chatSessionService,
         MessageService messageService,
-        IMessageStreamer messageStreamer,
-        IAiModelServiceFactory aiModelServiceFactory,
-        IProviderKeyManagementService providerKeyManagementService,
-        IAiAgentRepository aiAgentRepository,
-        IUserAiModelSettingsRepository userAiModelSettingsRepository,
+        IAiRequestOrchestrator aiRequestOrchestrator,
         ILogger<SendUserMessageCommand> logger)
-        : base(aiModelServiceFactory, aiAgentRepository, userAiModelSettingsRepository)
     {
         _chatSessionService = chatSessionService ?? throw new ArgumentNullException(nameof(chatSessionService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
-        _messageStreamer = messageStreamer ?? throw new ArgumentNullException(nameof(messageStreamer));
-        _providerKeyManagementService = providerKeyManagementService ?? throw new ArgumentNullException(nameof(providerKeyManagementService));
+        _aiRequestOrchestrator = aiRequestOrchestrator ?? throw new ArgumentNullException(nameof(aiRequestOrchestrator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -70,99 +59,28 @@ public sealed class SendUserMessageCommand : BaseAiChatCommand
         await _chatSessionService.UpdateChatSessionTitleAsync(chatSession, content, cancellationToken);
 
         var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
-        chatSession.AddMessage(aiMessage);
-
-        var (aiService, apiKey, aiAgent) = await base.PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
-        var userSettings = await UserAiModelSettingsRepository.GetDefaultByUserIdAsync(userId, cancellationToken);
-
-        var requestContext = new AiRequestContext(
-            UserId: userId,
-            ChatSession: chatSession,
-            History: new List<MessageDto>(),
-            AiAgent: aiAgent,
-            UserSettings: userSettings,
-            SpecificModel: chatSession.AiModel,
-            RequestSpecificThinking: enableThinking,
-            ImageSize: imageSize,
-            NumImages: numImages,
-            OutputFormat: outputFormat,
-            EnableSafetyChecker: enableSafetyChecker,
-            SafetyTolerance: safetyTolerance);
-        requestContext = requestContext with { History = HistoryBuilder.BuildHistory(requestContext, aiMessage) };
-
-        bool streamSucceeded = false;
-
-        for (int attempt = 1; attempt <= MaxRetries; attempt++)
+        
+        try
         {
-            if (cancellationToken.IsCancellationRequested) break;
+            var request = new AiOrchestrationRequest(
+                ChatSessionId: chatSessionId,
+                UserId: userId,
+                AiMessageId: aiMessage.Id,
+                EnableThinking: enableThinking,
+                ImageSize: imageSize,
+                NumImages: numImages,
+                OutputFormat: outputFormat,
+                EnableSafetyChecker: enableSafetyChecker,
+                SafetyTolerance: safetyTolerance
+            );
 
-            TimeSpan delayForThisAttempt = TimeSpan.FromSeconds(Math.Pow(RetryBackoffFactor, attempt -1) * InitialRetryDelay.TotalSeconds);
-
-            try
-            {
-                _logger.LogInformation("Attempt {Attempt}/{MaxRetries} to get AI service for chat {ChatSessionId}", attempt, MaxRetries, chatSessionId);
-                // aiService and apiKey are already fetched by base.PrepareForAiInteractionAsync outside the loop.
-                // No need to call GetServiceContextAsync again here.
-
-                await _messageStreamer.StreamResponseAsync(
-                    requestContext, 
-                    aiMessage, 
-                    aiService, // Use aiService from PrepareForAiInteractionAsync
-                    cancellationToken, 
-                    apiKey?.Id); // Use apiKey from PrepareForAiInteractionAsync
-                
-                streamSucceeded = true;
-                if (apiKey != null) // Only report success for managed keys, using apiKey from PrepareForAiInteractionAsync
-                {
-                    await _providerKeyManagementService.ReportKeySuccessAsync(apiKey.Id, CancellationToken.None); 
-                }
-                _logger.LogInformation("Successfully streamed AI response for chat {ChatSessionId} on attempt {Attempt}", chatSessionId, attempt);
-                break; // Success, exit retry loop
-            }
-            catch (ProviderRateLimitException ex)
-            {
-                _logger.LogWarning(ex, "Provider rate limit hit on attempt {Attempt} for chat {ChatSessionId}. Key ID: {ApiKeyIdUsed}", attempt, chatSessionId, ex.ApiKeyIdUsed);
-                if (ex.ApiKeyIdUsed.HasValue)
-                {
-                    await _providerKeyManagementService.ReportKeyRateLimitedAsync(ex.ApiKeyIdUsed.Value, ex.RetryAfter ?? delayForThisAttempt, CancellationToken.None);
-                }
-                if (attempt == MaxRetries) throw; // Rethrow if max retries reached
-                var actualDelay = ex.RetryAfter ?? delayForThisAttempt;
-                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to provider rate limit.", actualDelay, chatSessionId);
-                await Task.Delay(actualDelay, cancellationToken); // Wait before retrying
-            }
-            catch (HttpRequestException ex) // Includes other HTTP errors from BaseAiService
-            {
-                _logger.LogError(ex, "HTTP request exception on attempt {Attempt} for chat {ChatSessionId}", attempt, chatSessionId);
-                if (attempt == MaxRetries) throw; 
-                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to HTTP request exception.", delayForThisAttempt, chatSessionId);
-                await Task.Delay(delayForThisAttempt, cancellationToken); // Basic retry for general HTTP issues
-            }
-            catch (QuotaExceededException ex) // This is from user's subscription, not API key rate limit
-            {
-                _logger.LogWarning(ex, "User quota exceeded for chat {ChatSessionId}. No further retries.", chatSessionId);
-                throw; // Rethrow immediately, no point in retrying API calls
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unhandled exception on attempt {Attempt} during AI interaction for chat {ChatSessionId}", attempt, chatSessionId);
-                // For unknown errors, might be safer to not retry or have a more specific retry strategy
-                if (attempt == MaxRetries) throw; 
-                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to unhandled exception.", delayForThisAttempt, chatSessionId);
-                await Task.Delay(delayForThisAttempt, cancellationToken); // Basic retry
-            }
+            await _aiRequestOrchestrator.ProcessRequestAsync(request, cancellationToken);
         }
-
-        if (!streamSucceeded)
+        catch (Exception ex)
         {
-            // If loop finished without success, ensure AI message is marked as failed.
-            // _messageStreamer.StreamResponseAsync internally calls _aiMessageFinalizer on exceptions.
-            // However, if GetServiceContextAsync consistently fails, StreamResponseAsync might not be called.
-            // In this case, the aiMessage is created but never processed.
-            // Explicitly fail the message if we exited the loop without a successful stream.
-            _logger.LogError("Failed to stream AI response for chat {ChatSessionId} after {MaxRetries} attempts.", chatSessionId, MaxRetries);
-            await _messageService.FailMessageAsync(aiMessage, "Failed to get response from AI provider after multiple attempts.", CancellationToken.None);            
-            throw new Exception($"Failed to get AI response for chat {chatSessionId} after {MaxRetries} attempts. Please try again later.");
+            _logger.LogError(ex, "Failed to process AI request for chat {ChatSessionId}. Failing message.", chatSessionId);
+            await _messageService.FailMessageAsync(aiMessage, ex.Message, CancellationToken.None);
+            throw;
         }
     }
 }

@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Application.Services.AI.Streaming;
 
+public record ParsedToolCall(string Id, string Name, string Arguments);
+
 public class ToolCallHandler
 {
     private readonly ILogger<ToolCallHandler> _logger;
@@ -124,38 +126,48 @@ public class ToolCallHandler
         }
     }
 
-    public async Task<MessageDto> ExecuteToolCallAsync(ParsedToolCall toolCall, ModelType modelType, Message aiMessage, CancellationToken cancellationToken)
+    public async Task<MessageDto> ExecuteToolCallAsync(
+        IAiModelService aiModelService,
+        ParsedToolCall toolCall,
+        CancellationToken cancellationToken)
     {
         var pluginId = FindPluginIdByName(toolCall.Name);
+        
+        PluginResult pluginResult;
+
         if (!pluginId.HasValue)
         {
             _logger.LogError("Could not find plugin matching tool name: {ToolName}", toolCall.Name);
-            var errorResult = new PluginResult("", false, $"Plugin '{toolCall.Name}' not found.");
-            return FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, errorResult, aiMessage);
+            pluginResult = new PluginResult("", false, $"Plugin '{toolCall.Name}' not found.");
         }
-
-        JsonObject? argumentsObject = null;
-        try
+        else
         {
-            _logger?.LogInformation("Attempting to parse arguments for tool {ToolName} (ID: {ToolCallId}). Arguments: {Arguments}", toolCall.Name, toolCall.Id, toolCall.Arguments);
-            argumentsObject = JsonSerializer.Deserialize<JsonObject>(toolCall.Arguments);
-        }
-        catch (JsonException ex)
-        {
-            _logger?.LogError(ex, "Failed to parse arguments for tool {ToolName} (ID: {ToolCallId}). Arguments: {Arguments}", toolCall.Name, toolCall.Id, toolCall.Arguments);
-            var errorResult = new PluginResult("", false, $"Invalid arguments provided for tool '{toolCall.Name}'.");
-            return FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, errorResult, aiMessage);
-        }
+            try
+            {
+                _logger.LogInformation("Attempting to parse arguments for tool {ToolName} (ID: {ToolCallId}). Arguments: {Arguments}", toolCall.Name, toolCall.Id, toolCall.Arguments);
+                var argumentsObject = JsonSerializer.Deserialize<JsonObject>(toolCall.Arguments);
 
-        if (argumentsObject != null)
-        {
-            _logger?.LogInformation("Executing plugin {PluginName} (ID: {PluginId}) for tool call {ToolCallId}", toolCall.Name, pluginId.Value, toolCall.Id);
-            var pluginResult = await _pluginService.ExecutePluginByIdAsync(pluginId.Value, argumentsObject, cancellationToken);
-            return FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, pluginResult, aiMessage);
+                if (argumentsObject != null)
+                {
+                    _logger.LogInformation("Executing plugin {PluginName} (ID: {PluginId}) for tool call {ToolCallId}", toolCall.Name, pluginId.Value, toolCall.Id);
+                    pluginResult = await _pluginService.ExecutePluginByIdAsync(pluginId.Value, argumentsObject, cancellationToken);
+                }
+                else
+                {
+                    pluginResult = new PluginResult("", false, $"Could not parse arguments for tool '{toolCall.Name}'.");
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to parse arguments for tool {ToolName} (ID: {ToolCallId}). Arguments: {Arguments}", toolCall.Name, toolCall.Id, toolCall.Arguments);
+                pluginResult = new PluginResult("", false, $"Invalid arguments provided for tool '{toolCall.Name}'.");
+            }
         }
-
-        var nullArgsError = new PluginResult("", false, $"No valid arguments provided for tool '{toolCall.Name}'.");
-        return FormatToolResultMessage(modelType, toolCall.Id, toolCall.Name, nullArgsError, aiMessage);
+        
+        string resultString = pluginResult.Success ? pluginResult.Result : $"Error: {pluginResult.ErrorMessage}";
+        var formatContext = new ToolResultFormattingContext(toolCall.Id, toolCall.Name, resultString, pluginResult.Success);
+        
+        return await aiModelService.FormatToolResultAsync(formatContext, cancellationToken);
     }
 
     public async Task<MessageDto> FormatAiMessageWithToolCallsAsync(ModelType modelType, List<ParsedToolCall> toolCalls)

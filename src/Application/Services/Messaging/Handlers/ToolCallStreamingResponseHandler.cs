@@ -2,6 +2,7 @@ using Application.Services.AI;
 using Application.Services.AI.Interfaces;
 using Application.Services.AI.Streaming;
 using Application.Services.Utilities;
+using Microsoft.Extensions.Logging;
 
 namespace Application.Services.Messaging.Handlers;
 
@@ -9,9 +10,9 @@ public sealed class ToolCallStreamingResponseHandler : BaseStreamingResponseHand
 {
     public ToolCallStreamingResponseHandler(
         IAiRequestHandler aiRequestHandler,
-        StreamProcessor streamProcessor,
-        ToolCallHandler toolCallHandler)
-        : base(aiRequestHandler, streamProcessor, toolCallHandler) { }
+        ToolCallHandler toolCallHandler,
+        ILogger<BaseStreamingResponseHandler> logger)
+        : base(aiRequestHandler, toolCallHandler, logger) { }
 
     public override ResponseType ResponseType => ResponseType.ToolCall;
 }

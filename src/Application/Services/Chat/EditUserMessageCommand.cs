@@ -1,11 +1,17 @@
 using Application.Abstractions.Interfaces;
 using Application.Notifications;
-using Application.Services.AI;
-using Application.Services.Helpers;
+using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
+using Application.Services.Utilities;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using FastEndpoints;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Application.Services.Chat;
 
@@ -16,28 +22,22 @@ public sealed class EditUserMessageCommand
 {
     private readonly ChatSessionService _chatSessionService;
     private readonly MessageService _messageService;
-    private readonly IMessageStreamer _messageStreamer;
-    private readonly IAiModelServiceFactory _aiModelServiceFactory;
-    private readonly IAiAgentRepository _aiAgentRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
-    private readonly IUserAiModelSettingsRepository _userAiModelSettingsRepository;
+    private readonly IAiRequestOrchestrator _aiRequestOrchestrator;
+    private readonly ILogger<EditUserMessageCommand> _logger;
 
     public EditUserMessageCommand(
         ChatSessionService chatSessionService,
         MessageService messageService,
-        IMessageStreamer messageStreamer,
-        IAiModelServiceFactory aiModelServiceFactory,
-        IAiAgentRepository aiAgentRepository,
         IFileAttachmentRepository fileAttachmentRepository,
-        IUserAiModelSettingsRepository userAiModelSettingsRepository)
+        IAiRequestOrchestrator aiRequestOrchestrator,
+        ILogger<EditUserMessageCommand> logger)
     {
         _chatSessionService = chatSessionService ?? throw new ArgumentNullException(nameof(chatSessionService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
-        _messageStreamer = messageStreamer ?? throw new ArgumentNullException(nameof(messageStreamer));
-        _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
-        _aiAgentRepository = aiAgentRepository ?? throw new ArgumentNullException(nameof(aiAgentRepository));
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
-        _userAiModelSettingsRepository = userAiModelSettingsRepository ?? throw new ArgumentNullException(nameof(userAiModelSettingsRepository));
+        _aiRequestOrchestrator = aiRequestOrchestrator ?? throw new ArgumentNullException(nameof(aiRequestOrchestrator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task ExecuteAsync(
@@ -86,45 +86,28 @@ public sealed class EditUserMessageCommand
         }
 
         var aiMessage = await _messageService.CreateAndSaveAiMessageAsync(userId, chatSessionId, cancellationToken);
-        chatSession.AddMessage(aiMessage);
 
-        var (aiService, aiAgent) = await PrepareForAiInteractionAsync(userId, chatSession, cancellationToken);
-        var userSettings = await _userAiModelSettingsRepository.GetDefaultByUserIdAsync(userId, cancellationToken);
-
-        var requestContext = new AiRequestContext(
-            UserId: userId,
-            ChatSession: chatSession,
-            History: new List<MessageDto>(),
-            AiAgent: aiAgent,
-            UserSettings: userSettings,
-            SpecificModel: chatSession.AiModel,
-            ImageSize: imageSize,
-            NumImages: numImages,
-            OutputFormat: outputFormat,
-            EnableSafetyChecker: enableSafetyChecker,
-            SafetyTolerance: safetyTolerance);
-
-        requestContext = requestContext with { History = HistoryBuilder.BuildHistory(requestContext, aiMessage) };
-
-        await _messageStreamer.StreamResponseAsync(requestContext, aiMessage, aiService, cancellationToken);
-    }
-
-    private async Task<(IAiModelService AiService, AiAgent? AiAgent)> PrepareForAiInteractionAsync(
-        Guid userId,
-        ChatSession chatSession,
-        CancellationToken cancellationToken)
-    {
-        AiAgent? aiAgent = null;
-        if (chatSession.AiAgentId.HasValue)
+        try
         {
-            aiAgent = await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken);
+            var request = new AiOrchestrationRequest(
+                ChatSessionId: chatSessionId,
+                UserId: userId,
+                AiMessageId: aiMessage.Id,
+                EnableThinking: false, // Thinking is not enabled for edits
+                ImageSize: imageSize,
+                NumImages: numImages,
+                OutputFormat: outputFormat,
+                EnableSafetyChecker: enableSafetyChecker,
+                SafetyTolerance: safetyTolerance
+            );
+
+            await _aiRequestOrchestrator.ProcessRequestAsync(request, cancellationToken);
         }
-
-        var aiService = _aiModelServiceFactory.GetService(
-            userId,
-            chatSession.AiModelId,
-            chatSession.AiAgentId);
-
-        return (aiService, aiAgent);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to process AI request after editing message for chat {ChatSessionId}. Failing message.", chatSessionId);
+            await _messageService.FailMessageAsync(aiMessage, ex.Message, CancellationToken.None);
+            throw;
+        }
     }
 }

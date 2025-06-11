@@ -1,6 +1,7 @@
 using Application.Abstractions.Data;
 using Application.Abstractions.Interfaces;
 using Application.Exceptions;
+using Application.Services.AI.Streaming;
 using Domain.Aggregates.Chats;
 using Domain.Enums;
 using Infrastructure.Services.Subscription;
@@ -149,29 +150,21 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => new OpenAiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService),
-            ModelType.Anthropic => new AnthropicService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService),
-            ModelType.DeepSeek => new DeepSeekService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService),
-            ModelType.Gemini => new GeminiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService),
+            ModelType.OpenAi => new OpenAiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetService<ILogger<OpenAiStreamChunkParser>>())),
+            ModelType.Anthropic => new AnthropicService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService, new AnthropicStreamChunkParser(_serviceProvider.GetService<ILogger<AnthropicStreamChunkParser>>())),
+            ModelType.DeepSeek => new DeepSeekService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService, new DeepseekStreamChunkParser(_serviceProvider.GetService<ILogger<DeepseekStreamChunkParser>>())),
+            ModelType.Gemini => new GeminiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService, new GeminiStreamChunkParser(_serviceProvider.GetService<ILogger<GeminiStreamChunkParser>>())),
             ModelType.AimlFlux => new AimlApiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, aimlLogger, resilienceService),
-            ModelType.Imagen => CreateImagenService(_httpClientFactory, aiModel.ModelCode, imagenLogger),
-            ModelType.Grok => new GrokService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService),
-            ModelType.Qwen => new QwenService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService),
+            ModelType.Imagen => new ImagenService(
+                _httpClientFactory,
+                _configuration["AI:Imagen:ProjectId"] ?? throw new InvalidOperationException("Imagen ProjectId not configured."),
+                _configuration["AI:Imagen:Region"] ?? throw new InvalidOperationException("Imagen Region not configured."),
+                aiModel.ModelCode,
+                imagenLogger,
+                resilienceService),
+            ModelType.Grok => new GrokService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService, new GrokStreamChunkParser(_serviceProvider.GetService<ILogger<GrokStreamChunkParser>>())),
+            ModelType.Qwen => new QwenService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService, new QwenStreamChunkParser(_serviceProvider.GetService<ILogger<QwenStreamChunkParser>>())),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported for instantiation with IResilienceService in factory.")
         };
-    }
-
-    private ImagenService CreateImagenService(IHttpClientFactory httpClientFactory, string modelCode,
-        ILogger<ImagenService>? logger)
-    {
-        var projectId = _configuration["AI:Imagen:ProjectId"] ??
-                        throw new InvalidOperationException("Imagen ProjectId not configured.");
-        var region = _configuration["AI:Imagen:Region"] ??
-                     throw new InvalidOperationException("Imagen Region not configured.");
-        
-        // Resolve IResilienceService from the service provider for ImagenService
-        var resilienceService = _serviceProvider.GetRequiredService<IResilienceService>();
-
-        return new ImagenService(httpClientFactory, projectId, region, modelCode, logger);
     }
 }

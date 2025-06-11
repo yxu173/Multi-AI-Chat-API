@@ -3,10 +3,12 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services.AI;
+using Application.Services.AI.Streaming;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Diagnostics;
+using Application.Services.Messaging;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -23,8 +25,9 @@ public class GeminiService : BaseAiService, IAiFileUploader
         string? apiKey,
         string modelCode,
         ILogger<GeminiService> logger,
-        IResilienceService resilienceService)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl)
+        IResilienceService resilienceService,
+        GeminiStreamChunkParser chunkParser)
+        : base(httpClientFactory, apiKey, modelCode, BaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
@@ -39,6 +42,49 @@ public class GeminiService : BaseAiService, IAiFileUploader
         // Gemini API key is usually passed in the URL for REST,
         // or via gRPC metadata. If specific headers are needed for other Gemini scenarios,
         // they would be configured here. For now, assuming key in URL is primary.
+    }
+
+    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Formatting Gemini tool result for ToolCallId {ToolCallId}, ToolName {ToolName}", context.ToolCallId, context.ToolName);
+
+        var messagePayload = new
+        {
+            parts = new[]
+            {
+                new
+                {
+                    functionResponse = new
+                    {
+                        name = context.ToolName,
+                        response = new
+                        {
+                            content = TryParseJsonElement(context.Result) ?? (object)context.Result
+                        }
+                    }
+                }
+            }
+        };
+        
+        string contentJson = JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
+        var messageDto = new MessageDto(contentJson, false, Guid.NewGuid());
+        
+        return Task.FromResult(messageDto);
+    }
+    
+    private JsonElement? TryParseJsonElement(string jsonString)
+    {
+        if (string.IsNullOrWhiteSpace(jsonString)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonString);
+            return doc.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            _logger.LogWarning("Tool result content was not valid JSON: {Content}", jsonString);
+            return null;
+        }
     }
 
     protected override string GetEndpointPath() => $"v1beta/models/{ModelCode}:streamGenerateContent?key={ApiKey}";
@@ -185,7 +231,7 @@ public class GeminiService : BaseAiService, IAiFileUploader
         return result;
     }
 
-    public override async IAsyncEnumerable<AiRawStreamChunk> StreamResponseAsync(
+    public override async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
         AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
@@ -198,7 +244,6 @@ public class GeminiService : BaseAiService, IAiFileUploader
             ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default");
 
         HttpResponseMessage? response = null;
-        bool initialRequestSuccess = false;
         Uri? requestUriForLogging = null;
 
         try
@@ -225,7 +270,6 @@ public class GeminiService : BaseAiService, IAiFileUploader
                 yield break; 
             }
             _logger.LogDebug("Successfully received stream response header from {ProviderName} model {ModelCode}", ProviderName, ModelCode);
-            initialRequestSuccess = true;
         }
         catch (Polly.CircuitBreaker.BrokenCircuitException ex)
         {
@@ -248,53 +292,49 @@ public class GeminiService : BaseAiService, IAiFileUploader
             _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
             yield break; 
         }
-        catch (Exception ex) 
+        catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during API resilience execution.");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Error during {ProviderName} stream API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
-            throw; 
+            _logger.LogError(ex, "Error during {ProviderName} API resilience execution for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            throw;
         }
 
-        if (!initialRequestSuccess || response == null)
+        if (response == null)
         {
-            response?.Dispose();
             yield break;
         }
 
-        var successfulRequestUri = response.RequestMessage?.RequestUri; // For logging
+        var successfulRequestUri = response.RequestMessage?.RequestUri;
         try
         {
-            bool receivedAnyData = false;
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
-                               .WithCancellation(cancellationToken)
-                               .ConfigureAwait(false))
+            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
             {
-                if (cancellationToken.IsCancellationRequested) 
+                if (cancellationToken.IsCancellationRequested)
                 {
                     activity?.AddEvent(new ActivityEvent("Stream processing cancelled by token.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
-                    _logger.LogInformation("{ProviderName} stream processing cancelled by token for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
                     break;
                 }
-                receivedAnyData = true;
-                yield return new AiRawStreamChunk(jsonChunk);
+                
+                if (string.IsNullOrWhiteSpace(jsonChunk)) continue;
+
+                var parsedChunk = ChunkParser.ParseChunk(jsonChunk);
+                yield return parsedChunk;
+                
+                if (parsedChunk.FinishReason is not null)
+                {
+                    activity?.AddEvent(new ActivityEvent("Stream processing completed due to finish_reason."));
+                    break;
+                }
             }
-            
-            if (!receivedAnyData && !cancellationToken.IsCancellationRequested)
-            {
-                activity?.AddEvent(new ActivityEvent("Stream ended without sending any data.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
-                _logger.LogWarning("{ProviderName} stream for model {ModelCode} ended without sending any data. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
-            }
-            
             if (!cancellationToken.IsCancellationRequested)
             {
-                activity?.AddEvent(new ActivityEvent("Stream completed successfully.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
-                _logger.LogDebug("{ProviderName} stream completed for model {ModelCode}. URI: {SuccessfulRequestUri}", ProviderName, ModelCode, successfulRequestUri);
+                activity?.AddEvent(new ActivityEvent("Stream completed.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
             }
         }
         finally
         {
-            response.Dispose(); 
+            response.Dispose();
         }
     }
 }
