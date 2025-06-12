@@ -24,25 +24,23 @@ public record AiRequestContext(
     string? OutputFormat = null,
     bool? EnableSafetyChecker = null,
     string? SafetyTolerance = null,
-    string? FunctionCall = null
+    string? FunctionCall = null,
+    List<PluginDefinition>? ToolDefinitions = null
 );
 
 public class AiRequestHandler : IAiRequestHandler
 {
     private readonly IPayloadBuilderFactory _payloadBuilderFactory;
     private readonly IHistoryProcessor _historyProcessor;
-    private readonly IToolDefinitionService _toolDefinitionService;
     private readonly ILogger<AiRequestHandler> _logger;
 
     public AiRequestHandler(
         IPayloadBuilderFactory payloadBuilderFactory,
         IHistoryProcessor historyProcessor,
-        IToolDefinitionService toolDefinitionService,
         ILogger<AiRequestHandler> logger)
     {
         _payloadBuilderFactory = payloadBuilderFactory ?? throw new ArgumentNullException(nameof(payloadBuilderFactory));
         _historyProcessor = historyProcessor ?? throw new ArgumentNullException(nameof(historyProcessor));
-        _toolDefinitionService = toolDefinitionService ?? throw new ArgumentNullException(nameof(toolDefinitionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -57,28 +55,16 @@ public class AiRequestHandler : IAiRequestHandler
         var processedHistory = await _historyProcessor.ProcessAsync(context.History, cancellationToken);
         var updatedContext = context with { History = processedHistory };
 
-        List<PluginDefinition>? toolDefinitions = null;
         var modelType = updatedContext.SpecificModel.ModelType;
-        bool modelMightSupportTools = modelType is ModelType.OpenAi or ModelType.Anthropic or 
-                                              ModelType.Gemini or ModelType.DeepSeek or 
-                                              ModelType.Grok or ModelType.Qwen;
-        
-        // Always check for available tools when the model supports them
-        if (modelMightSupportTools)
+        List<PluginDefinition>? toolDefinitions = updatedContext.ToolDefinitions;
+
+        // If we have tool definitions, make sure we set FunctionCall to "auto" to enable them
+        if (toolDefinitions != null && toolDefinitions.Any())
         {
-            _logger.LogDebug("Model {ModelType} supports tools and functions are defined", modelType);
-            toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(
-                updatedContext.UserId, cancellationToken);
-                
-          
-            // If we have tool definitions, make sure we set FunctionCall to "auto" to enable them
-            if (toolDefinitions != null && toolDefinitions.Any())
-            {
-                _logger.LogInformation("Found {Count} plugin tools available for this request", toolDefinitions.Count);
-                
-                // Set FunctionCall to "auto" to enable tool use
-                updatedContext = updatedContext with { FunctionCall = "auto" };
-            }
+            _logger.LogInformation("Found {Count} plugin tools available for this request", toolDefinitions.Count);
+            
+            // Set FunctionCall to "auto" to enable tool use
+            updatedContext = updatedContext with { FunctionCall = "auto" };
         }
 
         _logger.LogDebug("Building payload for model {ModelType}", modelType);

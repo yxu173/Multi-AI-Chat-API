@@ -1,6 +1,7 @@
 using Application.Abstractions.Interfaces;
 using Application.Exceptions;
 using Application.Services.AI.Interfaces;
+using Application.Services.AI.RequestHandling.Interfaces;
 using Application.Services.Helpers;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
@@ -25,6 +26,7 @@ public class AiRequestOrchestrator : IAiRequestOrchestrator
     private readonly ILogger<AiRequestOrchestrator> _logger;
     private readonly IUserAiModelSettingsRepository _userAiModelSettingsRepository;
     private readonly IAiAgentRepository _aiAgentRepository;
+    private readonly IToolDefinitionService _toolDefinitionService;
 
     private const int MaxRetries = 3;
     private readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(2);
@@ -38,7 +40,8 @@ public class AiRequestOrchestrator : IAiRequestOrchestrator
         IProviderKeyManagementService providerKeyManagementService,
         ILogger<AiRequestOrchestrator> logger,
         IUserAiModelSettingsRepository userAiModelSettingsRepository,
-        IAiAgentRepository aiAgentRepository)
+        IAiAgentRepository aiAgentRepository,
+        IToolDefinitionService toolDefinitionService)
     {
         _chatSessionRepository = chatSessionRepository;
         _subscriptionService = subscriptionService;
@@ -48,6 +51,7 @@ public class AiRequestOrchestrator : IAiRequestOrchestrator
         _logger = logger;
         _userAiModelSettingsRepository = userAiModelSettingsRepository;
         _aiAgentRepository = aiAgentRepository;
+        _toolDefinitionService = toolDefinitionService;
     }
 
     public async Task ProcessRequestAsync(AiOrchestrationRequest request, CancellationToken cancellationToken)
@@ -69,6 +73,8 @@ public class AiRequestOrchestrator : IAiRequestOrchestrator
             ? await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken)
             : null;
 
+        var toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(request.UserId, cancellationToken);
+
         var requestContext = new AiRequestContext(
             UserId: request.UserId,
             ChatSession: chatSession,
@@ -81,7 +87,8 @@ public class AiRequestOrchestrator : IAiRequestOrchestrator
             NumImages: request.NumImages,
             OutputFormat: request.OutputFormat,
             EnableSafetyChecker: request.EnableSafetyChecker,
-            SafetyTolerance: request.SafetyTolerance);
+            SafetyTolerance: request.SafetyTolerance,
+            ToolDefinitions: toolDefinitions);
 
         for (int attempt = 1; attempt <= MaxRetries; attempt++)
         {

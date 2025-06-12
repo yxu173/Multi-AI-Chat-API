@@ -74,7 +74,7 @@ public static class DependencyInjection
         
         services.AddScoped<TokenUsageService>();
         services.AddScoped<PluginService>();
-        
+        services.AddScoped<ConversationTurnProcessor>();
         
         services.AddScoped<IResponseHandler, ImageResponseHandler>();
         services.AddScoped<IResponseHandler, ToolCallStreamingResponseHandler>();
