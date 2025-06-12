@@ -13,8 +13,8 @@ using Application.Services.Files;
 using Application.Services.Helpers;
 using Application.Services.Infrastructure;
 using Application.Services.Messaging;
-using Application.Services.Messaging.Handlers;
 using Application.Services.Plugins;
+using Application.Services.Streaming;
 using Application.Services.TokenUsage;
 using Application.Services.Files.BackgroundProcessing;
 
@@ -32,14 +32,16 @@ public static class DependencyInjection
             Directory.CreateDirectory(uploadsBasePath);
         }
 
-
-
         services.AddScoped<IHistoryProcessor, HistoryProcessor>();
         services.AddScoped<IFileAttachmentService, FileAttachmentService>();
         services.AddScoped<IToolDefinitionService, ToolDefinitionService>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
-        services.AddScoped<IAiRequestOrchestrator, AiRequestOrchestrator>();
-
+        
+        // New unified streaming service
+        services.AddScoped<IStreamingService, StreamingService>();
+        
+        // Keep old services for backward compatibility during transition
+        // services.AddScoped<IAiRequestOrchestrator, AiRequestOrchestrator>();
 
         services.AddScoped<ToolCallHandler>();
         services.AddScoped<IStreamChunkParser, OpenAiStreamChunkParser>();
@@ -74,12 +76,12 @@ public static class DependencyInjection
         
         services.AddScoped<TokenUsageService>();
         services.AddScoped<PluginService>();
-        services.AddScoped<ConversationTurnProcessor>();
+        // services.AddScoped<ConversationTurnProcessor>();
         
-        services.AddScoped<IResponseHandler, ImageResponseHandler>();
-        services.AddScoped<IResponseHandler, ToolCallStreamingResponseHandler>();
-        services.AddScoped<IResponseHandler, TextStreamingResponseHandler>();
-        services.AddScoped<IMessageStreamer, MessageStreamer>();
+        // services.AddScoped<IResponseHandler, ImageResponseHandler>();
+        // services.AddScoped<IResponseHandler, ToolCallStreamingResponseHandler>();
+        // services.AddScoped<IResponseHandler, TextStreamingResponseHandler>();
+        // services.AddScoped<IMessageStreamer, MessageStreamer>();
         services.AddScoped<IAiMessageFinalizer, AiMessageFinalizer>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
         services.AddScoped<FileUploadService>(provider =>

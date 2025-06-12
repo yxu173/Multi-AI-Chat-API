@@ -4,6 +4,7 @@ using Application.Notifications;
 using Application.Services.AI;
 using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
+using Application.Services.Streaming;
 using Domain.Repositories;
 using FastEndpoints;
 using Microsoft.Extensions.Logging;
@@ -16,19 +17,19 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
 {
     private readonly IChatSessionRepository _chatSessionRepository;
     private readonly IMessageRepository _messageRepository;
-    private readonly IAiRequestOrchestrator _aiRequestOrchestrator;
+    private readonly IStreamingService _streamingService;
     private readonly ILogger<SendMessageHandler> _logger;
     private const int MaxTitleLength = 50;
 
     public SendMessageHandler(
         IChatSessionRepository chatSessionRepository,
         IMessageRepository messageRepository,
-        IAiRequestOrchestrator aiRequestOrchestrator,
+        IStreamingService streamingService,
         ILogger<SendMessageHandler> logger)
     {
         _chatSessionRepository = chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
-        _aiRequestOrchestrator = aiRequestOrchestrator ?? throw new ArgumentNullException(nameof(aiRequestOrchestrator));
+        _streamingService = streamingService ?? throw new ArgumentNullException(nameof(streamingService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -50,7 +51,7 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         
         try
         {
-            var request = new AiOrchestrationRequest(
+            var request = new StreamingRequest(
                 ChatSessionId: command.ChatSessionId,
                 UserId: command.UserId,
                 AiMessageId: aiMessage.Id,
@@ -62,7 +63,7 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 SafetyTolerance: command.SafetyTolerance
             );
 
-            await _aiRequestOrchestrator.ProcessRequestAsync(request, ct);
+            await _streamingService.StreamResponseAsync(request, ct);
 
             return Result.Success();
         }

@@ -3,6 +3,7 @@ using Application.Notifications;
 using Application.Services.AI;
 using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
+using Application.Services.Streaming;
 using Application.Services.Utilities;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
@@ -23,20 +24,20 @@ public class EditMessageHandler : Application.Abstractions.Messaging.ICommandHan
     private readonly IChatSessionRepository _chatSessionRepository;
     private readonly IMessageRepository _messageRepository;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
-    private readonly IAiRequestOrchestrator _aiRequestOrchestrator;
+    private readonly IStreamingService _streamingService;
     private readonly ILogger<EditMessageHandler> _logger;
 
     public EditMessageHandler(
         IChatSessionRepository chatSessionRepository,
         IMessageRepository messageRepository,
         IFileAttachmentRepository fileAttachmentRepository,
-        IAiRequestOrchestrator aiRequestOrchestrator,
+        IStreamingService streamingService,
         ILogger<EditMessageHandler> logger)
     {
         _chatSessionRepository = chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _fileAttachmentRepository = fileAttachmentRepository ?? throw new ArgumentNullException(nameof(fileAttachmentRepository));
-        _aiRequestOrchestrator = aiRequestOrchestrator ?? throw new ArgumentNullException(nameof(aiRequestOrchestrator));
+        _streamingService = streamingService ?? throw new ArgumentNullException(nameof(streamingService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -80,7 +81,7 @@ public class EditMessageHandler : Application.Abstractions.Messaging.ICommandHan
 
         try
         {
-            var request = new AiOrchestrationRequest(
+            var streamingRequest = new StreamingRequest(
                 ChatSessionId: command.ChatSessionId,
                 UserId: command.UserId,
                 AiMessageId: aiMessage.Id,
@@ -92,7 +93,7 @@ public class EditMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 SafetyTolerance: command.SafetyTolerance
             );
 
-            await _aiRequestOrchestrator.ProcessRequestAsync(request, cancellationToken);
+            await _streamingService.StreamResponseAsync(streamingRequest, cancellationToken);
             return Result.Success();
         }
         catch (Exception ex)
