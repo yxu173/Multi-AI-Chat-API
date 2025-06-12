@@ -8,10 +8,8 @@ using Application.Features.Chats.SendMessage;
 using Application.Features.Chats.EditMessage;
 using Application.Features.Chats.RegenerateResponse;
 using Application.Features.Chats.DeepSearch;
-using Application.Services.Messaging;
 using FastEndpoints;
 using System.Diagnostics;
-using OpenTelemetry.Trace;
 
 namespace Web.Api.Hubs;
 
@@ -22,7 +20,7 @@ public class ChatHub : Hub
     private readonly ILogger<ChatHub> _logger;
 
     private static readonly ActivitySource ActivitySource = new("Web.Api.Hubs.ChatHub", "1.0.0");
-    private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024;
+    private const int MaxClientFileSize = 10 * 1024 * 1024;
 
     public ChatHub(
         IFileAttachmentRepository fileAttachmentRepository,
@@ -606,12 +604,12 @@ public class ChatHub : Hub
                 continue;
             }
 
-            if (fileAttachment.FileSize > MAX_CLIENT_FILE_SIZE)
+            if (fileAttachment.FileSize > MaxClientFileSize)
             {
                 _logger.LogWarning("File attachment {FileName} (ID: {FileId}, Size: {FileSize}) exceeds max client size {MaxFileSize} and was skipped during content processing.",
-                                 fileAttachment.FileName, fileId, fileAttachment.FileSize, MAX_CLIENT_FILE_SIZE);
+                                 fileAttachment.FileName, fileId, fileAttachment.FileSize, MaxClientFileSize);
                 processedContent +=
-                    $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit of {MAX_CLIENT_FILE_SIZE / (1024 * 1024)}MB]";
+                    $"\n[Attachment {fileAttachment.FileName} skipped: exceeds size limit of {MaxClientFileSize / (1024 * 1024)}MB]";
                 continue;
             }
 

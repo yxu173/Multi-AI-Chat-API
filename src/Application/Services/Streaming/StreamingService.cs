@@ -15,6 +15,7 @@ using Domain.Repositories;
 using FastEndpoints;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Text;
 
 namespace Application.Services.Streaming;
 
@@ -415,7 +416,7 @@ public class StreamingService : IStreamingService
     {
         public string? Id { get; set; }
         public string? Name { get; set; }
-        public System.Text.StringBuilder ArgumentBuffer { get; } = new System.Text.StringBuilder();
+        public StringBuilder ArgumentBuffer { get; } = new();
     }
 }
 

@@ -34,7 +34,6 @@ builder.Logging.AddOpenTelemetry(options =>
     options.IncludeScopes = true;
     options.ParseStateValues = true;
     options.AddConsoleExporter();
-    // We'll use console exporter for local development
 });
 
 //builder.Logging.AddFilter<OpenTelemetry.Logs.OpenTelemetryLoggerProvider>("*", Microsoft.Extensions.Logging.LogLevel.Warning);

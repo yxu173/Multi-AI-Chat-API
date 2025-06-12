@@ -37,11 +37,7 @@ public static class DependencyInjection
         services.AddScoped<IToolDefinitionService, ToolDefinitionService>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
         
-        // New unified streaming service
         services.AddScoped<IStreamingService, StreamingService>();
-        
-        // Keep old services for backward compatibility during transition
-        // services.AddScoped<IAiRequestOrchestrator, AiRequestOrchestrator>();
 
         services.AddScoped<ToolCallHandler>();
         services.AddScoped<IStreamChunkParser, OpenAiStreamChunkParser>();
@@ -76,12 +72,7 @@ public static class DependencyInjection
         
         services.AddScoped<TokenUsageService>();
         services.AddScoped<PluginService>();
-        // services.AddScoped<ConversationTurnProcessor>();
-        
-        // services.AddScoped<IResponseHandler, ImageResponseHandler>();
-        // services.AddScoped<IResponseHandler, ToolCallStreamingResponseHandler>();
-        // services.AddScoped<IResponseHandler, TextStreamingResponseHandler>();
-        // services.AddScoped<IMessageStreamer, MessageStreamer>();
+       
         services.AddScoped<IAiMessageFinalizer, AiMessageFinalizer>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
         services.AddScoped<FileUploadService>(provider =>
