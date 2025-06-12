@@ -34,4 +34,8 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Abstractions\Interfaces\IAiAdapterFactory.cs" />
+  </ItemGroup>
+
 </Project>

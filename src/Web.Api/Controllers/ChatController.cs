@@ -5,8 +5,8 @@ using Application.Features.Chats.GetChatById;
 using Application.Features.Chats.GetChatBySeacrh;
 using Application.Features.Chats.GetChatDetails;
 using Application.Features.Chats.UpdateChatSession;
-using Application.Services.Chat;
 using Application.Services.Infrastructure;
+using Domain.Repositories;
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -87,12 +87,12 @@ public class ChatController : BaseController
     [Microsoft.AspNetCore.Mvc.HttpPost("ToggleThinking/{chatId}")]
     public async Task<IResult> ToggleThinking([FromRoute] Guid chatId,
         [Microsoft.AspNetCore.Mvc.FromBody] ToggleThinkingRequest request,
-        [FromServices] ChatSessionService chatSessionService,
-        [FromServices] Domain.Repositories.IAiModelRepository aiModelRepository)
+        [FromServices] IChatSessionRepository chatSessionRepository,
+        [FromServices] IAiModelRepository aiModelRepository)
     {
         try
         {
-            var session = await chatSessionService.GetChatSessionAsync(chatId);
+            var session = await chatSessionRepository.GetByIdWithMessagesAndModelAndProviderAsync(chatId);
 
             if (session.UserId != UserId)
             {

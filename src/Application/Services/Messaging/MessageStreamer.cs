@@ -17,7 +17,7 @@ public class MessageStreamer : IMessageStreamer
     private readonly StreamingOperationManager _streamingOperationManager;
     private readonly ILogger<MessageStreamer> _logger;
     private readonly TokenUsageService _tokenUsageService;
-    private readonly MessageService _messageService;
+    private readonly IMessageRepository _messageRepository;
     private readonly Dictionary<ResponseType, IResponseHandler> _responseHandlers;
     private readonly IAiMessageFinalizer _aiMessageFinalizer;
 
@@ -25,7 +25,7 @@ public class MessageStreamer : IMessageStreamer
         StreamingOperationManager streamingOperationManager,
         ILogger<MessageStreamer> logger,
         TokenUsageService tokenUsageService,
-        MessageService messageService,
+        IMessageRepository messageRepository,
         IEnumerable<IResponseHandler> responseHandlers,
         IAiMessageFinalizer aiMessageFinalizer
     )
@@ -33,7 +33,7 @@ public class MessageStreamer : IMessageStreamer
         _streamingOperationManager = streamingOperationManager;
         _logger = logger;
         _tokenUsageService = tokenUsageService;
-        _messageService = messageService;
+        _messageRepository = messageRepository;
         _responseHandlers = responseHandlers.ToDictionary(h => h.ResponseType);
         _aiMessageFinalizer = aiMessageFinalizer;
     }
@@ -75,7 +75,7 @@ public class MessageStreamer : IMessageStreamer
 
             if (!string.IsNullOrEmpty(handlerResult.AccumulatedThinkingContent))
             {
-                await _messageService.UpdateMessageThinkingContentAsync(aiMessage,
+                await UpdateMessageThinkingContentAsync(aiMessage,
                     handlerResult.AccumulatedThinkingContent,
                     CancellationToken.None);
                 
@@ -137,5 +137,14 @@ public class MessageStreamer : IMessageStreamer
         {
             _logger.LogError(ex, "Error publishing thinking content update via SignalR for message {MessageId}", messageId);
         }
+    }
+
+    private async Task UpdateMessageThinkingContentAsync(
+        Message message,
+        string? thinkingContent,
+        CancellationToken cancellationToken = default)
+    {
+        message.UpdateThinkingContent(thinkingContent);
+        await _messageRepository.UpdateAsync(message, cancellationToken);
     }
 }

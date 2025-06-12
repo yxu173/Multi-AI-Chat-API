@@ -4,37 +4,32 @@ using System.Security.Claims;
 using Domain.Repositories;
 using Domain.Aggregates.Chats;
 using Application.Features.Chats.GetChatById;
-using Application.Services.Chat;
+using Application.Features.Chats.SendMessage;
+using Application.Features.Chats.EditMessage;
+using Application.Features.Chats.RegenerateResponse;
+using Application.Features.Chats.DeepSearch;
 using Application.Services.Messaging;
 using FastEndpoints;
 using System.Diagnostics;
 using OpenTelemetry.Trace;
-using System.Text.Json.Nodes;
-using Application.Services.Plugins;
 
 namespace Web.Api.Hubs;
 
 [Authorize]
 public class ChatHub : Hub
 {
-    private readonly ChatService _chatService;
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
-    private readonly MessageService _messageService;
     private readonly ILogger<ChatHub> _logger;
 
     private static readonly ActivitySource ActivitySource = new("Web.Api.Hubs.ChatHub", "1.0.0");
     private const int MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024;
 
     public ChatHub(
-        ChatService chatService,
         IFileAttachmentRepository fileAttachmentRepository,
-        MessageService messageService,
         ILogger<ChatHub> logger)
     {
-        _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
         _fileAttachmentRepository = fileAttachmentRepository ??
                                     throw new ArgumentNullException(nameof(fileAttachmentRepository));
-        _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -153,23 +148,43 @@ public class ChatHub : Hub
                 return;
             }
 
-            var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value; // convert it to Guid 
-            if (userId == null)
+            var userIdValue = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdValue, out var userId))
             {
-                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                await Clients.Caller.SendAsync("Error", "User not authenticated or invalid ID format");
                 return;
             }
 
-            // If deep search is enabled, execute the plugin first
             if (enableDeepSearch)
             {
-                await _chatService.DeepSearchAndSendMessageAsync(chatSessionGuid, Guid.Parse(userId), content, 
-                    enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
+                var deepSearchCommand = new DeepSearchCommand(
+                    chatSessionGuid,
+                    userId,
+                    content,
+                    enableThinking,
+                    imageSize,
+                    numImages,
+                    outputFormat,
+                    enableSafetyChecker,
+                    safetyTolerance
+                );
+                await deepSearchCommand.ExecuteAsync();
             }
             else
             {
-                await _chatService.SendUserMessageAsync(chatSessionGuid, Guid.Parse(userId), content,
-                    enableThinking, imageSize, numImages, outputFormat, enableSafetyChecker, safetyTolerance);
+                var command = new SendMessageCommand(
+                    chatSessionGuid,
+                    userId,
+                    content,
+                    enableThinking,
+                    imageSize,
+                    numImages,
+                    outputFormat,
+                    enableSafetyChecker,
+                    safetyTolerance
+                );
+
+                await command.ExecuteAsync();
             }
         }
         catch (Exception ex)
@@ -242,7 +257,7 @@ public class ChatHub : Hub
                 processAttachmentsActivity?.SetTag("content_length_after_processing", processedContent.Length);
             }
 
-            await _chatService.SendUserMessageAsync(
+            var command = new SendMessageCommand(
                 chatGuid,
                 userId,
                 processedContent,
@@ -251,9 +266,10 @@ public class ChatHub : Hub
                 numImages,
                 outputFormat,
                 enableSafetyChecker,
-                safetyTolerance,
-                cancellationToken: default);
-            activity?.AddEvent(new ActivityEvent("Message with attachments sent to ChatService."));
+                safetyTolerance);
+            
+            await command.ExecuteAsync();
+            activity?.AddEvent(new ActivityEvent("Message with attachments sent via command."));
         }
         catch (Exception ex)
         {
@@ -332,8 +348,8 @@ public class ChatHub : Hub
                 return;
             }
 
-            await _chatService.EditUserMessageAsync(chatGuid, userId, messageGuid,
-                newContent);
+            var command = new EditMessageCommand(chatGuid, userId, messageGuid, newContent);
+            await command.ExecuteAsync();
             activity?.AddEvent(new ActivityEvent("Edit message request sent to ChatService."));
         }
         catch (Exception ex)
@@ -416,8 +432,8 @@ public class ChatHub : Hub
                 processAttachmentsActivity?.SetTag("content_length_after_processing", processedContent.Length);
             }
 
-            await _chatService.EditUserMessageAsync(chatGuid, userId, messageGuid,
-                processedContent);
+            var command = new EditMessageCommand(chatGuid, userId, messageGuid, processedContent);
+            await command.ExecuteAsync();
             activity?.AddEvent(new ActivityEvent("Edit message with attachments request sent to ChatService."));
         }
         catch (Exception ex)
@@ -456,7 +472,7 @@ public class ChatHub : Hub
                 return;
             }
 
-            var attachments = await _messageService.GetMessageAttachmentsAsync(messageGuid);
+            var attachments = await _fileAttachmentRepository.GetByMessageIdAsync(messageGuid);
             activity?.SetTag("attachments.count", attachments.Count);
 
             foreach (var attachment in attachments)
@@ -542,7 +558,8 @@ public class ChatHub : Hub
                 return;
             }
 
-            await _chatService.RegenerateAiResponseAsync(chatGuid, userId, userMessageGuid);
+            var command = new RegenerateResponseCommand(chatGuid, userId, userMessageGuid);
+            await command.ExecuteAsync();
             activity?.AddEvent(new ActivityEvent("Regenerate response request sent to ChatService."));
         }
         catch (Exception ex)
