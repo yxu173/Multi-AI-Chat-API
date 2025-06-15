@@ -13,131 +13,364 @@ public class GrokStreamChunkParser : BaseStreamChunkParser<GrokStreamChunkParser
 
     public override ModelType SupportedModelType => ModelType.Grok;
 
+    protected override ParsedChunkInfo ParseModelSpecificChunkWithReader(ref Utf8JsonReader reader)
+    {
+        string? textDelta = null;
+        string? thinkingDelta = null;
+        ToolCallChunk? toolCallInfo = null;
+        int? inputTokens = null;
+        int? outputTokens = null;
+        string? finishReason = null;
+
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Read();
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "id":
+                case "object":
+                case "created":
+                case "model":
+                    reader.Skip();
+                    break;
+                case "choices":
+                    ParseChoicesArray(ref reader, ref textDelta, ref thinkingDelta, ref toolCallInfo, ref finishReason);
+                    break;
+                case "usage":
+                    ParseUsageObject(ref reader, ref inputTokens, ref outputTokens);
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+
+        return new ParsedChunkInfo(
+            TextDelta: textDelta,
+            ThinkingDelta: thinkingDelta,
+            ToolCallInfo: toolCallInfo,
+            InputTokens: inputTokens,
+            OutputTokens: outputTokens,
+            FinishReason: finishReason
+        );
+    }
+
+    private void ParseChoicesArray(ref Utf8JsonReader reader, ref string? textDelta, ref string? thinkingDelta, ref ToolCallChunk? toolCallInfo, ref string? finishReason)
+    {
+        if (reader.TokenType != JsonTokenType.StartArray)
+        {
+            reader.Skip();
+            return;
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            ParseChoiceObject(ref reader, ref textDelta, ref thinkingDelta, ref toolCallInfo, ref finishReason);
+        }
+    }
+
+    private void ParseChoiceObject(ref Utf8JsonReader reader, ref string? textDelta, ref string? thinkingDelta, ref ToolCallChunk? toolCallInfo, ref string? finishReason)
+    {
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "index":
+                    reader.Skip();
+                    break;
+                case "delta":
+                    ParseDeltaObject(ref reader, ref textDelta, ref thinkingDelta, ref toolCallInfo);
+                    break;
+                case "finish_reason":
+                    finishReason = reader.GetString();
+                    break;
+                case "logprobs":
+                    reader.Skip();
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+    }
+
+    private void ParseDeltaObject(ref Utf8JsonReader reader, ref string? textDelta, ref string? thinkingDelta, ref ToolCallChunk? toolCallInfo)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Skip();
+            return;
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "role":
+                    reader.Skip();
+                    break;
+                case "content":
+                    textDelta = reader.GetString();
+                    break;
+                case "reasoning_content":
+                    thinkingDelta = reader.GetString();
+                    break;
+                case "tool_calls":
+                    ParseToolCallsArray(ref reader, ref toolCallInfo);
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+    }
+
+    private void ParseToolCallsArray(ref Utf8JsonReader reader, ref ToolCallChunk? toolCallInfo)
+    {
+        if (reader.TokenType != JsonTokenType.StartArray)
+        {
+            reader.Skip();
+            return;
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            ParseToolCallObject(ref reader, ref toolCallInfo);
+        }
+    }
+
+    private void ParseToolCallObject(ref Utf8JsonReader reader, ref ToolCallChunk? toolCallInfo)
+    {
+        string? toolId = null;
+        string? toolName = null;
+        string? toolArguments = null;
+        bool isComplete = false;
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "index":
+                    reader.Skip();
+                    break;
+                case "id":
+                    toolId = reader.GetString();
+                    break;
+                case "type":
+                    reader.Skip();
+                    break;
+                case "function":
+                    ParseFunctionObject(ref reader, ref toolName, ref toolArguments);
+                    break;
+                case "is_complete":
+                    isComplete = reader.GetBoolean();
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(toolName))
+        {
+            toolCallInfo = new ToolCallChunk(0, toolId, toolName, toolArguments, isComplete);
+        }
+    }
+
+    private void ParseFunctionObject(ref Utf8JsonReader reader, ref string? toolName, ref string? toolArguments)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Skip();
+            return;
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "name":
+                    toolName = reader.GetString();
+                    break;
+                case "arguments":
+                    toolArguments = reader.GetString();
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+    }
+
+    private void ParseUsageObject(ref Utf8JsonReader reader, ref int? inputTokens, ref int? outputTokens)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Skip();
+            return;
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "prompt_tokens":
+                    inputTokens = reader.GetInt32();
+                    break;
+                case "completion_tokens":
+                    outputTokens = reader.GetInt32();
+                    break;
+                case "total_tokens":
+                    reader.Skip();
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+    }
+
     protected override ParsedChunkInfo ParseModelSpecificChunkInternal(JsonDocument jsonDoc)
     {
         var root = jsonDoc.RootElement;
 
         string? textDelta = null;
         string? thinkingDelta = null;
+        ToolCallChunk? toolCallInfo = null;
         int? inputTokens = null;
         int? outputTokens = null;
         string? finishReason = null;
-        ToolCallChunk? toolCallInfo = null;
 
-        // Grok's structure is similar to OpenAI: choices -> delta -> content/tool_calls
-        if (root.TryGetProperty("choices", out var choicesElement) && choicesElement.ValueKind == JsonValueKind.Array && choicesElement.GetArrayLength() > 0)
+        // Parse choices array
+        if (root.TryGetProperty("choices", out var choicesElement) && choicesElement.ValueKind == JsonValueKind.Array)
         {
-            var firstChoice = choicesElement[0];
-
-            // Finish reason can be on the choice itself
-            if (firstChoice.TryGetProperty("finish_reason", out var choiceFinishReasonElement) && choiceFinishReasonElement.ValueKind == JsonValueKind.String)
+            foreach (var choice in choicesElement.EnumerateArray())
             {
-                finishReason = choiceFinishReasonElement.GetString();
-                Logger?.LogDebug("Parsed Grok finish reason from choice: {FinishReason}", finishReason);
-            }
-
-            if (firstChoice.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.Object)
-            {
-                if (deltaElement.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String)
+                if (choice.TryGetProperty("delta", out var deltaElement))
                 {
-                    textDelta = contentElement.GetString();
-                    Logger?.LogTrace("Parsed Grok text delta: '{TextDelta}'", textDelta);
-                }
-
-                // Parse tool call information from delta
-                if (deltaElement.TryGetProperty("tool_calls", out var toolCallsElement) &&
-                    toolCallsElement.ValueKind == JsonValueKind.Array &&
-                    toolCallsElement.GetArrayLength() > 0)
-                {
-                    var toolCallDelta = toolCallsElement[0]; // Assuming one tool call part per delta chunk
-                    string? functionId = null;
-                    string? functionName = null;
-                    string? argumentChunk = null;
-                    int toolCallIndex = 0; // Grok tool_calls in delta might have an index property
-
-                    if (toolCallDelta.TryGetProperty("index", out var indexElement) && indexElement.TryGetInt32(out int idx))
+                    if (deltaElement.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String)
                     {
-                        toolCallIndex = idx;
+                        textDelta = contentElement.GetString();
+                        Logger?.LogTrace("Parsed Grok text delta: '{TextDelta}'", textDelta);
                     }
-
-                    if (toolCallDelta.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String)
+                    else if (deltaElement.TryGetProperty("reasoning_content", out var reasoningElement) && reasoningElement.ValueKind == JsonValueKind.String)
                     {
-                        functionId = idElement.GetString();
+                        thinkingDelta = reasoningElement.GetString();
+                        Logger?.LogTrace("Parsed Grok reasoning content (thinking delta): '{ReasoningContent}'", thinkingDelta);
                     }
-
-                    if (toolCallDelta.TryGetProperty("function", out var functionElement) && functionElement.ValueKind == JsonValueKind.Object)
+                    else if (deltaElement.TryGetProperty("tool_calls", out var toolCallsElement) && toolCallsElement.ValueKind == JsonValueKind.Array)
                     {
-                        if (functionElement.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
+                        foreach (var toolCall in toolCallsElement.EnumerateArray())
                         {
-                            functionName = nameElement.GetString();
-                        }
-                        if (functionElement.TryGetProperty("arguments", out var argsElement) && argsElement.ValueKind == JsonValueKind.String)
-                        {
-                            argumentChunk = argsElement.GetString();
+                            if (toolCall.TryGetProperty("function", out var functionElement))
+                            {
+                                if (functionElement.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
+                                {
+                                    var functionName = nameElement.GetString();
+                                    string? functionArgs = null;
+                                    if (functionElement.TryGetProperty("arguments", out var argsElement))
+                                    {
+                                        functionArgs = argsElement.GetString();
+                                    }
+                                    bool isComplete = false;
+                                    if (toolCall.TryGetProperty("is_complete", out var isCompleteElement))
+                                    {
+                                        isComplete = isCompleteElement.GetBoolean();
+                                    }
+                                    toolCallInfo = new ToolCallChunk(0, null, functionName, functionArgs, isComplete);
+                                    Logger?.LogTrace("Parsed Grok tool call delta: Index={ToolIndex}, Name={Name}, Args={HasArgs}, CompleteHere={IsComplete}",
+                                        0, functionName, !string.IsNullOrEmpty(functionArgs), isComplete);
+                                }
+                            }
                         }
                     }
-
-                    if (!string.IsNullOrEmpty(functionId) || !string.IsNullOrEmpty(functionName) || !string.IsNullOrEmpty(argumentChunk))
-                    {
-                           bool isCurrentToolCallComplete = (finishReason == "tool_calls" && !string.IsNullOrEmpty(functionName) && !string.IsNullOrEmpty(argumentChunk)); 
-                        
-                        toolCallInfo = new ToolCallChunk(
-                            Index: toolCallIndex,
-                            Id: functionId,
-                            Name: functionName,
-                            ArgumentChunk: argumentChunk,
-                            IsComplete: isCurrentToolCallComplete 
-                        );
-                        Logger?.LogTrace("Parsed Grok tool call delta: Index={ToolIndex}, Id={Id}, Name={Name}, Args={HasArgs}, CompleteHere={IsComplete}",
-                            toolCallIndex, functionId, functionName, !string.IsNullOrEmpty(argumentChunk), isCurrentToolCallComplete);
-                    }
                 }
-                if (deltaElement.TryGetProperty("reasoning_content", out var reasoningElement) && reasoningElement.ValueKind == JsonValueKind.String)
-                { 
-                    thinkingDelta = reasoningElement.GetString();
-                    Logger?.LogTrace("Parsed Grok reasoning content (thinking delta): '{ReasoningContent}'", thinkingDelta);
+
+                if (choice.TryGetProperty("finish_reason", out var finishReasonElement) && finishReasonElement.ValueKind == JsonValueKind.String)
+                {
+                    finishReason = finishReasonElement.GetString();
+                    Logger?.LogDebug("Parsed Grok finish reason: {FinishReason}", finishReason);
                 }
             }
         }
 
-         if (root.TryGetProperty("usage", out var usageElement) && usageElement.ValueKind == JsonValueKind.Object)
+        // Parse usage
+        if (root.TryGetProperty("usage", out var usageElement))
         {
-            if (usageElement.TryGetProperty("prompt_tokens", out var promptTokensElement) && promptTokensElement.TryGetInt32(out var pt))
-            {
-                inputTokens = pt;
-            }
-            if (usageElement.TryGetProperty("completion_tokens", out var completionTokensElement) && completionTokensElement.TryGetInt32(out var ct))
-            {
-                outputTokens = ct;
-            }
-            if (usageElement.TryGetProperty("reasoning_tokens", out var reasoningTokensElement) && reasoningTokensElement.TryGetInt32(out var rt))
-            {
-                Logger?.LogTrace("Found Grok reasoning tokens in usage: {ReasoningTokens}", rt);
-                outputTokens = (outputTokens ?? 0) + rt;
-            }
-            Logger?.LogTrace("Parsed Grok token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
+            if (usageElement.TryGetProperty("prompt_tokens", out var promptTokens)) inputTokens = promptTokens.GetInt32();
+            if (usageElement.TryGetProperty("completion_tokens", out var completionTokens)) outputTokens = completionTokens.GetInt32();
+            Logger?.LogDebug("Parsed Grok token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
         }
-        
-        if (root.TryGetProperty("x_groq", out var xGroqElement) && xGroqElement.TryGetProperty("usage", out var xGroqUsageElement))
-        {
-            if (xGroqUsageElement.TryGetProperty("prompt_tokens", out var ptElement) && ptElement.TryGetInt32(out var pt))
-            {
-                inputTokens = pt; 
-            }
-            if (xGroqUsageElement.TryGetProperty("completion_tokens", out var ctElement) && ctElement.TryGetInt32(out var ct))
-            {
-                outputTokens = ct; 
-            }
-             if (xGroqUsageElement.TryGetProperty("reasoning_tokens", out var rtElement) && rtElement.TryGetInt32(out var rt))
-            {
-                Logger?.LogTrace("Found Grok reasoning tokens in x_groq usage: {ReasoningTokens}", rt);
-            }
-            if (xGroqUsageElement.TryGetProperty("total_tokens", out var ttElement) && ttElement.TryGetInt32(out var tt))
-            {
-            }
-            Logger?.LogDebug("Parsed Grok x_groq token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
-        }
-
 
         return new ParsedChunkInfo(
             TextDelta: textDelta,

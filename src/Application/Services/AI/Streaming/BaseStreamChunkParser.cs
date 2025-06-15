@@ -25,9 +25,8 @@ public abstract class BaseStreamChunkParser<TParser> : IStreamChunkParser where 
 
         try
         {
-            // Log the raw content at a trace level for debugging if needed
-            Logger.LogTrace("Attempting to parse raw JSON chunk: {RawJson}", rawJson);
-            return ParseModelSpecificChunk(rawJson);
+            // Use Utf8JsonReader for more efficient parsing
+            return ParseChunkWithUtf8Reader(rawJson);
         }
         catch (JsonException jsonEx)
         {
@@ -41,13 +40,24 @@ public abstract class BaseStreamChunkParser<TParser> : IStreamChunkParser where 
         }
     }
 
+    private ParsedChunkInfo ParseChunkWithUtf8Reader(string rawJson)
+    {
+        var jsonBytes = System.Text.Encoding.UTF8.GetBytes(rawJson);
+        var reader = new Utf8JsonReader(jsonBytes, new JsonReaderOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip
+        });
+
+        return ParseModelSpecificChunkWithReader(ref reader);
+    }
+
     protected virtual ParsedChunkInfo ParseModelSpecificChunk(string rawJson)
     {
         try
         {
-            // Implement shared parsing logic here
-            var jsonDoc = JsonDocument.Parse(rawJson);
-            // Add more shared logic as needed
+            // Fallback to JsonDocument for complex parsing scenarios
+            using var jsonDoc = JsonDocument.Parse(rawJson);
             return ParseModelSpecificChunkInternal(jsonDoc);
         }
         catch (JsonException jsonEx)
@@ -58,4 +68,7 @@ public abstract class BaseStreamChunkParser<TParser> : IStreamChunkParser where 
     }
 
     protected abstract ParsedChunkInfo ParseModelSpecificChunkInternal(JsonDocument jsonDoc);
+    
+    // New method for efficient parsing with Utf8JsonReader
+    protected abstract ParsedChunkInfo ParseModelSpecificChunkWithReader(ref Utf8JsonReader reader);
 }

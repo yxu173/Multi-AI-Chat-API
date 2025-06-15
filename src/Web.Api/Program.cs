@@ -33,7 +33,7 @@ builder.Logging.AddOpenTelemetry(options =>
     options.IncludeFormattedMessage = true;
     options.IncludeScopes = true;
     options.ParseStateValues = true;
-    options.AddConsoleExporter();
+  //  options.AddConsoleExporter();
 });
 
 //builder.Logging.AddFilter<OpenTelemetry.Logs.OpenTelemetryLoggerProvider>("*", Microsoft.Extensions.Logging.LogLevel.Warning);
@@ -48,7 +48,7 @@ builder.Services.AddOpenTelemetry()
                 .AddAspNetCoreInstrumentation(options => { options.RecordException = true; })
                 .AddHttpClientInstrumentation(options => { options.RecordException = true; })
                 .AddEntityFrameworkCoreInstrumentation(options => { options.SetDbStatementForText = true; })
-                .AddConsoleExporter()
+            //    .AddConsoleExporter()
     )
     .WithMetrics(meterProviderBuilder =>
             meterProviderBuilder

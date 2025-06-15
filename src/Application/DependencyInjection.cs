@@ -81,7 +81,14 @@ public static class DependencyInjection
                 uploadsBasePath,
                 provider.GetRequiredService<Hangfire.IBackgroundJobClient>(),
                 provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FileUploadService>>()));
+
+        // Streaming Performance Services
         services.AddSingleton<StreamingOperationManager>();
+        services.AddSingleton<StreamingPerformanceMonitor>();
+        
+        // Configure streaming performance options
+        services.Configure<StreamingPerformanceOptions>(
+            configuration.GetSection(StreamingPerformanceOptions.SectionName));
         
         services.AddGlobalPreProcessors();
 

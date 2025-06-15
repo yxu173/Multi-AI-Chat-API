@@ -13,6 +13,220 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
 
     public override ModelType SupportedModelType => ModelType.OpenAi;
 
+    protected override ParsedChunkInfo ParseModelSpecificChunkWithReader(ref Utf8JsonReader reader)
+    {
+        string? textDelta = null;
+        string? thinkingDelta = null;
+        ToolCallChunk? toolCallInfo = null;
+        int? inputTokens = null;
+        int? outputTokens = null;
+        string? finishReason = null;
+        string? eventType = null;
+
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Read();
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "type":
+                    eventType = reader.GetString();
+                    break;
+                case "delta":
+                    if (reader.TokenType == JsonTokenType.String)
+                    {
+                        textDelta = reader.GetString();
+                    }
+                    break;
+                case "response":
+                    ParseResponseObject(ref reader, ref inputTokens, ref outputTokens, ref finishReason);
+                    break;
+                case "error":
+                    finishReason = "error";
+                    break;
+                case "item":
+                    ParseItemObject(ref reader, ref toolCallInfo);
+                    break;
+                case "output_index":
+                    // Handle output_index for tool calls
+                    break;
+                case "reasoning_summary_text":
+                    if (reader.TokenType == JsonTokenType.StartObject)
+                    {
+                        reader.Read();
+                        if (reader.TokenType == JsonTokenType.PropertyName && reader.GetString() == "delta")
+                        {
+                            reader.Read();
+                            if (reader.TokenType == JsonTokenType.String)
+                            {
+                                thinkingDelta = reader.GetString();
+                            }
+                        }
+                    }
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+
+        // Process event type to determine finish reason
+        if (eventType == "response.completed")
+        {
+            finishReason = finishReason ?? "stop";
+        }
+        else if (eventType == "response.error")
+        {
+            finishReason = "error";
+        }
+
+        return new ParsedChunkInfo(
+            TextDelta: textDelta,
+            ThinkingDelta: thinkingDelta,
+            ToolCallInfo: toolCallInfo,
+            InputTokens: inputTokens,
+            OutputTokens: outputTokens,
+            FinishReason: finishReason
+        );
+    }
+
+    private void ParseResponseObject(ref Utf8JsonReader reader, ref int? inputTokens, ref int? outputTokens, ref string? finishReason)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Skip();
+            return;
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "usage":
+                    ParseUsageObject(ref reader, ref inputTokens, ref outputTokens);
+                    break;
+                case "status":
+                    var status = reader.GetString();
+                    finishReason = status switch
+                    {
+                        "completed" => "stop",
+                        "error" or "failed" => "error",
+                        "incomplete" => "length",
+                        _ => status
+                    };
+                    break;
+                case "error":
+                    finishReason = "error";
+                    reader.Skip();
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+    }
+
+    private void ParseUsageObject(ref Utf8JsonReader reader, ref int? inputTokens, ref int? outputTokens)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Skip();
+            return;
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "input_tokens":
+                    inputTokens = reader.GetInt32();
+                    break;
+                case "output_tokens":
+                    outputTokens = reader.GetInt32();
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+    }
+
+    private void ParseItemObject(ref Utf8JsonReader reader, ref ToolCallChunk? toolCallInfo)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Skip();
+            return;
+        }
+
+        string? itemType = null;
+        string? callId = null;
+        string? name = null;
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                reader.Skip();
+                continue;
+            }
+
+            var propertyName = reader.GetString();
+            reader.Read();
+
+            switch (propertyName)
+            {
+                case "type":
+                    itemType = reader.GetString();
+                    break;
+                case "call_id":
+                    callId = reader.GetString();
+                    break;
+                case "name":
+                    name = reader.GetString();
+                    break;
+                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+
+        if (itemType == "function_call")
+        {
+            toolCallInfo = new ToolCallChunk(0, callId, name);
+        }
+    }
+
     protected override ParsedChunkInfo ParseModelSpecificChunkInternal(JsonDocument jsonDoc)
     {
         // The main try-catch block is now in the base class.
