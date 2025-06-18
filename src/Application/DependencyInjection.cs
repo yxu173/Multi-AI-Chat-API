@@ -17,6 +17,7 @@ using Application.Services.Plugins;
 using Application.Services.Streaming;
 using Application.Services.TokenUsage;
 using Application.Services.Files.BackgroundProcessing;
+using Application.Services.Utilities;
 
 namespace Application;
 
@@ -36,6 +37,7 @@ public static class DependencyInjection
         services.AddScoped<IFileAttachmentService, FileAttachmentService>();
         services.AddScoped<IToolDefinitionService, ToolDefinitionService>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
+        services.AddScoped<ChatTitleGenerator>();
         
         services.AddScoped<IStreamingService, StreamingService>();
 

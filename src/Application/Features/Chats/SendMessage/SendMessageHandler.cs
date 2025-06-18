@@ -5,11 +5,14 @@ using Application.Services.AI;
 using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
 using Application.Services.Streaming;
+using Application.Services.Utilities;
 using Domain.Repositories;
 using FastEndpoints;
 using Microsoft.Extensions.Logging;
 using SharedKernal;
 using Domain.Aggregates.Chats;
+using Application.Abstractions.Interfaces;
+using Domain.Enums;
 
 namespace Application.Features.Chats.SendMessage;
 
@@ -19,18 +22,23 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
     private readonly IMessageRepository _messageRepository;
     private readonly IStreamingService _streamingService;
     private readonly ILogger<SendMessageHandler> _logger;
-    private const int MaxTitleLength = 50;
+    private readonly IAiModelServiceFactory _aiModelServiceFactory;
+    private readonly ChatTitleGenerator _titleGenerator;
 
     public SendMessageHandler(
         IChatSessionRepository chatSessionRepository,
         IMessageRepository messageRepository,
         IStreamingService streamingService,
-        ILogger<SendMessageHandler> logger)
+        ILogger<SendMessageHandler> logger,
+        IAiModelServiceFactory aiModelServiceFactory,
+        ChatTitleGenerator titleGenerator)
     {
         _chatSessionRepository = chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _streamingService = streamingService ?? throw new ArgumentNullException(nameof(streamingService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
+        _titleGenerator = titleGenerator ?? throw new ArgumentNullException(nameof(titleGenerator));
     }
 
     public async Task<Result> ExecuteAsync(SendMessageCommand command, CancellationToken ct)
@@ -78,20 +86,13 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
     private async Task UpdateChatSessionTitleAsync(ChatSession chatSession, string content,
         CancellationToken cancellationToken = default)
     {
-        if (!chatSession.Messages.Any())
+        if (chatSession.Messages.Any())
         {
-            var title = GenerateTitleFromContent(content);
+            var title = await _titleGenerator.GenerateTitleAsync(chatSession, content, cancellationToken);
             chatSession.UpdateTitle(title);
             await _chatSessionRepository.UpdateAsync(chatSession, cancellationToken);
             await new ChatTitleUpdatedNotification(chatSession.Id, title).PublishAsync(cancellation: cancellationToken);
         }
-    }
-
-    private string GenerateTitleFromContent(string content)
-    {
-        if (string.IsNullOrWhiteSpace(content))
-            return "New Chat";
-        return content.Length <= MaxTitleLength ? content : content.Substring(0, MaxTitleLength) + "...";
     }
     
     private async Task<Message> CreateAndSaveUserMessageAsync(
