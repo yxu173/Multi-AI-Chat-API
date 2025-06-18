@@ -5,8 +5,10 @@ using Application.Features.Chats.GetAllChatsByUserId;
 using Application.Features.Chats.GetChatById;
 using Application.Features.Chats.GetChatBySeacrh;
 using Application.Features.Chats.GetChatDetails;
+using Application.Features.Chats.GetSharedChat;
 using Application.Features.Chats.GetSortedChats;
 using Application.Features.Chats.MoveChatToFolder;
+using Application.Features.Chats.ShareChat;
 using Application.Features.Chats.UpdateChatSession;
 using Application.Services.Infrastructure;
 using Domain.Repositories;
@@ -164,6 +166,22 @@ public class ChatController : BaseController
     public async Task<IResult> BulkDeleteChats([Microsoft.AspNetCore.Mvc.FromBody] BulkDeleteChatsRequest request)
     {
         var result = await new BulkDeleteChatsCommand(UserId, request.ChatIds).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [Microsoft.AspNetCore.Mvc.HttpPost("{id}/Share")]
+    public async Task<IResult> ShareChat([FromRoute] Guid id,
+        [Microsoft.AspNetCore.Mvc.FromBody] ShareChatRequest request)
+    {
+        var result = await new ShareChatCommand(id, UserId, request.ExpiresAt).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [Microsoft.AspNetCore.Mvc.HttpGet("Shared/{token}")]
+    [AllowAnonymous]
+    public async Task<IResult> GetSharedChat([FromRoute] string token)
+    {
+        var result = await new GetSharedChatQuery(token).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

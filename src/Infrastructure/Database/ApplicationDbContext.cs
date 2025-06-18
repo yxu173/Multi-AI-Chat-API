@@ -37,6 +37,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<SubscriptionPlan> SubscriptionPlans { get; set; }
     public DbSet<UserSubscription> UserSubscriptions { get; set; }
 
+    public DbSet<SharedChat> SharedChats { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -44,6 +45,14 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         builder.Ignore<ModelParameters>();
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+
+        builder.Entity<SharedChat>(entity =>
+        {
+            entity.HasOne(s => s.Chat)
+                .WithMany()
+                .HasForeignKey(s => s.ChatId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 
 

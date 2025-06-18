@@ -31,6 +31,7 @@ public interface IApplicationDbContext
     DbSet<AiAgent> AiAgents { get; }
 
     DbSet<AiAgentPlugin> AiAgentPlugins { get; }
+    DbSet<SharedChat> SharedChats { get;}
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
