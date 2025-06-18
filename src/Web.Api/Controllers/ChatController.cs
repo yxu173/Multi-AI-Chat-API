@@ -5,6 +5,7 @@ using Application.Features.Chats.GetChatById;
 using Application.Features.Chats.GetChatBySeacrh;
 using Application.Features.Chats.GetChatDetails;
 using Application.Features.Chats.GetSortedChats;
+using Application.Features.Chats.MoveChatToFolder;
 using Application.Features.Chats.UpdateChatSession;
 using Application.Services.Infrastructure;
 using Domain.Repositories;
@@ -127,6 +128,13 @@ public class ChatController : BaseController
         [Microsoft.AspNetCore.Mvc.FromBody] UpdateChatSessionRequest request)
     {
         var result = await new UpdateChatSessionCommand(id, request.Title).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+    [Microsoft.AspNetCore.Mvc.HttpPut("Update/{id}/MoveToFolder")]
+    public async Task<IResult> MoveChatToFolder([FromRoute] Guid id,
+        [Microsoft.AspNetCore.Mvc.FromBody] MoveChatToFolderRequest request)
+    {
+        var result = await new MoveChatToFolderCommand(id, request.FolderId).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
