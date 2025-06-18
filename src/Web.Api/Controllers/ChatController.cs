@@ -4,6 +4,7 @@ using Application.Features.Chats.GetAllChatsByUserId;
 using Application.Features.Chats.GetChatById;
 using Application.Features.Chats.GetChatBySeacrh;
 using Application.Features.Chats.GetChatDetails;
+using Application.Features.Chats.GetSortedChats;
 using Application.Features.Chats.UpdateChatSession;
 using Application.Services.Infrastructure;
 using Domain.Repositories;
@@ -119,5 +120,26 @@ public class ChatController : BaseController
         {
             return Results.Problem(ex.Message);
         }
+    }
+
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetAll/OldestFirst")]
+    public async Task<IResult> GetOldestChatsFirst()
+    {
+        var result = await new GetSortedChatsQuery(UserId, ChatSortOrder.OldestFirst).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetAll/TitleAZ")]
+    public async Task<IResult> GetChatsTitleAZ()
+    {
+        var result = await new GetSortedChatsQuery(UserId, ChatSortOrder.TitleAZ).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [Microsoft.AspNetCore.Mvc.HttpGet("GetAll/TitleZA")]
+    public async Task<IResult> GetChatsTitleZA()
+    {
+        var result = await new GetSortedChatsQuery(UserId, ChatSortOrder.TitleZA).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
     }
 }
