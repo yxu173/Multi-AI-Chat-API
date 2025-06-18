@@ -121,6 +121,14 @@ public class ChatController : BaseController
             return Results.Problem(ex.Message);
         }
     }
+    
+    [Microsoft.AspNetCore.Mvc.HttpPut("Update/{id}")]
+    public async Task<IResult> UpdateChatSession([FromRoute] Guid id,
+        [Microsoft.AspNetCore.Mvc.FromBody] UpdateChatSessionRequest request)
+    {
+        var result = await new UpdateChatSessionCommand(id, request.Title).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
 
     [Microsoft.AspNetCore.Mvc.HttpGet("GetAll/OldestFirst")]
     public async Task<IResult> GetOldestChatsFirst()
