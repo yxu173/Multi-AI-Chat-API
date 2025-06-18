@@ -29,7 +29,7 @@ namespace Infrastructure.UnitTests.Repositories
             // Arrange
             var context = CreateContext(nameof(AddAndGetById_ShouldReturnFolder));
             var repo = new ChatFolderRepository(context);
-            var folder = ChatFolder.Create(Guid.NewGuid(), "MyFolder", "Desc");
+            var folder = ChatFolder.Create(Guid.NewGuid(), "MyFolder");
 
             // Act
             var added = await repo.AddAsync(folder, CancellationToken.None);
@@ -71,7 +71,7 @@ namespace Infrastructure.UnitTests.Repositories
             await repo.AddAsync(folder, CancellationToken.None);
 
             // Act
-            folder.UpdateDetails("NewName", "UpdatedDesc");
+            folder.UpdateDetails("NewName");
             var updated = await repo.UpdateAsync(folder, CancellationToken.None);
             var fetched = await repo.GetByIdAsync(folder.Id, CancellationToken.None);
 
