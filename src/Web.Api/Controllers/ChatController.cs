@@ -1,3 +1,4 @@
+using Application.Features.Chats.BulkDeleteChats;
 using Application.Features.Chats.CreateChatSession;
 using Application.Features.Chats.DeleteChatById;
 using Application.Features.Chats.GetAllChatsByUserId;
@@ -130,7 +131,7 @@ public class ChatController : BaseController
         var result = await new UpdateChatSessionCommand(id, request.Title).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
-    [Microsoft.AspNetCore.Mvc.HttpPut("Update/{id}/MoveToFolder")]
+    [Microsoft.AspNetCore.Mvc.HttpGet("Update/{id}/MoveToFolder")]
     public async Task<IResult> MoveChatToFolder([FromRoute] Guid id,
         [Microsoft.AspNetCore.Mvc.FromBody] MoveChatToFolderRequest request)
     {
@@ -156,6 +157,13 @@ public class ChatController : BaseController
     public async Task<IResult> GetChatsTitleZA()
     {
         var result = await new GetSortedChatsQuery(UserId, ChatSortOrder.TitleZA).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [Microsoft.AspNetCore.Mvc.HttpDelete("BulkDelete")]
+    public async Task<IResult> BulkDeleteChats([Microsoft.AspNetCore.Mvc.FromBody] BulkDeleteChatsRequest request)
+    {
+        var result = await new BulkDeleteChatsCommand(UserId, request.ChatIds).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

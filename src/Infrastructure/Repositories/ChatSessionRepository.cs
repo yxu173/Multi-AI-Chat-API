@@ -109,4 +109,11 @@ public class ChatSessionRepository : IChatSessionRepository
 
         return await query.ToListAsync();
     }
+
+    public async Task<int> BulkDeleteAsync(Guid userId, IEnumerable<Guid> chatIds, CancellationToken cancellationToken = default)
+    {
+        return await _context.ChatSessions
+            .Where(c => c.UserId == userId && chatIds.Contains(c.Id))
+            .ExecuteDeleteAsync(cancellationToken);
+    }
 }

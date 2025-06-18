@@ -15,4 +15,5 @@ public interface IChatSessionRepository
     Task<Result<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChatSession>> GetAllChatsByUserId(Guid userId);
     Task<IReadOnlyList<ChatSession>> GetChatSearch(Guid userId, string? searchTerm, bool includeMessages = false);
+    Task<int> BulkDeleteAsync(Guid userId, IEnumerable<Guid> chatIds, CancellationToken cancellationToken = default);
 }
