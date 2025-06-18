@@ -16,7 +16,7 @@ public sealed class UpdateChatFolderCommandHandler : ICommandHandler<UpdateChatF
     public async Task<Result<bool>> ExecuteAsync(UpdateChatFolderCommand command, CancellationToken ct)
     {
         var chatFolder = await _chatFolderRepository.GetByIdAsync(command.Id, ct);
-        chatFolder.UpdateDetails(command.Name, command.Description);
+        chatFolder?.UpdateDetails(command.Name);
         await _chatFolderRepository.UpdateAsync(chatFolder, ct);
         return Result.Success(true);
     }

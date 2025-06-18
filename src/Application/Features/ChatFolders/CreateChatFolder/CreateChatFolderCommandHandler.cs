@@ -16,7 +16,7 @@ public sealed class CreateChatFolderCommandHandler : ICommandHandler<CreateChatF
 
     public async Task<Result<Guid>> ExecuteAsync(CreateChatFolderCommand command, CancellationToken ct)
     {
-        var chatFolder = ChatFolder.Create(command.UserId, command.Name, command.Description);
+        var chatFolder = ChatFolder.Create(command.UserId, command.Name);
         await _chatFolderRepository.AddAsync(chatFolder, ct);
         return Result.Success(chatFolder.Id);
     }

@@ -23,7 +23,6 @@ public sealed class
             f => new ChatFolderDto(
                 f.Id,
                 f.Name,
-                f.Description,
                 f.CreatedAt,
                 f.ChatSessions.Select(s => new ChatDto(
                     s.Id,

@@ -17,8 +17,7 @@ public class ChatFolderController : BaseController
     public async Task<IResult> CreateFolder([Microsoft.AspNetCore.Mvc.FromBody] CreateFolderRequest request)
     {
         var result =
-            await CommandExtensions.ExecuteAsync(new CreateChatFolderCommand(UserId, request.Name,
-                request.Description));
+            await CommandExtensions.ExecuteAsync(new CreateChatFolderCommand(UserId, request.Name));
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
@@ -26,7 +25,7 @@ public class ChatFolderController : BaseController
     public async Task<IResult> UpdateFolder([FromRoute] Guid id,
         [Microsoft.AspNetCore.Mvc.FromBody] UpdateFolderRequest request)
     {
-        var result = await new UpdateChatFolderCommand(id, request.Name, request.Description).ExecuteAsync();
+        var result = await new UpdateChatFolderCommand(id, request.Name).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 

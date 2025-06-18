@@ -3,7 +3,6 @@ namespace Application.Features.ChatFolders.GetChatFolderById;
 public sealed record ChatFolderDto(
     Guid Id,
     string Name,
-    string Description,
     DateTime CreatedAt,
     IReadOnlyList<ChatDto> Chats);
 

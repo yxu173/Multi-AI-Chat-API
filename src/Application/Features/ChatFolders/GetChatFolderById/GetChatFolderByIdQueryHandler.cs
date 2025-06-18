@@ -18,7 +18,6 @@ public sealed class GetChatFolderByIdQueryHandler : IQueryHandler<GetChatFolderB
         var chatFolder = await _chatFolderRepository.GetByIdAsync(command.Id, ct);
         var result = new ChatFolderDto(chatFolder.Id,
             chatFolder.Name,
-            chatFolder.Description,
             chatFolder.CreatedAt,
             chatFolder.ChatSessions.Select(s => new ChatDto(
                 s.Id,
