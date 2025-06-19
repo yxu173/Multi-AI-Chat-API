@@ -6,7 +6,7 @@ using Newtonsoft.Json;
 
 namespace Infrastructure.Services.Plugins;
 
-public class PerplexityPlugin : IChatPlugin
+public class PerplexityPlugin : IChatPlugin<string>
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
@@ -39,17 +39,17 @@ public class PerplexityPlugin : IChatPlugin
         return JsonNode.Parse(schemaJson)!.AsObject();
     }
 
-    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
+    public async Task<PluginResult<string>> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
         // Note: Using System.Text.Json types here for argument parsing
         if (arguments == null || !arguments.TryGetPropertyValue("query", out var queryNode) || queryNode is not JsonValue queryValue || queryValue.GetValueKind() != JsonValueKind.String)
         {
-            return new PluginResult("", false, "Missing or invalid 'query' argument for Perplexity Search.");
+            return new PluginResult<string>("", false, "Missing or invalid 'query' argument for Perplexity Search.");
         }
         string query = queryValue.GetValue<string>();
         if (string.IsNullOrWhiteSpace(query))
         {
-            return new PluginResult("", false, "'query' argument cannot be empty.");
+            return new PluginResult<string>("", false, "'query' argument cannot be empty.");
         }
 
         try
@@ -80,7 +80,7 @@ public class PerplexityPlugin : IChatPlugin
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
                 Console.WriteLine($"Perplexity API Error: {response.StatusCode} - {errorBody}");
-                return new PluginResult("", false, $"Perplexity API request failed with status {response.StatusCode}. Details: {errorBody}");
+                return new PluginResult<string>("", false, $"Perplexity API request failed with status {response.StatusCode}. Details: {errorBody}");
             }
 
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -91,26 +91,27 @@ public class PerplexityPlugin : IChatPlugin
             if (perplexityResponse?.Choices == null || perplexityResponse.Choices.Count == 0 || perplexityResponse.Choices[0].Message == null || string.IsNullOrEmpty(perplexityResponse.Choices[0].Message.Content))
             {
                 Console.WriteLine($"Perplexity response missing content. Raw: {responseBody}");
-                return new PluginResult("", false, "Perplexity AI did not return a valid response content.");
+                return new PluginResult<string>("", false, "Perplexity AI did not return a valid response content.");
             }
 
-            return new PluginResult(perplexityResponse.Choices[0].Message.Content.Trim(), true); // Trim result
+            string result = perplexityResponse.Choices[0].Message.Content.Trim();
+            return new PluginResult<string>(result, true);
         }
         // Fully qualify Newtonsoft.Json.JsonException
         catch (Newtonsoft.Json.JsonException jsonEx)
         {
             Console.WriteLine($"Error parsing Perplexity response: {jsonEx}");
-            return new PluginResult("", false, $"Error processing Perplexity response: {jsonEx.Message}");
+            return new PluginResult<string>("", false, $"Error processing Perplexity response: {jsonEx.Message}");
         }
         catch (HttpRequestException httpEx)
         {
             Console.WriteLine($"Perplexity HTTP Error: {httpEx}");
-            return new PluginResult("", false, $"Network error during Perplexity request: {httpEx.Message}");
+            return new PluginResult<string>("", false, $"Network error during Perplexity request: {httpEx.Message}");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Perplexity Plugin Error: {ex}");
-            return new PluginResult("", false, $"Perplexity request failed unexpectedly: {ex.Message}");
+            return new PluginResult<string>("", false, $"Perplexity request failed unexpectedly: {ex.Message}");
         }
     }
 }

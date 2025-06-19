@@ -63,12 +63,12 @@ public class ToolCallHandler
     {
         var pluginId = FindPluginIdByName(toolCall.Name);
         
-        PluginResult pluginResult;
+        PluginResult<string> pluginResult;
 
         if (!pluginId.HasValue)
         {
             _logger.LogError("Could not find plugin matching tool name: {ToolName}", toolCall.Name);
-            pluginResult = new PluginResult("", false, $"Plugin '{toolCall.Name}' not found.");
+            pluginResult = new PluginResult<string>("", false, $"Plugin '{toolCall.Name}' not found.");
         }
         else
         {
@@ -84,13 +84,13 @@ public class ToolCallHandler
                 }
                 else
                 {
-                    pluginResult = new PluginResult("", false, $"Could not parse arguments for tool '{toolCall.Name}'.");
+                    pluginResult = new PluginResult<string>("", false, $"Could not parse arguments for tool '{toolCall.Name}'.");
                 }
             }
             catch (JsonException ex)
             {
                 _logger.LogError(ex, "Failed to parse arguments for tool {ToolName} (ID: {ToolCallId}). Arguments: {Arguments}", toolCall.Name, toolCall.Id, toolCall.Arguments);
-                pluginResult = new PluginResult("", false, $"Invalid arguments provided for tool '{toolCall.Name}'.");
+                pluginResult = new PluginResult<string>("", false, $"Invalid arguments provided for tool '{toolCall.Name}'.");
             }
         }
         

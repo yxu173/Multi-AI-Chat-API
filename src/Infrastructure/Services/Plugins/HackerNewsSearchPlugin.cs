@@ -5,7 +5,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Infrastructure.Services.Plugins;
 
-public class HackerNewsSearchPlugin : IChatPlugin
+public class HackerNewsSearchPlugin : IChatPlugin<string>
 {
     private readonly HttpClient _httpClient;
     private const string BaseUrl = "http://hn.algolia.com/api/v1";
@@ -56,12 +56,12 @@ public class HackerNewsSearchPlugin : IChatPlugin
         return JsonNode.Parse(schemaJson)!.AsObject();
     }
 
-    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
+    public async Task<PluginResult<string>> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
         if (arguments == null || !arguments.TryGetPropertyValue("query", out var queryNode) || 
             queryNode is not JsonValue queryValue || queryValue.GetValueKind() != JsonValueKind.String)
         {
-            return new PluginResult("", false, "Missing or invalid 'query' argument for Hacker News search.");
+            return new PluginResult<string>("", false, "Missing or invalid 'query' argument for Hacker News search.");
         }
 
         string query = queryValue.GetValue<string>();
@@ -120,11 +120,11 @@ public class HackerNewsSearchPlugin : IChatPlugin
             var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
             var formattedResult = FormatSearchResults(jsonResponse);
             
-            return new PluginResult(formattedResult, true);
+            return new PluginResult<string>(formattedResult, true);
         }
         catch (Exception ex)
         {
-            return new PluginResult("", false, $"Hacker News search failed: {ex.Message}");
+            return new PluginResult<string>("", false, $"Hacker News search failed: {ex.Message}");
         }
     }
 

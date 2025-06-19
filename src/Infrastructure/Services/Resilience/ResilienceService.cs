@@ -65,50 +65,6 @@ namespace Infrastructure.Services.Resilience
             return builder.Build();
         }
         
-      
-        public ResiliencePipeline<PluginResult> CreatePluginExecutionPipeline(Func<PluginResult, bool> isTransientError)
-        {
-            var builder = new ResiliencePipelineBuilder<PluginResult>();
-            
-            builder.AddRetry(new RetryStrategyOptions<PluginResult>
-            {
-                ShouldHandle = new PredicateBuilder<PluginResult>()
-                    .Handle<HttpRequestException>()
-                    .Handle<System.TimeoutException>()
-                    .Handle<TaskCanceledException>()
-                    .HandleResult(r => !r.Success && isTransientError(r)),
-                    
-                MaxRetryAttempts = _options.RetryPolicy.MaxRetryAttempts,
-                Delay = TimeSpan.FromSeconds(_options.RetryPolicy.InitialDelayInSeconds),
-                BackoffType = DelayBackoffType.Exponential,
-                OnRetry = args =>
-                {
-                    _logger.LogWarning(
-                        "Retrying plugin execution after failure. Attempt {Attempt} of {MaxAttempts}. Delay: {Delay}s",
-                        args.AttemptNumber,
-                        _options.RetryPolicy.MaxRetryAttempts,
-                        args.RetryDelay.TotalSeconds);
-                    
-                    return ValueTask.CompletedTask;
-                }
-            });
-            
-            builder.AddTimeout(new TimeoutStrategyOptions
-            {
-                Timeout = TimeSpan.FromSeconds(_options.TimeoutPolicy.TimeoutInSeconds),
-                OnTimeout = args =>
-                {
-                    _logger.LogWarning(
-                        "Plugin execution timed out after {Timeout}s",
-                        args.Timeout.TotalSeconds);
-                    
-                    return ValueTask.CompletedTask;
-                }
-            });
-            
-            return builder.Build();
-        }
-
         public ResiliencePipeline<HttpResponseMessage> CreateAiServiceProviderPipeline(string providerName)
         {
             var pipelineBuilder = new ResiliencePipelineBuilder<HttpResponseMessage>();

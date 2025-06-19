@@ -6,7 +6,7 @@ using Newtonsoft.Json;
 
 namespace Infrastructure.Services.Plugins;
 
-public class WikipediaPlugin : IChatPlugin
+public class WikipediaPlugin : IChatPlugin<string>
 {
     private readonly HttpClient _httpClient;
     private readonly string _baseUrl = "https://en.wikipedia.org/api/rest_v1";
@@ -42,18 +42,18 @@ public class WikipediaPlugin : IChatPlugin
         return JsonNode.Parse(schemaJson)!.AsObject();
     }
 
-    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
+    public async Task<PluginResult<string>> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
         if (arguments == null || !arguments.TryGetPropertyValue("query", out var queryNode) ||
             queryNode is not JsonValue queryValue || queryValue.GetValueKind() != JsonValueKind.String)
         {
-            return new PluginResult("", false, "Missing or invalid 'query' argument for Wikipedia search.");
+            return new PluginResult<string>("Missing or invalid 'query' argument for Wikipedia search.", false);
         }
 
         string query = queryValue.GetValue<string>();
         if (string.IsNullOrWhiteSpace(query))
         {
-            return new PluginResult("", false, "'query' argument cannot be empty.");
+            return new PluginResult<string>("'query' argument cannot be empty.", false);
         }
 
         int limit = 3;
@@ -75,7 +75,7 @@ public class WikipediaPlugin : IChatPlugin
 
             if (searchData?.Query?.Search == null || !searchData.Query.Search.Any())
             {
-                return new PluginResult("No Wikipedia results found for the query.", true);
+                return new PluginResult<string>("No Wikipedia results found for the query.", true);
             }
 
             var searchResults = new WikipediaSearchResponse
@@ -95,7 +95,7 @@ public class WikipediaPlugin : IChatPlugin
 
             if (searchResults?.Pages == null || !searchResults.Pages.Any())
             {
-                return new PluginResult("No Wikipedia results found for the query.", true);
+                return new PluginResult<string>("No Wikipedia results found for the query.", true);
             }
 
             var topResult = searchResults.Pages.First();
@@ -112,17 +112,18 @@ public class WikipediaPlugin : IChatPlugin
 
             if (summaryResult == null)
             {
-                return new PluginResult(FormatSearchResults(searchResults), true);
+                var result = FormatSearchResults(searchResults);
+                return new PluginResult<string>(result, true);
             }
 
             var formattedResult = FormatResults(topResult, summaryResult,
                 searchResults.Pages.Skip(1).Take(limit - 1).ToList());
-            return new PluginResult(formattedResult, true);
+            return new PluginResult<string>(formattedResult, true);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Wikipedia Plugin Error: {ex}");
-            return new PluginResult("", false, $"Wikipedia search failed: {ex.Message}");
+            return new PluginResult<string>("", false, $"Error: {ex.Message}");
         }
     }
 

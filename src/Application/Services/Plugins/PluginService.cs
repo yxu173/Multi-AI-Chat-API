@@ -17,7 +17,7 @@ public class PluginService
         _logger = logger;
     }
     
-    public async Task<PluginResult> ExecutePluginByIdAsync(Guid pluginId, JsonObject? arguments, CancellationToken cancellationToken = default)
+    public async Task<PluginResult<string>> ExecutePluginByIdAsync(Guid pluginId, JsonObject? arguments, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -41,12 +41,12 @@ public class PluginService
         catch (ArgumentException argEx)
         {
             _logger?.LogError(argEx, "Failed to find plugin with ID: {PluginId}", pluginId);
-            return new PluginResult("", false, $"Plugin with ID {pluginId} not found.");
+            return new PluginResult<string>("", false, $"Plugin with ID {pluginId} not found.");
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Unexpected error executing plugin with ID: {PluginId}", pluginId);
-            return new PluginResult("", false, $"An unexpected error occurred while executing plugin {pluginId}: {ex.Message}");
+            return new PluginResult<string>("", false, $"An unexpected error occurred while executing plugin {pluginId}: {ex.Message}");
         }
     }
 }

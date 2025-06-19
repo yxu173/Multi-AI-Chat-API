@@ -141,44 +141,34 @@ public static class DependencyInjection
         }
         
         var webSearchConfig = configuration.GetSection("PluginSettings:WebSearch");
-        services.AddScoped<WebSearchPlugin>(sp =>
+        services.AddScoped<IChatPlugin<string>, WebSearchPlugin>(sp =>
             new WebSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                 webSearchConfig["ApiKey"] ?? throw new InvalidOperationException("Missing WebSearch API key"),
                 webSearchConfig["SearchEngine"] ?? throw new InvalidOperationException("Missing Search Engine ID")
             )
         );
-        services.AddScoped<IChatPlugin, WebSearchPlugin>(sp =>
-            sp.GetRequiredService<WebSearchPlugin>()
-        );
 
-        services.AddScoped<IChatPlugin, PerplexityPlugin>(sp =>
+        services.AddScoped<IChatPlugin<string>, PerplexityPlugin>(sp =>
             new PerplexityPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                configuration["Plugins:Perplexity:ApiKey"]
+                configuration["Plugins:Perplexity:ApiKey"] ?? throw new InvalidOperationException("Missing Perplexity API key")
             )
         );
 
-        services.AddScoped<JinaWebPlugin>(sp =>
+        services.AddScoped<IChatPlugin<string>, JinaWebPlugin>(sp =>
             new JinaWebPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                configuration["PluginSettings:Jina:ApiKey"] ??
-                throw new InvalidOperationException("Missing Jina API key"),
-                maxRetries: configuration.GetValue("Plugins:Jina:MaxRetries", 3)
+                configuration["PluginSettings:Jina:ApiKey"] ?? throw new InvalidOperationException("Missing Jina API key"),
+                configuration.GetValue("Plugins:Jina:MaxRetries", 3)
             )
-        );
-        services.AddScoped<IChatPlugin, JinaWebPlugin>(sp => 
-            sp.GetRequiredService<JinaWebPlugin>()
         );
 
         // Register Hacker News Search Plugin
-        services.AddScoped<HackerNewsSearchPlugin>(sp =>
+        services.AddScoped<IChatPlugin<string>, HackerNewsSearchPlugin>(sp =>
             new HackerNewsSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient()
             )
-        );
-        services.AddScoped<IChatPlugin, HackerNewsSearchPlugin>(sp =>
-            sp.GetRequiredService<HackerNewsSearchPlugin>()
         );
 
         services.AddDistributedMemoryCache();
@@ -302,36 +292,27 @@ public static class DependencyInjection
         });
 
         // Register Wikipedia Plugin
-        services.AddScoped<WikipediaPlugin>(sp =>
+        services.AddScoped<IChatPlugin<string>, WikipediaPlugin>(sp =>
             new WikipediaPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient("WikipediaApiClient")
             )
         );
-        services.AddScoped<IChatPlugin, WikipediaPlugin>(sp =>
-            sp.GetRequiredService<WikipediaPlugin>()
-        );
 
         // Register CSV Reader Plugin
-        services.AddScoped<CsvReaderPlugin>(sp =>
+        services.AddScoped<IChatPlugin<string>, CsvReaderPlugin>(sp =>
             new CsvReaderPlugin(
                 sp.GetRequiredService<IFileAttachmentRepository>(),
                 sp.GetRequiredService<ILogger<CsvReaderPlugin>>()
             )
         );
-        services.AddScoped<IChatPlugin, CsvReaderPlugin>(sp =>
-            sp.GetRequiredService<CsvReaderPlugin>()
-        );
         
-        // Register Jina DeepSearch Plugin - user activatable
+        // Register Jina DeepSearch Plugin as a concrete type for plugin factory
         services.AddScoped<JinaDeepSearchPlugin>(sp =>
             new JinaDeepSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>(),
-                configuration["PluginSettings:Jina:ApiKey"],
+                configuration["PluginSettings:Jina:ApiKey"] ?? throw new InvalidOperationException("Missing Jina API key"),
                 sp.GetRequiredService<ILogger<JinaDeepSearchPlugin>>()
             )
-        );
-        services.AddScoped<IChatPlugin, JinaDeepSearchPlugin>(sp =>
-            sp.GetRequiredService<JinaDeepSearchPlugin>()
         );
 
         return services;

@@ -6,7 +6,7 @@ using Newtonsoft.Json;
 
 namespace Infrastructure.Services.Plugins;
 
-public class WebSearchPlugin : IChatPlugin
+public class WebSearchPlugin : IChatPlugin<string>
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
@@ -44,18 +44,18 @@ public class WebSearchPlugin : IChatPlugin
     }
 
     // Modified ExecuteAsync to accept JsonObject arguments
-    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
+    public async Task<PluginResult<string>> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
         // Extract the 'query' argument from the JsonObject provided by the AI
         if (arguments == null || !arguments.TryGetPropertyValue("query", out var queryNode) || queryNode is not JsonValue queryValue || queryValue.GetValueKind() != JsonValueKind.String)
         {
-            return new PluginResult("", false, "Missing or invalid 'query' argument for Google Search.");
+            return new PluginResult<string>("", false, "Missing or invalid 'query' argument for Google Search.");
         }
 
         string query = queryValue.GetValue<string>();
         if (string.IsNullOrWhiteSpace(query))
         {
-            return new PluginResult("", false, "'query' argument cannot be empty.");
+            return new PluginResult<string>("", false, "'query' argument cannot be empty.");
         }
 
         try
@@ -68,13 +68,13 @@ public class WebSearchPlugin : IChatPlugin
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             var searchResponse = JsonConvert.DeserializeObject<GoogleSearchResponse>(json);
             var result = FormatResults(searchResponse);
-            return new PluginResult(result, true);
+            return new PluginResult<string>(result, true);
         }
         catch (Exception ex)
         {
             // Log the exception details if possible
             Console.WriteLine($"Google Search Plugin Error: {ex}");
-            return new PluginResult("", false, $"Web search failed: {ex.Message}");
+            return new PluginResult<string>("", false, $"Error: {ex.Message}");
         }
     }
 

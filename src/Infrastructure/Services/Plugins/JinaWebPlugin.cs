@@ -7,7 +7,7 @@ using System.Text.Json; // For JsonValue, JsonValueKind
 
 namespace Infrastructure.Services.Plugins;
 
-public class JinaWebPlugin : IChatPlugin
+public class JinaWebPlugin : IChatPlugin<string>
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
@@ -41,19 +41,20 @@ public class JinaWebPlugin : IChatPlugin
         """;
         return JsonNode.Parse(schemaJson)!.AsObject();
     }
+    
 
-    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
+    public async Task<PluginResult<string>> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
       
         if (arguments == null || !arguments.TryGetPropertyValue("url", out var urlNode) || urlNode is not JsonValue urlValue || urlValue.GetValueKind() != JsonValueKind.String)
         {
-            return new PluginResult("", false, "Missing or invalid 'url' argument for Read Webpage.");
+            return new PluginResult<string>("", false, "Missing or invalid 'url' argument for Read Webpage.");
         }
 
         string url = urlValue.GetValue<string>();
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uriResult) || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
         {
-             return new PluginResult("", false, "'url' argument must be a valid absolute HTTP or HTTPS URL.");
+             return new PluginResult<string>("", false, "'url' argument must be a valid absolute HTTP or HTTPS URL.");
         }
 
         HttpResponseMessage? response = null;
@@ -96,7 +97,7 @@ public class JinaWebPlugin : IChatPlugin
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     Console.WriteLine("Jina Web request cancelled during retry loop.");
-                    return new PluginResult("", false, "Jina Web request cancelled.");
+                    return new PluginResult<string>("", false, "Jina Web request cancelled.");
                 }
                 catch (Exception ex) when (retries < _maxRetries - 1)
                 {
@@ -109,7 +110,7 @@ public class JinaWebPlugin : IChatPlugin
             if (cancellationToken.IsCancellationRequested)
             {
                 Console.WriteLine("Jina Web request cancelled after retry loop.");
-                return new PluginResult("", false, "Jina Web request cancelled.");
+                return new PluginResult<string>("", false, "Jina Web request cancelled.");
             }
 
             if (!success || response == null)
@@ -121,23 +122,23 @@ public class JinaWebPlugin : IChatPlugin
                      catch { errorBody = " (Could not read error body)"; }
                  }
                 Console.WriteLine($"Jina request failed after {retries} retries. {errorDetail}{errorBody}");
-                return new PluginResult("", false, $"Failed to retrieve content from Jina after {retries} attempt(s). {errorDetail}");
+                return new PluginResult<string>("", false, $"Failed to retrieve content from Jina after {retries} attempt(s). {errorDetail}");
             }
 
             var contentString = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (string.IsNullOrWhiteSpace(contentString))
             {
-                 return new PluginResult("", false, $"Jina AI returned empty content for the URL.");
+                 return new PluginResult<string>("", false, $"Jina AI returned empty content for the URL.");
             }
 
             var formattedResult = $"Content from {url}:\n\n{contentString.Trim()}";
-            return new PluginResult(formattedResult, true);
+            return new PluginResult<string>(formattedResult, true);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Jina Web request failed unexpectedly: {ex}");
-            return new PluginResult("", false, $"Jina Web request failed unexpectedly: {ex.GetType().Name} - {ex.Message}");
+            return new PluginResult<string>("", false, $"Jina Web request failed unexpectedly: {ex.GetType().Name} - {ex.Message}");
         }
         finally
         {

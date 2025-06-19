@@ -87,7 +87,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
       """;
 
         RegisterPlugin(
-            id: new Guid("758ca6d5-75a2-487b-b929-52489d3b1d2d"),
+            id: new Guid("0404f149-7b47-4052-babb-622a0c413fb3"),
             pluginType: typeof(WebSearchPlugin),
             name: "google_search",
             description: "Search the web using Google for real-time information.",
@@ -103,7 +103,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         );
 
         RegisterPlugin(
-            id: new Guid("678eaf7e-7e0d-4513-83a3-738f55dab692"),
+            id: new Guid("83ba3d3c-1bb7-4473-a422-67f1c36fc4e1"),
             pluginType: typeof(JinaWebPlugin),
             name: "read_webpage",
             description: "Retrieve and summarize web content from a specific URL using Jina AI.",
@@ -111,7 +111,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         );
 
         RegisterPlugin(
-            id: new Guid("a6801802-2361-4ffd-ba43-4083d1ea5de2"),
+            id: new Guid("4fe051a4-2e77-4fa7-a05f-c1047627d8d1"),
             pluginType: typeof(HackerNewsSearchPlugin),
             name: "search_hacker_news",
             description: "Search Hacker News posts and comments using various filters like relevance, date, tags and more.",
@@ -119,7 +119,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         );
         
         RegisterPlugin(
-            id: new Guid("8cadae36-bd7b-40d0-85d9-4070a4cea51f"),
+            id: new Guid("3aa2ebec-99cb-4446-af77-762056b42410"),
             pluginType: typeof(WikipediaPlugin),
             name: "wikipedia_search",
             description: "Search Wikipedia for information on a specific topic or term",
@@ -157,7 +157,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
       """;
 
         RegisterPlugin(
-            id: new Guid("00fb0c45-ba1b-469d-8c2d-072fb8025b44"),
+            id: new Guid("19ffac4a-9ebf-4cc8-8bad-adfc8823af20"),
             pluginType: typeof(CsvReaderPlugin),
             name: "csv_reader",
             description: "Read and analyze CSV files that have been uploaded to the chat.",
@@ -178,7 +178,7 @@ public class PluginExecutorFactory : IPluginExecutorFactory
       """;
 
         RegisterPlugin(
-            id: new Guid("235979c5-cec1-4af2-9d61-6c1079c80be5"),
+            id: new Guid("3d5ec31c-5e6c-437d-8494-2ca942c9e2fe"),
             pluginType: typeof(JinaDeepSearchPlugin),
             name: "jina_deepsearch",
             description: "Search the web with Jina's DeepSearch for real-time, comprehensive information.",
@@ -208,13 +208,13 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         };
     }
 
-    public IChatPlugin GetPlugin(Guid pluginId)
+    public IChatPlugin<string> GetPlugin(Guid pluginId)
     {
         if (!_pluginRegistry.TryGetValue(pluginId, out var pluginInfo))
         {
             throw new ArgumentException($"No plugin registered with ID: {pluginId}");
         }
-        return (IChatPlugin)_serviceProvider.GetRequiredService(pluginInfo.Type);
+        return (IChatPlugin<string>)_serviceProvider.GetRequiredService(pluginInfo.Type);
     }
 
     public IEnumerable<PluginDefinition> GetAllPluginDefinitions()

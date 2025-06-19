@@ -1239,6 +1239,19 @@
             }
             scrollToBottom();
         });
+
+        connection.on("DeepSearchChunk", (chunk) => {
+            console.log("Deep search chunk received:", chunk);
+            const deepSearchElement = document.querySelector('.message.ai.deep-search');
+            if (deepSearchElement) {
+                const contentElement = deepSearchElement.querySelector('.message-content');
+                if (contentElement) {
+                    // Append the chunk to the content
+                    contentElement.innerHTML += escapeHtml(chunk);
+                }
+            }
+            scrollToBottom();
+        });
     }
 
     // --- UI State Management ---

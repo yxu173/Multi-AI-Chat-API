@@ -14,7 +14,7 @@ public interface IPluginExecutorFactory
     /// <summary>
     /// Gets a specific plugin implementation by its ID.
     /// </summary>
-    IChatPlugin GetPlugin(Guid pluginId);
+    IChatPlugin<string> GetPlugin(Guid pluginId);
 
     /// <summary>
     /// Gets definitions for all registered plugins, suitable for AI tool descriptions.

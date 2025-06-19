@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services.Plugins;
 
-public class CsvReaderPlugin : IChatPlugin
+public class CsvReaderPlugin : IChatPlugin<string>
 {
     private readonly IFileAttachmentRepository _fileAttachmentRepository;
     private readonly ILogger<CsvReaderPlugin> _logger;
@@ -59,11 +59,11 @@ public class CsvReaderPlugin : IChatPlugin
         return JsonNode.Parse(schemaJson)!.AsObject();
     }
 
-    public async Task<PluginResult> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
+    public async Task<PluginResult<string>> ExecuteAsync(JsonObject? arguments, CancellationToken cancellationToken = default)
     {
         if (arguments == null)
         {
-            return new PluginResult("", false, "Missing arguments for CSV reader.");
+            return new PluginResult<string>("Missing arguments for CSV reader.", false, "Either file_id or file_name must be provided.");
         }
 
         // Extract parameters
@@ -106,7 +106,7 @@ public class CsvReaderPlugin : IChatPlugin
         // Validate parameters
         if (string.IsNullOrEmpty(fileId) && string.IsNullOrEmpty(fileName))
         {
-            return new PluginResult("Please provide either a file_id or file_name parameter to identify which CSV file to read.", false, "Either file_id or file_name must be provided.");
+            return new PluginResult<string>("Please provide either a file_id or file_name parameter to identify which CSV file to read.", false, "Either file_id or file_name must be provided.");
         }
 
         try
@@ -169,29 +169,29 @@ public class CsvReaderPlugin : IChatPlugin
             }
             else
             {
-                return new PluginResult("", false, "Invalid file ID or file name provided.");
+                return new PluginResult<string>("Invalid file ID or file name provided.", false, "Either file_id or file_name must be provided.");
             }
 
             if (fileAttachment == null)
             {
-                return new PluginResult("", false, "CSV file not found.");
+                return new PluginResult<string>("CSV file not found.", false, "CSV file not found.");
             }
 
             // Check if file exists and is a CSV
             if (fileAttachment.ContentType != "text/csv" && !fileAttachment.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
             {
-                return new PluginResult("", false, "The specified file is not a CSV file.");
+                return new PluginResult<string>("The specified file is not a CSV file.", false, "The specified file is not a CSV file.");
             }
 
             if (!File.Exists(fileAttachment.FilePath))
             {
-                return new PluginResult("", false, "CSV file not found on disk.");
+                return new PluginResult<string>("CSV file not found on disk.", false, "CSV file not found on disk.");
             }
 
             var lines = await File.ReadAllLinesAsync(fileAttachment.FilePath, cancellationToken);
             if (lines.Length == 0)
             {
-                return new PluginResult("CSV file is empty.", true);
+                return new PluginResult<string>("CSV file is empty.", true);
             }
 
             var header = ParseCsvLine(lines[0]);
@@ -251,12 +251,12 @@ public class CsvReaderPlugin : IChatPlugin
                 }
             }
 
-            return new PluginResult(result.ToString(), true);
+            return new PluginResult<string>(result.ToString(), true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error while reading CSV file");
-            return new PluginResult("", false, $"Error reading CSV file: {ex.Message}");
+            return new PluginResult<string>("", false, $"Error reading CSV file: {ex.Message}");
         }
     }
 
