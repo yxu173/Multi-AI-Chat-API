@@ -10,4 +10,5 @@ public interface IMessageRepository
     Task AddAsync(Message message, CancellationToken cancellationToken);
     Task UpdateAsync(Message message, CancellationToken cancellationToken);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken);
+    Task BulkDeleteAsync(Guid userId, IEnumerable<Guid> messageIds, CancellationToken cancellationToken = default);
 }

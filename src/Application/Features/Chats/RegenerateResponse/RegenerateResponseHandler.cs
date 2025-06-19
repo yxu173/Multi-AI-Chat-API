@@ -47,16 +47,13 @@ public class RegenerateResponseHandler : Application.Abstractions.Messaging.ICom
         if (userMessage == null) throw new Exception("Original user message not found or access denied.");
 
         var aiMessageToDelete = chatSession.Messages
-            .Where(m => m.IsFromAi && m.CreatedAt > userMessage.CreatedAt)
+            .Where(m => m.CreatedAt > userMessage.CreatedAt)
             .OrderBy(m => m.CreatedAt)
-            .FirstOrDefault();
+            .Select(x => x.Id)
+            .ToList();
 
-        if (aiMessageToDelete != null)
-        {
-            chatSession.RemoveMessage(aiMessageToDelete);
-            await DeleteMessageAsync(aiMessageToDelete.Id, cancellationToken);
-            await new MessageDeletedNotification(command.ChatSessionId, aiMessageToDelete.Id).PublishAsync(cancellation: cancellationToken);
-        }
+        await _messageRepository.BulkDeleteAsync(chatSession.UserId, aiMessageToDelete, cancellationToken);
+        await new MessageDeletedNotification(command.ChatSessionId, aiMessageToDelete.AsReadOnly()).PublishAsync(cancellation: cancellationToken);
 
         var newAiMessage = await CreateAndSaveAiMessageAsync(command.UserId, command.ChatSessionId, cancellationToken);
         

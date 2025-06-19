@@ -16,8 +16,8 @@ public class MessageDeletedNotificationHandler : IEventHandler<MessageDeletedNot
 
     public Task HandleAsync(MessageDeletedNotification eventModel, CancellationToken ct)
     {
-        Console.WriteLine($"Handler: Deleting message {eventModel.MessageId} in chat {eventModel.ChatSessionId}");
+        Console.WriteLine($"Handler: Deleting message {eventModel.MessagesId} in chat {eventModel.ChatSessionId}");
         return _hubContext.Clients.Group(eventModel.ChatSessionId.ToString())
-            .SendAsync("MessageDeleted", eventModel.MessageId, ct);
+            .SendAsync("MessageDeleted", eventModel.MessagesId, ct);
     }
 }

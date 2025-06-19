@@ -1,8 +1,8 @@
+using Application.Abstractions.Interfaces;
 using Domain.Repositories;
 using Domain.Aggregates.Admin;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Application.Abstractions.Interfaces;
-using Hangfire;
 
 namespace Infrastructure.Services.Subscription;
 
@@ -11,23 +11,23 @@ public class SubscriptionService : ISubscriptionService
     private readonly IUserSubscriptionRepository _userSubscriptionRepository;
     private readonly ISubscriptionPlanRepository _subscriptionPlanRepository;
     private readonly ILogger<SubscriptionService> _logger;
-    private readonly IBackgroundJobClient _backgroundJobClient;
+    private readonly IServiceProvider _serviceProvider;
 
     public SubscriptionService(
         IUserSubscriptionRepository userSubscriptionRepository,
         ISubscriptionPlanRepository subscriptionPlanRepository,
         ILogger<SubscriptionService> logger,
-        IBackgroundJobClient backgroundJobClient)
+        IServiceProvider serviceProvider)
     {
         _userSubscriptionRepository = userSubscriptionRepository ?? throw new ArgumentNullException(nameof(userSubscriptionRepository));
         _subscriptionPlanRepository = subscriptionPlanRepository ?? throw new ArgumentNullException(nameof(subscriptionPlanRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _backgroundJobClient = backgroundJobClient ?? throw new ArgumentNullException(nameof(backgroundJobClient));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
     }
 
     public async Task<(bool HasQuota, string? ErrorMessage)> CheckUserQuotaAsync(
-        Guid userId,
-        double requestCost,
+        Guid userId, 
+        double requestCost, 
         int requiredTokens = 0,
         CancellationToken cancellationToken = default)
     {
@@ -68,9 +68,31 @@ public class SubscriptionService : ISubscriptionService
         {
             return (false, $"You've reached your monthly limit of {plan.MaxRequestsPerMonth} requests. Your quota will reset at the beginning of the next month.");
         }
+
+        var subscriptionIdCapture = subscription.Id;
+        var userIdCapture = userId;
+        var requestCostCapture = requestCost; 
         
-        _backgroundJobClient.Enqueue<ISubscriptionUsageManager>(manager => 
-            manager.IncrementUsageAsync(subscription.Id, requestCost));
+        _ = Task.Run(async () => 
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var subscriptionRepo = scope.ServiceProvider.GetRequiredService<IUserSubscriptionRepository>();
+            
+            try
+            {
+                var freshSubscription = await subscriptionRepo.GetByIdAsync(subscriptionIdCapture, CancellationToken.None);
+                if (freshSubscription != null)
+                {
+                    freshSubscription.IncrementUsage(requestCostCapture); 
+                    await subscriptionRepo.UpdateAsync(freshSubscription, CancellationToken.None);
+                    _logger.LogInformation("Incremented usage for user {UserId}, subscription {SubscriptionId}, new usage: {Usage}, cost: {RequestCost}", userIdCapture, subscriptionIdCapture, freshSubscription.CurrentMonthUsage, requestCostCapture);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to increment usage for user {UserId}", userIdCapture);
+            }
+        });
 
         return (true, null);
     }

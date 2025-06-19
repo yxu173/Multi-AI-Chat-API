@@ -52,6 +52,13 @@ public class MessageRepository : IMessageRepository
         }
     }
 
+    public async Task BulkDeleteAsync(Guid userId, IEnumerable<Guid> messageIds, CancellationToken cancellationToken = default)
+    {
+        await _context.Messages
+            .Where(m => messageIds.Contains(m.Id) && m.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
     public async Task<Message?> GetLatestAiMessageForChatAsync(Guid chatSessionId, CancellationToken? cancellationToken = null)
     {
         var token = cancellationToken ?? CancellationToken.None;

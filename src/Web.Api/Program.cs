@@ -73,6 +73,7 @@ builder.Services.AddHangfireServer(options =>
 {
     options.WorkerCount = Environment.ProcessorCount * 2;
     options.Queues = new[] { "default", "critical", "low" };
+    options.SchedulePollingInterval = TimeSpan.FromSeconds(15);
 });
 
 // Add this line to ensure proper scoping for Hangfire jobs
