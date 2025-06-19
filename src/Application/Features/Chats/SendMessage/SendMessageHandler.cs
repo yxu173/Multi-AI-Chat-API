@@ -91,7 +91,11 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
     private async Task UpdateChatSessionTitleAsync(ChatSession chatSession, string content,
         CancellationToken cancellationToken = default)
     {
-        // get first two messages to generate a title
+        if (chatSession.Messages.Count > 2)
+        {
+            return;
+        }
+
 
         var messages = chatSession.Messages
             .OrderBy(m => m.CreatedAt)
