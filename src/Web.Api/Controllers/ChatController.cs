@@ -133,7 +133,7 @@ public class ChatController : BaseController
         var result = await new UpdateChatSessionCommand(id, request.Title).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
-    [Microsoft.AspNetCore.Mvc.HttpGet("Update/{id}/MoveToFolder")]
+    [Microsoft.AspNetCore.Mvc.HttpPut("Update/{id}/MoveToFolder")]
     public async Task<IResult> MoveChatToFolder([FromRoute] Guid id,
         [Microsoft.AspNetCore.Mvc.FromBody] MoveChatToFolderRequest request)
     {
