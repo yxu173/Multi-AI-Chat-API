@@ -276,9 +276,6 @@ namespace Infrastructure.Database.Migrations
                     b.Property<double>("OutputTokenPricePer1M")
                         .HasColumnType("double precision");
 
-                    b.Property<bool>("PluginsSupported")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("PromptCachingSupported")
                         .HasColumnType("boolean");
 
@@ -289,9 +286,6 @@ namespace Infrastructure.Database.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<bool>("SupportsVision")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("SystemRoleSupported")
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");

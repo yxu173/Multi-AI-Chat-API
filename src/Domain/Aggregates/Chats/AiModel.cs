@@ -22,8 +22,6 @@ public sealed class AiModel
     public bool SupportsThinking { get; private set; }
     public bool SupportsVision { get; private set; }
     public int ContextLength { get; private set; }
-    public bool PluginsSupported { get; private set; }
-    public bool SystemRoleSupported { get; private set; }
     public bool PromptCachingSupported { get; private set; }
     public double RequestCost { get; private set; }
 
@@ -38,7 +36,7 @@ public sealed class AiModel
     public AiModel(Guid id, string name, ModelType modelType, Guid aiProviderId, double inputTokenPricePer1M,
         double outputTokenPricePer1M, string modelCode, int? maxOutputTokens,
         bool isEnabled, bool supportsThinking, bool supportsVision, int contextLength,
-        bool pluginsSupported, bool systemRoleSupported, bool promptCachingSupported, double requestCost)
+         bool promptCachingSupported, double requestCost)
     {
         Id = id;
         Name = name;
@@ -52,8 +50,6 @@ public sealed class AiModel
         SupportsThinking = supportsThinking;
         SupportsVision = supportsVision;
         ContextLength = contextLength;
-        PluginsSupported = pluginsSupported;
-        SystemRoleSupported = systemRoleSupported;
         PromptCachingSupported = promptCachingSupported;
         RequestCost = requestCost;
     }
@@ -61,8 +57,7 @@ public sealed class AiModel
     public static AiModel Create(string name, string modelType, Guid aiProviderId, double inputTokenPricePer1M,
         double outputTokenPricePer1M, string modelCode, int contextLength, double requestCost, int? maxOutputTokens = null,
         bool isEnabled = true, bool supportsThinking = false, bool supportsVision = false,
-          bool pluginsSupported = false,
-         bool systemRoleSupported = false, bool promptCachingSupported = false)
+           bool promptCachingSupported = false)
     {
         var modelTypeEnum = Enum.Parse<ModelType>(modelType);
         return new AiModel
@@ -79,8 +74,6 @@ public sealed class AiModel
             SupportsThinking = supportsThinking,
             SupportsVision = supportsVision,
             ContextLength = contextLength,
-            PluginsSupported = pluginsSupported,
-            SystemRoleSupported = systemRoleSupported,
             PromptCachingSupported = promptCachingSupported,
             RequestCost = requestCost
         };

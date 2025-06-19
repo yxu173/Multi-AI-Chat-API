@@ -14,7 +14,5 @@ public sealed record CreateAiModelCommand(
     bool SupportsThinking,
     bool SupportsVision,
     int ContextLength,
-    bool PluginsSupported,
-    bool SystemRoleSupported,
     bool PromptCachingSupported,
     double RequestCost) : ICommand<Guid>;

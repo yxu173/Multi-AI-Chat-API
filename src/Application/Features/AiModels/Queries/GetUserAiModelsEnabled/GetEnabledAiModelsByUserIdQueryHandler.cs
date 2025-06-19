@@ -24,8 +24,7 @@ public sealed class
             a.Name, 
             a.IsEnabled,
             a.SupportsVision,
-            a.ContextLength,
-            a.PluginsSupported
+            a.ContextLength
         )).ToList();
         return Result.Success<IReadOnlyList<AiModelDto>>(result);
     }
