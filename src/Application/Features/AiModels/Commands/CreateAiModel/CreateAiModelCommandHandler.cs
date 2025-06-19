@@ -29,8 +29,6 @@ public sealed class CreateAiModelCommandHandler : ICommandHandler<CreateAiModelC
             request.IsEnabled,
             request.SupportsThinking,
             request.SupportsVision,
-            request.PluginsSupported,
-            request.SystemRoleSupported,
             request.PromptCachingSupported
         );
         await _aiModelRepository.AddAsync(aiModel);

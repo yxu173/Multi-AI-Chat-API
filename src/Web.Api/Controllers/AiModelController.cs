@@ -33,8 +33,6 @@ public class AiModelController : BaseController
             request.SupportsThinking,
             request.SupportsVision,
             request.ContextLength,
-            request.PluginsSupported,
-            request.SystemRoleSupported,
             request.PromptCachingSupported,
             request.RequestCost
         ).ExecuteAsync();

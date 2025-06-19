@@ -5,6 +5,5 @@ public sealed record AiModelDto(
     string Name,
     bool IsEnabled,
     bool SupportsVision,
-    int? ContextLength,
-    bool PluginsSupported
+    int? ContextLength
 );
