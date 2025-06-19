@@ -151,8 +151,7 @@ public class FileUploadService
         await _fileAttachmentRepository.AddAsync(fileAttachment, cancellationToken);
         activity?.AddEvent(new ActivityEvent("File attachment saved to DB."));
 
-        var jobId = _backgroundJobClient.Enqueue<IBackgroundFileProcessor>(processor =>
-            processor.ProcessFileAttachmentAsync(fileAttachment.Id, CancellationToken.None));
+        var jobId = _backgroundJobClient.Enqueue<IBackgroundFileProcessor>(x => x.ProcessFileAttachmentAsync(fileAttachment.Id, default));
         activity?.AddEvent(new ActivityEvent("Enqueued background file processing.", tags: new ActivityTagsCollection { { "hangfire.job_id", jobId } }));
 
         return fileAttachment;

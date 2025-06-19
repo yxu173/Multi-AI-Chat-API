@@ -19,6 +19,7 @@ using OpenTelemetry.Trace;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
+using Application.Services.Files.BackgroundProcessing;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
@@ -73,6 +74,9 @@ builder.Services.AddHangfireServer(options =>
     options.WorkerCount = Environment.ProcessorCount * 2;
     options.Queues = new[] { "default", "critical", "low" };
 });
+
+// Add this line to ensure proper scoping for Hangfire jobs
+builder.Services.AddScoped<BackgroundFileProcessor>();
 
 builder.Services
     .AddPresentation()

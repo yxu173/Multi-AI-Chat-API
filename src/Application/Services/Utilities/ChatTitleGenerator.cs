@@ -19,7 +19,7 @@ public class ChatTitleGenerator
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<string> GenerateTitleAsync(ChatSession chatSession, string userMessage, CancellationToken cancellationToken = default)
+    public async Task<string> GenerateTitleAsync(ChatSession chatSession, List<Message> messages, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -32,10 +32,10 @@ public class ChatTitleGenerator
             if (serviceContext == null)
             {
                 _logger.LogWarning("Could not get Gemini service context for title generation. Falling back to simple title.");
-                return GenerateSimpleTitle(userMessage);
+                return GenerateSimpleTitle(messages[0].Content);
             }
 
-            var prompt = $"Generate only a title (max {MaxTitleLength} chars) for a chat conversation based on this first message: \"{userMessage}\". The title should be clear and informative.";
+            var prompt = $"Generate only a title (max {MaxTitleLength} chars) for a chat conversation based on this first message: {messages[0].Content} and this AI response : {messages[1].Content}. The title should be clear and informative.";
             
             var requestPayload = new AiRequestPayload(
                 new
@@ -74,12 +74,12 @@ public class ChatTitleGenerator
                 title = title.Substring(0, MaxTitleLength - 3) + "...";
             }
 
-            return string.IsNullOrWhiteSpace(title) ? GenerateSimpleTitle(userMessage) : title;
+            return string.IsNullOrWhiteSpace(title) ? GenerateSimpleTitle(messages[0].Content) : title;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate title with Gemini. Falling back to simple title.");
-            return GenerateSimpleTitle(userMessage);
+            return GenerateSimpleTitle(messages[0].Content);
         }
     }
 
