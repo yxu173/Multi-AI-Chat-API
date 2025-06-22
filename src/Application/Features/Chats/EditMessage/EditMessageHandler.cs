@@ -65,19 +65,30 @@ public class EditMessageHandler : Application.Abstractions.Messaging.ICommandHan
         }
 
         await UpdateMessageContentAsync(messageToEdit, contentToUse, fileAttachments, cancellationToken);
+        messageToEdit.UpdateContent(contentToUse);
+
         await new MessageEditedNotification(command.ChatSessionId, command.MessageId, contentToUse).PublishAsync(cancellation: cancellationToken);
 
-        var subsequentAiMessages = chatSession.Messages
-            .Where(m => m.IsFromAi && m.CreatedAt > messageToEdit.CreatedAt)
+        var messagesToDelete = chatSession.Messages
+            .Where(m => m.CreatedAt > messageToEdit.CreatedAt)
             .OrderBy(m => m.CreatedAt)
             .ToList();
-        foreach (var subsequentAiMessage in subsequentAiMessages)
+        
+        var messageIdsToDelete = messagesToDelete.Select(m => m.Id).ToList();
+
+        if (messageIdsToDelete.Any())
         {
-            chatSession.RemoveMessage(subsequentAiMessage);
-            await DeleteMessageAsync(subsequentAiMessage.Id, cancellationToken);
+            await _messageRepository.BulkDeleteAsync(chatSession.UserId, messageIdsToDelete, cancellationToken);
+            await new MessageDeletedNotification(command.ChatSessionId, messageIdsToDelete.AsReadOnly()).PublishAsync(cancellation: cancellationToken);
         }
 
+        var history = chatSession.Messages
+            .Except(messagesToDelete)
+            .OrderBy(m => m.CreatedAt)
+            .ToList();
+
         var aiMessage = await CreateAndSaveAiMessageAsync(command.UserId, command.ChatSessionId, cancellationToken);
+        history.Add(aiMessage);
 
         try
         {
@@ -85,7 +96,8 @@ public class EditMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 ChatSessionId: command.ChatSessionId,
                 UserId: command.UserId,
                 AiMessageId: aiMessage.Id,
-                EnableThinking: false, // Thinking is not enabled for edits
+                History: history,
+                EnableThinking: false,
                 ImageSize: command.ImageSize,
                 NumImages: command.NumImages,
                 OutputFormat: command.OutputFormat,
