@@ -167,6 +167,10 @@ public class StreamingService : IStreamingService
             }
             catch (Exception ex)
             {
+                if (ex is TaskCanceledException && cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 await _aiMessageFinalizer.FinalizeAfterErrorAsync(aiMessage, ex, CancellationToken.None);
                 throw;
             }
@@ -403,12 +407,21 @@ public class StreamingService : IStreamingService
 
             if (!conversationCompleted && !cancellationToken.IsCancellationRequested)
             {
-                aiMessage.UpdateContent(finalContent.ToString());
-                aiMessage.InterruptMessage();
+                if (finalContent.Length > 0)
+                {
+                    aiMessage.UpdateContent(finalContent.ToString());
+                    aiMessage.InterruptMessage();
+                    await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
+                }
             }
             else if (cancellationToken.IsCancellationRequested)
             {
+                if (finalContent.Length > 0)
+                {
+                    aiMessage.UpdateContent(finalContent.ToString());
+                }
                 aiMessage.InterruptMessage();
+                await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
             }
 
             return new StreamingResult(inTokens, outTokens, conversationCompleted, thinkingContent);
@@ -440,24 +453,30 @@ public class StreamingService : IStreamingService
         var textChunks = batch.Where(x => x.Type == "text").Select(x => (string)x.Data).ToList();
         var thinkingChunks = batch.Where(x => x.Type == "thinking").Select(x => (string)x.Data).ToList();
 
-        if (textChunks.Any())
+        try
         {
-            var combinedText = string.Join("", textChunks);
-            await new MessageChunkReceivedNotification(chatSessionId, messageId, combinedText)
-                .PublishAsync(cancellation: cancellationToken);
-        }
+            if (textChunks.Any())
+            {
+                var combinedText = string.Join("", textChunks);
+                await new MessageChunkReceivedNotification(chatSessionId, messageId, combinedText)
+                    .PublishAsync(cancellation: cancellationToken);
+            }
 
-        if (thinkingChunks.Any())
-        {
-            var combinedThinking = string.Join("", thinkingChunks);
-            await new ThinkingUpdateNotification(chatSessionId, messageId, combinedThinking)
-                .PublishAsync(cancellation: cancellationToken);
-        }
+            if (thinkingChunks.Any())
+            {
+                var combinedThinking = string.Join("", thinkingChunks);
+                await new ThinkingUpdateNotification(chatSessionId, messageId, combinedThinking)
+                    .PublishAsync(cancellation: cancellationToken);
+            }
 
-        // Record notification metrics
-        if (_options.EnablePerformanceMonitoring)
+            if (_options.EnablePerformanceMonitoring)
+            {
+                _performanceMonitor.RecordNotificationSent(messageId, batch.Count);
+            }
+        }
+        catch (TaskCanceledException)
         {
-            _performanceMonitor.RecordNotificationSent(messageId, batch.Count);
+            _logger.LogInformation("Notification flush was canceled for message {MessageId}", messageId);
         }
     }
 
