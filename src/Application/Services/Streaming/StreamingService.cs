@@ -242,23 +242,11 @@ public class StreamingService : IStreamingService
         var notificationBatch = new List<(string Type, object Data)>();
         var lastNotificationTime = DateTime.UtcNow;
 
-        // Memory pressure monitoring
-        var lastMemoryCheck = DateTime.UtcNow;
-        const int MemoryCheckIntervalMs = 30000; // Check every 30 seconds
-
         try
         {
             while (turn < _options.MaxConversationTurns && !conversationCompleted && !cancellationToken.IsCancellationRequested)
             {
                 turn++;
-
-                // Check memory pressure periodically
-                if (_options.EnableMemoryPressureMonitoring && 
-                    (DateTime.UtcNow - lastMemoryCheck).TotalMilliseconds > MemoryCheckIntervalMs)
-                {
-                    CheckMemoryPressure();
-                    lastMemoryCheck = DateTime.UtcNow;
-                }
 
                 var historyTurn = new List<MessageDto>(baseHistory);
                 if (toolRequestMsg != null)
@@ -549,35 +537,6 @@ public class StreamingService : IStreamingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error publishing thinking content update via SignalR for message {MessageId}", messageId);
-        }
-    }
-
-    private void CheckMemoryPressure()
-    {
-        try
-        {
-            var process = Process.GetCurrentProcess();
-            var workingSetMB = process.WorkingSet64 / 1024.0 / 1024.0;
-            var totalMemoryMB = GC.GetTotalMemory(false) / 1024.0 / 1024.0;
-
-            _logger.LogDebug("Memory check: WorkingSet={WorkingSetMB:F1}MB, TotalMemory={TotalMemoryMB:F1}MB", 
-                workingSetMB, totalMemoryMB);
-
-            // If memory usage is high, force garbage collection
-            if (workingSetMB > 1000) // More than 1GB
-            {
-                _logger.LogWarning("High memory usage detected ({WorkingSetMB:F1}MB). Forcing garbage collection.", workingSetMB);
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                GC.Collect();
-                
-                var afterGC = GC.GetTotalMemory(false) / 1024.0 / 1024.0;
-                _logger.LogInformation("After GC: TotalMemory={TotalMemoryMB:F1}MB", afterGC);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error checking memory pressure");
         }
     }
 
