@@ -28,11 +28,12 @@ public class ToolDefinitionService : IToolDefinitionService
     private static readonly HashSet<Guid> _requiresExplicitActivation = new HashSet<Guid>
     {
         // Jina DeepSearch plugin requires user activation
-        new Guid("b8d00934-726c-4cc2-8198-ee25ab2f3154")
+        new Guid("3d5ec31c-5e6c-437d-8494-2ca942c9e2fe")
     };
 
     public async Task<List<PluginDefinition>?> GetToolDefinitionsAsync(
         Guid userId,
+        bool enableDeepSearch,
         CancellationToken cancellationToken = default)
     {
         try
@@ -82,6 +83,20 @@ public class ToolDefinitionService : IToolDefinitionService
                 .Where(def => activePluginIds.Contains(def.Id))
                 .ToList();
 
+            if (enableDeepSearch)
+            {
+                var deepSearchPluginId = new Guid("3d5ec31c-5e6c-437d-8494-2ca942c9e2fe");
+                if (activeDefinitions.All(d => d.Id != deepSearchPluginId))
+                {
+                    var deepSearchDefinition = allPluginDefinitions.FirstOrDefault(d => d.Id == deepSearchPluginId);
+                    if (deepSearchDefinition != null)
+                    {
+                        activeDefinitions.Add(deepSearchDefinition);
+                        _logger.LogInformation("Force-enabled Deep Search plugin for this request.");
+                    }
+                }
+            }
+            
             if (!activeDefinitions.Any())
             {
                 _logger.LogWarning("No matching definitions found in factory for active plugin IDs: {ActiveIds}", string.Join(", ", activePluginIds));

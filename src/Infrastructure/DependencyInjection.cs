@@ -73,7 +73,7 @@ public static class DependencyInjection
         // OpenAI client
         services.AddHttpClient<OpenAiService>(client => {
             client.BaseAddress = new Uri("https://api.openai.com/");
-            client.Timeout = TimeSpan.FromSeconds(60); // This timeout is for the HttpClient itself, Polly will have its own timeout
+            client.Timeout = TimeSpan.FromSeconds(2000); // This timeout is for the HttpClient itself, Polly will have its own timeout
             client.DefaultRequestHeaders.Add("Accept", "application/json");
         }); // Removed .AddPolicyHandler(InitializeRetryPolicy())
         
@@ -130,6 +130,12 @@ public static class DependencyInjection
         // Default HTTP client for backward compatibility
         services.AddHttpClient();
 
+        // HttpClient for Wikipedia with a specific User-Agent
+        services.AddHttpClient("WikipediaApiClient", client =>
+        {
+            client.DefaultRequestHeaders.Add("Api-User-Agent", "MultiAiChatApi/1.0 (https://github.com/yourrepo/Multi-AI-Chat-API; your-email@example.com)");
+        });
+
         // Keep InitializeRetryPolicy if it's used by other HttpClient registrations not converted to IResilienceService yet
         // If no other clients use it, this static method can be removed.
         static IAsyncPolicy<HttpResponseMessage> InitializeRetryPolicy()
@@ -140,8 +146,9 @@ public static class DependencyInjection
                 .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
         }
         
+        // Register plugins with their factory methods
         var webSearchConfig = configuration.GetSection("PluginSettings:WebSearch");
-        services.AddScoped<IChatPlugin<string>, WebSearchPlugin>(sp =>
+        services.AddScoped<WebSearchPlugin>(sp =>
             new WebSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                 webSearchConfig["ApiKey"] ?? throw new InvalidOperationException("Missing WebSearch API key"),
@@ -149,14 +156,14 @@ public static class DependencyInjection
             )
         );
 
-        services.AddScoped<IChatPlugin<string>, PerplexityPlugin>(sp =>
+        services.AddScoped<PerplexityPlugin>(sp =>
             new PerplexityPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                 configuration["Plugins:Perplexity:ApiKey"] ?? throw new InvalidOperationException("Missing Perplexity API key")
             )
         );
 
-        services.AddScoped<IChatPlugin<string>, JinaWebPlugin>(sp =>
+        services.AddScoped<JinaWebPlugin>(sp =>
             new JinaWebPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                 configuration["PluginSettings:Jina:ApiKey"] ?? throw new InvalidOperationException("Missing Jina API key"),
@@ -164,10 +171,31 @@ public static class DependencyInjection
             )
         );
 
-        // Register Hacker News Search Plugin
-        services.AddScoped<IChatPlugin<string>, HackerNewsSearchPlugin>(sp =>
+        services.AddScoped<HackerNewsSearchPlugin>(sp =>
             new HackerNewsSearchPlugin(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient()
+            )
+        );
+        
+        services.AddScoped<WikipediaPlugin>(sp => 
+            new WikipediaPlugin(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient("WikipediaApiClient")
+            )
+        );
+        
+        var jinaSettings = configuration.GetSection("PluginSettings:Jina");
+        services.AddScoped<JinaDeepSearchPlugin>(sp => 
+            new JinaDeepSearchPlugin(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                jinaSettings["ApiKey"] ?? throw new InvalidOperationException("Missing Jina API key for DeepSearch"),
+                sp.GetRequiredService<ILogger<JinaDeepSearchPlugin>>()
+            )
+        );
+        
+        services.AddScoped<CsvReaderPlugin>(sp => 
+            new CsvReaderPlugin(
+                sp.GetRequiredService<IFileAttachmentRepository>(),
+                sp.GetRequiredService<ILogger<CsvReaderPlugin>>()
             )
         );
 
@@ -285,35 +313,6 @@ public static class DependencyInjection
                 googleOptions.SaveTokens = true;
             });
         services.AddAuthorization();
-
-        services.AddHttpClient("WikipediaApiClient", client =>
-        {
-            client.DefaultRequestHeaders.Add("Api-User-Agent", "MultiAiChatApi/1.0 (https://github.com/yourrepo/Multi-AI-Chat-API; your-email@example.com)");
-        });
-
-        // Register Wikipedia Plugin
-        services.AddScoped<IChatPlugin<string>, WikipediaPlugin>(sp =>
-            new WikipediaPlugin(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient("WikipediaApiClient")
-            )
-        );
-
-        // Register CSV Reader Plugin
-        services.AddScoped<IChatPlugin<string>, CsvReaderPlugin>(sp =>
-            new CsvReaderPlugin(
-                sp.GetRequiredService<IFileAttachmentRepository>(),
-                sp.GetRequiredService<ILogger<CsvReaderPlugin>>()
-            )
-        );
-        
-        // Register Jina DeepSearch Plugin as a concrete type for plugin factory
-        services.AddScoped<JinaDeepSearchPlugin>(sp =>
-            new JinaDeepSearchPlugin(
-                sp.GetRequiredService<IHttpClientFactory>(),
-                configuration["PluginSettings:Jina:ApiKey"] ?? throw new InvalidOperationException("Missing Jina API key"),
-                sp.GetRequiredService<ILogger<JinaDeepSearchPlugin>>()
-            )
-        );
 
         return services;
     }

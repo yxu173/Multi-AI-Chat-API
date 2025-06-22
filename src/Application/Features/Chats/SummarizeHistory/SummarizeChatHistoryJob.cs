@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System;
 using System.Threading;
+using Hangfire;
 
 namespace Application.Features.Chats.SummarizeHistory;
 
@@ -24,6 +25,7 @@ public class SummarizeChatHistoryJob
         _logger = logger;
     }
 
+    [AutomaticRetry(OnAttemptsExceeded = AttemptsExceededAction.Delete)]
     public async Task SummarizeAsync(Guid chatSessionId, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Starting history summarization job for chat {ChatSessionId}", chatSessionId);

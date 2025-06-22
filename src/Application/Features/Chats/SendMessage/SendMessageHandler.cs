@@ -65,7 +65,7 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
 
         try
         {
-            var request = new StreamingRequest(
+            var streamingRequest = new StreamingRequest(
                 ChatSessionId: command.ChatSessionId,
                 UserId: command.UserId,
                 AiMessageId: aiMessage.Id,
@@ -74,10 +74,11 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 NumImages: command.NumImages,
                 OutputFormat: command.OutputFormat,
                 EnableSafetyChecker: command.EnableSafetyChecker,
-                SafetyTolerance: command.SafetyTolerance
+                SafetyTolerance: command.SafetyTolerance,
+                EnableDeepSearch: command.EnableDeepSearch
             );
 
-            await _streamingService.StreamResponseAsync(request, ct);
+            await _streamingService.StreamResponseAsync(streamingRequest, ct);
 
         //    await UpdateChatSessionTitleAsync(chatSession, command.Content, ct);
 

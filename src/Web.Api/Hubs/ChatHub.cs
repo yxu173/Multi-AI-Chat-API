@@ -153,37 +153,20 @@ public class ChatHub : Hub
                 return;
             }
 
-            if (enableDeepSearch)
-            {
-                var deepSearchCommand = new DeepSearchCommand(
-                    chatSessionGuid,
-                    userId,
-                    content,
-                    enableThinking,
-                    imageSize,
-                    numImages,
-                    outputFormat,
-                    enableSafetyChecker,
-                    safetyTolerance
-                );
-                await deepSearchCommand.ExecuteAsync();
-            }
-            else
-            {
-                var command = new SendMessageCommand(
-                    chatSessionGuid,
-                    userId,
-                    content,
-                    enableThinking,
-                    imageSize,
-                    numImages,
-                    outputFormat,
-                    enableSafetyChecker,
-                    safetyTolerance
-                );
+            var command = new SendMessageCommand(
+                chatSessionGuid,
+                userId,
+                content,
+                enableThinking,
+                imageSize,
+                numImages,
+                outputFormat,
+                enableSafetyChecker,
+                safetyTolerance,
+                enableDeepSearch
+            );
 
-                await command.ExecuteAsync();
-            }
+            await command.ExecuteAsync();
         }
         catch (Exception ex)
         {

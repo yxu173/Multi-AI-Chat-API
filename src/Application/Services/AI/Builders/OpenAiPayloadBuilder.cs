@@ -47,6 +47,21 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var processedMessages = await ProcessMessagesForOpenAIInputAsync(context.History, cancellationToken);
         requestObj["input"] = processedMessages;
 
+        if (context.EnableDeepSearch)
+        {
+            var deepSearchToolName = "jina_deepsearch";
+            var deepSearchTool = tools?.FirstOrDefault(t => t.Name == deepSearchToolName);
+            if (deepSearchTool != null)
+            {
+                tools = new List<PluginDefinition> { deepSearchTool };
+                requestObj["tool_choice"] = "required";
+            }
+            else
+            {
+                Logger?.LogWarning("Deep Search was enabled, but the '{ToolName}' tool was not found or available.", deepSearchToolName);
+            }
+        }
+
         if (tools?.Any() == true)
         {
             Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",

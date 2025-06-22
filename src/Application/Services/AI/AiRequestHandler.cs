@@ -25,7 +25,8 @@ public record AiRequestContext(
     bool? EnableSafetyChecker = null,
     string? SafetyTolerance = null,
     string? FunctionCall = null,
-    List<PluginDefinition>? ToolDefinitions = null
+    List<PluginDefinition>? ToolDefinitions = null,
+    bool EnableDeepSearch = false
 );
 
 public class AiRequestHandler : IAiRequestHandler

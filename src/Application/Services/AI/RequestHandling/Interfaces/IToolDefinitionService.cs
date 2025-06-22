@@ -7,5 +7,6 @@ public interface IToolDefinitionService
 {
     Task<List<PluginDefinition>?> GetToolDefinitionsAsync(
         Guid userId,
+        bool enableDeepSearch,
         CancellationToken cancellationToken = default);
 }

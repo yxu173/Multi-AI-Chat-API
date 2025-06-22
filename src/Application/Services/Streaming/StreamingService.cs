@@ -31,7 +31,8 @@ public record StreamingRequest(
     int? NumImages = null,
     string? OutputFormat = null,
     bool? EnableSafetyChecker = null,
-    string? SafetyTolerance = null
+    string? SafetyTolerance = null,
+    bool EnableDeepSearch = false
 );
 
 public record StreamingResult(
@@ -143,7 +144,7 @@ public class StreamingService : IStreamingService
                 ? await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken)
                 : null;
 
-            var toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(request.UserId, cancellationToken);
+            var toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(request.UserId, request.EnableDeepSearch, cancellationToken);
 
             var history = request.History is not null && request.History.Any()
                 ? HistoryBuilder.BuildHistory(request.History.Select(m => MessageDto.FromEntity(m)).ToList())
@@ -162,7 +163,8 @@ public class StreamingService : IStreamingService
                 OutputFormat: request.OutputFormat,
                 EnableSafetyChecker: request.EnableSafetyChecker,
                 SafetyTolerance: request.SafetyTolerance,
-                ToolDefinitions: toolDefinitions);
+                ToolDefinitions: toolDefinitions,
+                EnableDeepSearch: request.EnableDeepSearch);
 
             var cts = new CancellationTokenSource();
             _streamingOperationManager.RegisterOperation(aiMessage.Id, cts);
@@ -464,7 +466,7 @@ public class StreamingService : IStreamingService
                         aiMessage.UpdateContent(finalContent.ToString());
                         foreach (var call in completedToolCalls)
                         {
-                            var resultMsg = await _toolCallHandler.ExecuteToolCallAsync(aiService, call, cancellationToken);
+                            var resultMsg = await _toolCallHandler.ExecuteToolCallAsync(aiService, call, requestContext.ChatSession.Id, cancellationToken);
                             toolResults.Add(resultMsg);
                         }
                         toolRequestMsg = await _toolCallHandler.FormatAiMessageWithToolCallsAsync(modelType, completedToolCalls);
