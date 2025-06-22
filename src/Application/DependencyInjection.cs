@@ -22,6 +22,7 @@ using Application.Features.Chats.SummarizeHistory;
 using Domain.Repositories;
 using Hangfire;
 using Microsoft.Extensions.Logging;
+using Application.Services.Resilience;
 
 namespace Application;
 
@@ -45,6 +46,7 @@ public static class DependencyInjection
         
         services.AddScoped<IStreamingService, StreamingService>();
         services.AddScoped<IStreamingContextService, StreamingContextService>();
+        services.AddScoped<IStreamingResilienceHandler, StreamingResilienceHandler>();
 
         services.AddScoped<HistorySummarizationService>();
         services.AddScoped<SummarizeChatHistoryJob>();
@@ -99,16 +101,18 @@ public static class DependencyInjection
         services.AddSingleton<StreamingOperationManager>();
         services.AddSingleton<StreamingPerformanceMonitor>();
         
-        // Configure streaming performance options
-        services.Configure<StreamingPerformanceOptions>(
-            configuration.GetSection(StreamingPerformanceOptions.SectionName));
-        
         services.AddGlobalPreProcessors();
 
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
 
         // Background File Processor
         services.AddScoped<IBackgroundFileProcessor, BackgroundFileProcessor>();
+
+        // Register the StreamingOptions
+        services.AddOptions<StreamingOptions>()
+            .BindConfiguration(StreamingOptions.SectionName)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         return services;
     }

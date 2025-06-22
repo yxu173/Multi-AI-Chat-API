@@ -8,6 +8,7 @@ using Application.Services.AI.Streaming;
 using Application.Services.Helpers;
 using Application.Services.Infrastructure;
 using Application.Services.Messaging;
+using Application.Services.Resilience;
 using Application.Services.TokenUsage;
 using Domain.Aggregates.Chats;
 using Domain.Enums;
@@ -44,14 +45,10 @@ public record StreamingResult(
 
 public class StreamingService : IStreamingService
 {
-    private readonly IChatSessionRepository _chatSessionRepository;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IProviderKeyManagementService _providerKeyManagementService;
     private readonly ILogger<StreamingService> _logger;
-    private readonly IUserAiModelSettingsRepository _userAiModelSettingsRepository;
-    private readonly IAiAgentRepository _aiAgentRepository;
-    private readonly IToolDefinitionService _toolDefinitionService;
     private readonly StreamingOperationManager _streamingOperationManager;
     private readonly StreamingPerformanceMonitor _performanceMonitor;
     private readonly TokenUsageService _tokenUsageService;
@@ -59,32 +56,21 @@ public class StreamingService : IStreamingService
     private readonly IAiMessageFinalizer _aiMessageFinalizer;
     private readonly IAiRequestHandler _aiRequestHandler;
     private readonly ToolCallHandler _toolCallHandler;
-    private readonly StreamingPerformanceOptions _options;
+    private readonly IStreamingContextService _streamingContextService;
+    private readonly IStreamingResilienceHandler _resilienceHandler;
+    private readonly StreamingOptions _options;
 
-    // Object pools for better memory management
     private readonly ConcurrentQueue<StringBuilder> _stringBuilderPool = new();
     private readonly ConcurrentQueue<List<MessageDto>> _messageListPool = new();
     private readonly ConcurrentQueue<Dictionary<int, ToolCallState>> _toolCallStatePool = new();
 
-    private const int MaxRetries = 3;
-    private readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(2);
-    private const double RetryBackoffFactor = 2.0;
-    
-    // Notification batching configuration
-    private const int MaxChunkBatchSize = 10;
-    private const int NotificationBatchDelayMs = 50;
-
     private static readonly ActivitySource ActivitySource = new("Application.Services.Streaming.StreamingService", "1.0.0");
 
     public StreamingService(
-        IChatSessionRepository chatSessionRepository,
         ISubscriptionService subscriptionService,
         IAiModelServiceFactory aiModelServiceFactory,
         IProviderKeyManagementService providerKeyManagementService,
         ILogger<StreamingService> logger,
-        IUserAiModelSettingsRepository userAiModelSettingsRepository,
-        IAiAgentRepository aiAgentRepository,
-        IToolDefinitionService toolDefinitionService,
         StreamingOperationManager streamingOperationManager,
         StreamingPerformanceMonitor performanceMonitor,
         TokenUsageService tokenUsageService,
@@ -92,16 +78,14 @@ public class StreamingService : IStreamingService
         IAiMessageFinalizer aiMessageFinalizer,
         IAiRequestHandler aiRequestHandler,
         ToolCallHandler toolCallHandler,
-        IOptions<StreamingPerformanceOptions> options)
+        IStreamingContextService streamingContextService,
+        IStreamingResilienceHandler resilienceHandler,
+        IOptions<StreamingOptions> options)
     {
-        _chatSessionRepository = chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
         _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
         _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _providerKeyManagementService = providerKeyManagementService ?? throw new ArgumentNullException(nameof(providerKeyManagementService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _userAiModelSettingsRepository = userAiModelSettingsRepository ?? throw new ArgumentNullException(nameof(userAiModelSettingsRepository));
-        _aiAgentRepository = aiAgentRepository ?? throw new ArgumentNullException(nameof(aiAgentRepository));
-        _toolDefinitionService = toolDefinitionService ?? throw new ArgumentNullException(nameof(toolDefinitionService));
         _streamingOperationManager = streamingOperationManager ?? throw new ArgumentNullException(nameof(streamingOperationManager));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         _tokenUsageService = tokenUsageService ?? throw new ArgumentNullException(nameof(tokenUsageService));
@@ -109,6 +93,8 @@ public class StreamingService : IStreamingService
         _aiMessageFinalizer = aiMessageFinalizer ?? throw new ArgumentNullException(nameof(aiMessageFinalizer));
         _aiRequestHandler = aiRequestHandler ?? throw new ArgumentNullException(nameof(aiRequestHandler));
         _toolCallHandler = toolCallHandler ?? throw new ArgumentNullException(nameof(toolCallHandler));
+        _streamingContextService = streamingContextService ?? throw new ArgumentNullException(nameof(streamingContextService));
+        _resilienceHandler = resilienceHandler ?? throw new ArgumentNullException(nameof(resilienceHandler));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
@@ -119,7 +105,6 @@ public class StreamingService : IStreamingService
         activity?.SetTag("user.id", request.UserId.ToString());
         activity?.SetTag("ai_message.id", request.AiMessageId.ToString());
 
-        // Start performance monitoring
         if (_options.EnablePerformanceMonitoring)
         {
             _performanceMonitor.StartMonitoring(request.AiMessageId);
@@ -127,44 +112,15 @@ public class StreamingService : IStreamingService
 
         try
         {
-            var chatSession = await _chatSessionRepository.GetByIdWithMessagesAndModelAndProviderAsync(request.ChatSessionId)
-                ?? throw new NotFoundException(nameof(ChatSession), request.ChatSessionId);
-
-            var aiMessage = chatSession.Messages.FirstOrDefault(m => m.Id == request.AiMessageId)
-                ?? throw new NotFoundException(nameof(Message), request.AiMessageId);
+            var requestContext = await _streamingContextService.BuildContextAsync(request, cancellationToken);
+            var chatSession = requestContext.ChatSession;
+            var aiMessage = chatSession.Messages.First(m => m.Id == request.AiMessageId);
 
             var (hasQuota, errorMessage) = await _subscriptionService.CheckUserQuotaAsync(request.UserId, chatSession.AiModel.RequestCost, 0, cancellationToken);
             if (!hasQuota)
             {
                 throw new QuotaExceededException(errorMessage ?? "User has exceeded their quota.");
             }
-
-            var userSettings = await _userAiModelSettingsRepository.GetDefaultByUserIdAsync(request.UserId, cancellationToken);
-            var aiAgent = chatSession.AiAgentId.HasValue
-                ? await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken)
-                : null;
-
-            var toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(request.UserId, request.EnableDeepSearch, cancellationToken);
-
-            var history = request.History is not null && request.History.Any()
-                ? HistoryBuilder.BuildHistory(request.History.Select(m => MessageDto.FromEntity(m)).ToList())
-                : HistoryBuilder.BuildHistory(chatSession, aiAgent, userSettings, MessageDto.FromEntity(aiMessage));
-
-            var requestContext = new AiRequestContext(
-                UserId: request.UserId,
-                ChatSession: chatSession,
-                History: history,
-                AiAgent: aiAgent,
-                UserSettings: userSettings,
-                SpecificModel: chatSession.AiModel,
-                RequestSpecificThinking: request.EnableThinking,
-                ImageSize: request.ImageSize,
-                NumImages: request.NumImages,
-                OutputFormat: request.OutputFormat,
-                EnableSafetyChecker: request.EnableSafetyChecker,
-                SafetyTolerance: request.SafetyTolerance,
-                ToolDefinitions: toolDefinitions,
-                EnableDeepSearch: request.EnableDeepSearch);
 
             var cts = new CancellationTokenSource();
             _streamingOperationManager.RegisterOperation(aiMessage.Id, cts);
@@ -174,7 +130,11 @@ public class StreamingService : IStreamingService
 
             try
             {
-                var result = await ProcessStreamingWithRetriesAsync(requestContext, aiMessage, linkedToken);
+                var result = await _resilienceHandler.ExecuteWithRetriesAsync(
+                    () => ProcessStreamInternalAsync(requestContext, aiMessage, linkedToken),
+                    requestContext,
+                    aiMessage,
+                    linkedToken);
                 
                 // Handle thinking content
                 if (!string.IsNullOrEmpty(result.AccumulatedThinkingContent))
@@ -228,71 +188,32 @@ public class StreamingService : IStreamingService
         }
     }
 
-    private async Task<StreamingResult> ProcessStreamingWithRetriesAsync(
+    private async Task<StreamingResult> ProcessStreamInternalAsync(
         AiRequestContext requestContext,
         Message aiMessage,
         CancellationToken cancellationToken)
     {
-        for (int attempt = 1; attempt <= MaxRetries; attempt++)
+        var serviceContext = await _aiModelServiceFactory.GetServiceContextAsync(
+            requestContext.UserId,
+            requestContext.ChatSession.AiModelId,
+            requestContext.ChatSession.AiAgentId,
+            cancellationToken);
+
+        var result = await ProcessConversationTurnAsync(
+            requestContext,
+            aiMessage,
+            serviceContext.Service,
+            cancellationToken,
+            serviceContext.ApiKey?.Id);
+
+        if (serviceContext.ApiKey != null)
         {
-            if (cancellationToken.IsCancellationRequested) break;
-
-            TimeSpan delayForThisAttempt = TimeSpan.FromSeconds(Math.Pow(RetryBackoffFactor, attempt - 1) * InitialRetryDelay.TotalSeconds);
-
-            try
-            {
-                var serviceContext = await _aiModelServiceFactory.GetServiceContextAsync(
-                    requestContext.UserId, 
-                    requestContext.ChatSession.AiModelId, 
-                    requestContext.ChatSession.AiAgentId, 
-                    cancellationToken);
-
-                var result = await ProcessConversationTurnAsync(
-                    requestContext,
-                    aiMessage,
-                    serviceContext.Service,
-                    cancellationToken,
-                    serviceContext.ApiKey?.Id);
-
-                if (serviceContext.ApiKey != null)
-                {
-                    await _providerKeyManagementService.ReportKeySuccessAsync(serviceContext.ApiKey.Id, CancellationToken.None);
-                }
-
-                _logger.LogInformation("Successfully streamed AI response for chat {ChatSessionId} on attempt {Attempt}", 
-                    requestContext.ChatSession.Id, attempt);
-                return result;
-            }
-            catch (ProviderRateLimitException ex)
-            {
-                _logger.LogWarning(ex, "Provider rate limit hit on attempt {Attempt} for chat {ChatSessionId}. Key ID: {ApiKeyIdUsed}", 
-                    attempt, requestContext.ChatSession.Id, ex.ApiKeyIdUsed);
-                if (ex.ApiKeyIdUsed.HasValue)
-                {
-                    await _providerKeyManagementService.ReportKeyRateLimitedAsync(ex.ApiKeyIdUsed.Value, ex.RetryAfter ?? delayForThisAttempt, CancellationToken.None);
-                }
-                if (attempt == MaxRetries) throw;
-                var actualDelay = ex.RetryAfter ?? delayForThisAttempt;
-                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to provider rate limit.", actualDelay, requestContext.ChatSession.Id);
-                await Task.Delay(actualDelay, cancellationToken);
-            }
-            catch (HttpRequestException ex)
-            {
-                _logger.LogError(ex, "HTTP request exception on attempt {Attempt} for chat {ChatSessionId}", attempt, requestContext.ChatSession.Id);
-                if (attempt == MaxRetries) throw;
-                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to HTTP request exception.", delayForThisAttempt, requestContext.ChatSession.Id);
-                await Task.Delay(delayForThisAttempt, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unhandled exception on attempt {Attempt} during AI interaction for chat {ChatSessionId}", attempt, requestContext.ChatSession.Id);
-                if (attempt == MaxRetries) throw;
-                _logger.LogInformation("Retrying after {Delay} for chat {ChatSessionId} due to unhandled exception.", delayForThisAttempt, requestContext.ChatSession.Id);
-                await Task.Delay(delayForThisAttempt, cancellationToken);
-            }
+            await _providerKeyManagementService.ReportKeySuccessAsync(serviceContext.ApiKey.Id, CancellationToken.None);
         }
 
-        throw new Exception($"Failed to get AI response for chat {requestContext.ChatSession.Id} after {MaxRetries} attempts. Please try again later.");
+        _logger.LogInformation("Successfully streamed AI response for chat {ChatSessionId}",
+            requestContext.ChatSession.Id);
+        return result;
     }
 
     private async Task<StreamingResult> ProcessConversationTurnAsync(
@@ -310,7 +231,6 @@ public class StreamingService : IStreamingService
         int outTokens = 0;
         bool conversationCompleted = false;
         int turn = 0;
-        const int MaxTurns = 5;
 
         var baseHistory = new List<MessageDto>(requestContext.History);
         var modelType = requestContext.SpecificModel.ModelType;
@@ -328,7 +248,7 @@ public class StreamingService : IStreamingService
 
         try
         {
-            while (turn < MaxTurns && !conversationCompleted && !cancellationToken.IsCancellationRequested)
+            while (turn < _options.MaxConversationTurns && !conversationCompleted && !cancellationToken.IsCancellationRequested)
             {
                 turn++;
 
