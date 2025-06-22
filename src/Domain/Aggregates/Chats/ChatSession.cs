@@ -10,6 +10,8 @@ public sealed class ChatSession : BaseAuditableEntity
     public Guid? FolderId { get; private set; }
     public Guid? AiAgentId { get; private set; }
     public bool EnableThinking { get; private set; }
+    public string? HistorySummary { get; private set; }
+    public DateTime? LastSummarizedAt { get; private set; }
     
     /// <summary>
     /// Used for optimistic concurrency control
@@ -57,6 +59,13 @@ public sealed class ChatSession : BaseAuditableEntity
         if (string.IsNullOrWhiteSpace(newTitle))
             throw new ArgumentException("Title cannot be empty.", nameof(newTitle));
         Title = newTitle;
+        LastModifiedAt = DateTime.UtcNow;
+    }
+
+    public void UpdateHistorySummary(string summary)
+    {
+        HistorySummary = summary;
+        LastSummarizedAt = DateTime.UtcNow;
         LastModifiedAt = DateTime.UtcNow;
     }
 

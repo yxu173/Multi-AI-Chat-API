@@ -18,6 +18,7 @@ using Application.Services.Streaming;
 using Application.Services.TokenUsage;
 using Application.Services.Files.BackgroundProcessing;
 using Application.Services.Utilities;
+using Application.Features.Chats.SummarizeHistory;
 
 namespace Application;
 
@@ -40,6 +41,9 @@ public static class DependencyInjection
         services.AddScoped<ChatTitleGenerator>();
         
         services.AddScoped<IStreamingService, StreamingService>();
+
+        services.AddScoped<HistorySummarizationService>();
+        services.AddScoped<SummarizeChatHistoryJob>();
 
         services.AddScoped<ToolCallHandler>();
         services.AddScoped<IStreamChunkParser, OpenAiStreamChunkParser>();

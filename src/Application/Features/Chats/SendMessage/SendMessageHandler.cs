@@ -13,6 +13,7 @@ using SharedKernal;
 using Domain.Aggregates.Chats;
 using Application.Abstractions.Interfaces;
 using Domain.Enums;
+using Hangfire;
 
 namespace Application.Features.Chats.SendMessage;
 
@@ -24,6 +25,7 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
     private readonly ILogger<SendMessageHandler> _logger;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly ChatTitleGenerator _titleGenerator;
+    private readonly IBackgroundJobClient _backgroundJobClient;
 
     public SendMessageHandler(
         IChatSessionRepository chatSessionRepository,
@@ -31,7 +33,8 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         IStreamingService streamingService,
         ILogger<SendMessageHandler> logger,
         IAiModelServiceFactory aiModelServiceFactory,
-        ChatTitleGenerator titleGenerator)
+        ChatTitleGenerator titleGenerator,
+        IBackgroundJobClient backgroundJobClient)
     {
         _chatSessionRepository =
             chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
@@ -41,6 +44,7 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         _aiModelServiceFactory =
             aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _titleGenerator = titleGenerator ?? throw new ArgumentNullException(nameof(titleGenerator));
+        _backgroundJobClient = backgroundJobClient ?? throw new ArgumentNullException(nameof(backgroundJobClient));
     }
 
     public async Task<Result> ExecuteAsync(SendMessageCommand command, CancellationToken ct)
@@ -75,7 +79,32 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
 
             await _streamingService.StreamResponseAsync(request, ct);
 
-            await UpdateChatSessionTitleAsync(chatSession, command.Content, ct);
+        //    await UpdateChatSessionTitleAsync(chatSession, command.Content, ct);
+
+            // Generate title for new chats
+            var currentChat = await _chatSessionRepository.GetByIdAsync(command.ChatSessionId);
+            if (currentChat!.Messages.Count == 2 && currentChat.Title == "New Chat")
+            {
+                var title = await _titleGenerator.GenerateTitleAsync(currentChat, currentChat.Messages.ToList(), ct);
+                currentChat.UpdateTitle(title);
+                await _chatSessionRepository.UpdateAsync(currentChat, CancellationToken.None);
+                await new ChatTitleUpdatedNotification(command.ChatSessionId, title).PublishAsync(cancellation: CancellationToken.None);
+            }
+
+            // Enqueue summarization job for longer chats
+            const int summarizationMessageThreshold = 10;
+            if (currentChat.Messages.Count >= summarizationMessageThreshold)
+            {
+                var messagesSinceLastSummary = currentChat.LastSummarizedAt.HasValue
+                    ? currentChat.Messages.Count(m => m.CreatedAt > currentChat.LastSummarizedAt.Value)
+                    : currentChat.Messages.Count;
+
+                if (messagesSinceLastSummary >= summarizationMessageThreshold / 2)
+                {
+                    _backgroundJobClient.Enqueue<SummarizeHistory.SummarizeChatHistoryJob>(j => j.SummarizeAsync(command.ChatSessionId, CancellationToken.None));
+                    _logger.LogInformation("Enqueued history summarization job for chat {ChatSessionId}", command.ChatSessionId);
+                }
+            }
 
             return Result.Success();
         }

@@ -132,7 +132,7 @@ public class StreamingService : IStreamingService
             var aiMessage = chatSession.Messages.FirstOrDefault(m => m.Id == request.AiMessageId)
                 ?? throw new NotFoundException(nameof(Message), request.AiMessageId);
 
-            var (hasQuota, errorMessage) = await _subscriptionService.CheckUserQuotaAsync(request.UserId, 1, 0, cancellationToken);
+            var (hasQuota, errorMessage) = await _subscriptionService.CheckUserQuotaAsync(request.UserId, chatSession.AiModel.RequestCost, 0, cancellationToken);
             if (!hasQuota)
             {
                 throw new QuotaExceededException(errorMessage ?? "User has exceeded their quota.");
