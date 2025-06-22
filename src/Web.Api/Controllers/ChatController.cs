@@ -1,6 +1,7 @@
 using Application.Features.Chats.BulkDeleteChats;
 using Application.Features.Chats.CreateChatSession;
 using Application.Features.Chats.DeleteChatById;
+using Application.Features.Chats.ForkChat;
 using Application.Features.Chats.GetAllChatsByUserId;
 using Application.Features.Chats.GetChatById;
 using Application.Features.Chats.GetChatBySeacrh;
@@ -116,7 +117,7 @@ public class ChatController : BaseController
 
             session.ToggleThinking(request.Enable);
 
-             await new UpdateChatSessionCommand(chatId, session.Title, session.FolderId).ExecuteAsync();
+            await new UpdateChatSessionCommand(chatId, session.Title, session.FolderId).ExecuteAsync();
 
             return Results.Ok(new { Enabled = request.Enable });
         }
@@ -125,7 +126,7 @@ public class ChatController : BaseController
             return Results.Problem(ex.Message);
         }
     }
-    
+
     [Microsoft.AspNetCore.Mvc.HttpPut("Update/{id}")]
     public async Task<IResult> UpdateChatSession([FromRoute] Guid id,
         [Microsoft.AspNetCore.Mvc.FromBody] UpdateChatSessionRequest request)
@@ -133,6 +134,7 @@ public class ChatController : BaseController
         var result = await new UpdateChatSessionCommand(id, request.Title).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
+
     [Microsoft.AspNetCore.Mvc.HttpPut("Update/{id}/MoveToFolder")]
     public async Task<IResult> MoveChatToFolder([FromRoute] Guid id,
         [Microsoft.AspNetCore.Mvc.FromBody] MoveChatToFolderRequest request)
@@ -182,6 +184,15 @@ public class ChatController : BaseController
     public async Task<IResult> GetSharedChat([FromRoute] string token)
     {
         var result = await new GetSharedChatQuery(token).ExecuteAsync();
+        return result.Match(Results.Ok, CustomResults.Problem);
+    }
+
+    [Microsoft.AspNetCore.Mvc.HttpPost("Fork")]
+    public async Task<IResult> ForkChat([Microsoft.AspNetCore.Mvc.FromBody] ForkChatRequest request)
+    {
+        var result =
+            await new ForkChatCommand(UserId, request.OriginalChatId, request.ForkFromMessageId, request.NewAiModelId)
+                .ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 }

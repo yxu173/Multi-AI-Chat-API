@@ -104,4 +104,26 @@ public sealed class Message : BaseAuditableEntity
     {
         _fileAttachments.Clear();
     }
+
+    public Message CloneForNewChat(Guid newChatSessionId)
+    {
+        var newMessage = new Message
+        {
+            Id = Guid.NewGuid(),
+            UserId = this.UserId,
+            Content = this.Content,
+            ChatSessionId = newChatSessionId,
+            IsFromAi = this.IsFromAi,
+            Status = this.Status,
+            CreatedAt = this.CreatedAt,
+            LastModifiedAt = this.LastModifiedAt
+        };
+
+        foreach (var attachment in this.FileAttachments)
+        {
+            newMessage.AddFileAttachment(attachment);
+        }
+
+        return newMessage;
+    }
 }
