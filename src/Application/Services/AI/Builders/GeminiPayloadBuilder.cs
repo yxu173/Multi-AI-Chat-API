@@ -32,13 +32,24 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         
         AddParameters(generationConfig, context); 
         
+        bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        if (useThinking)
+        {
+            int thinkingBudget = 1024;
+            generationConfig["thinkingConfig"] = new Dictionary<string, object>
+            {
+                { "thinkingBudget", thinkingBudget },
+                {"includeThoughts",true}
+            };
+        }
+
+        
         var geminiContents = await ProcessMessagesForGeminiAsync(context, cancellationToken);
 
         // Build the complete request
         requestObj["contents"] = geminiContents;
         requestObj["generationConfig"] = generationConfig;
         requestObj["safetySettings"] = safetySettings;
-
         // Add tools only if not in thinking mode
         if ( tools?.Any() == true)
         {
@@ -62,7 +73,6 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
     private async Task<List<object>> ProcessMessagesForGeminiAsync(AiRequestContext context, CancellationToken cancellationToken)
     {
-        bool useThinking =  context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
         string? systemMessage = null;
         if (context.AiAgent != null && context.AiAgent.ModelParameter != null)
         {
