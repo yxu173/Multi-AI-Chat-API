@@ -3,6 +3,7 @@ using System.Text;
 using Application.Abstractions.Authentication;
 using Application.Abstractions.Data;
 using Application.Abstractions.Interfaces;
+using Application.Services.Files;
 using Domain.Aggregates.Users;
 using Domain.Repositories;
 using Infrastructure.Authentication;
@@ -11,6 +12,7 @@ using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Infrastructure.Services.AiProvidersServices;
 using Infrastructure.Services.Caching;
+using Infrastructure.Services.FileStorage;
 using Infrastructure.Services.Plugins;
 using Infrastructure.Services.Resilience;
 using Infrastructure.Services.Subscription;
@@ -213,6 +215,11 @@ public static class DependencyInjection
             return ConnectionMultiplexer.Connect(redisConfig);
         });
 
+        var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+        services.AddSingleton<IFileStorageService>(sp => 
+            new LocalFileStorageService(
+                uploadsPath, 
+                sp.GetRequiredService<ILogger<LocalFileStorageService>>()));
 
         services.AddScoped<ICacheService, RedisCacheService>();
 

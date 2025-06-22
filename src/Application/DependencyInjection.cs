@@ -19,6 +19,9 @@ using Application.Services.TokenUsage;
 using Application.Services.Files.BackgroundProcessing;
 using Application.Services.Utilities;
 using Application.Features.Chats.SummarizeHistory;
+using Domain.Repositories;
+using Hangfire;
+using Microsoft.Extensions.Logging;
 
 namespace Application;
 
@@ -41,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<ChatTitleGenerator>();
         
         services.AddScoped<IStreamingService, StreamingService>();
+        services.AddScoped<IStreamingContextService, StreamingContextService>();
 
         services.AddScoped<HistorySummarizationService>();
         services.AddScoped<SummarizeChatHistoryJob>();
@@ -81,12 +85,15 @@ public static class DependencyInjection
        
         services.AddScoped<IAiMessageFinalizer, AiMessageFinalizer>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
-        services.AddScoped<FileUploadService>(provider =>
-            new FileUploadService(
-                provider.GetRequiredService<Domain.Repositories.IFileAttachmentRepository>(),
-                uploadsBasePath,
-                provider.GetRequiredService<Hangfire.IBackgroundJobClient>(),
-                provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FileUploadService>>()));
+
+        services.AddScoped(sp =>
+        {
+            return new FileUploadService(
+                sp.GetRequiredService<IFileAttachmentRepository>(),
+                sp.GetRequiredService<IFileStorageService>(),
+                sp.GetRequiredService<IBackgroundJobClient>(),
+                sp.GetRequiredService<ILogger<FileUploadService>>());
+        });
 
         // Streaming Performance Services
         services.AddSingleton<StreamingOperationManager>();

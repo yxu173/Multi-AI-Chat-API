@@ -46,6 +46,13 @@ public sealed class FileAttachment : BaseEntity
         ProcessedDataCacheKey = cacheKey;
     }
 
+    public void UpdateProcessedDetails(string newContentType, long newFileSize)
+    {
+        ContentType = newContentType;
+        FileSize = newFileSize;
+        FileType = DetermineFileType(newContentType);
+    }
+
     private static FileType DetermineFileType(string contentType)
     {
         if (string.IsNullOrEmpty(contentType)) return FileType.Other;

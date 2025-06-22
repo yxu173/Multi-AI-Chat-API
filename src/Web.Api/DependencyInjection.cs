@@ -7,6 +7,14 @@ using Microsoft.OpenApi.Models;
 using NSwag;
 using Web.Api.Infrastructure;
 using Web.Api.NotificationHandlers;
+using Application.Services.Files;
+using Hangfire;
+using Infrastructure.Services.FileStorage;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Domain.Repositories;
+using Web.Api.Extensions;
 
 namespace Web.Api;
 
