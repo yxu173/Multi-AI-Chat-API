@@ -40,4 +40,11 @@ internal static class HistoryBuilder
             .Select(m => MessageDto.FromEntity(m, overrideThinkingContent: null))
             .ToList();
     }
+    
+    public static List<MessageDto> BuildHistory(List<MessageDto> messages)
+    {
+        // When history is provided directly, we assume it's already processed and correct.
+        // We just need to ensure it's a new list instance.
+        return new List<MessageDto>(messages);
+    }
 }

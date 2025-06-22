@@ -25,6 +25,7 @@ public record StreamingRequest(
     Guid ChatSessionId,
     Guid UserId,
     Guid AiMessageId,
+    List<Message>? History = null,
     bool EnableThinking = false,
     string? ImageSize = null,
     int? NumImages = null,
@@ -144,10 +145,14 @@ public class StreamingService : IStreamingService
 
             var toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(request.UserId, cancellationToken);
 
+            var history = request.History is not null && request.History.Any()
+                ? HistoryBuilder.BuildHistory(request.History.Select(m => MessageDto.FromEntity(m)).ToList())
+                : HistoryBuilder.BuildHistory(chatSession, aiAgent, userSettings, MessageDto.FromEntity(aiMessage));
+
             var requestContext = new AiRequestContext(
                 UserId: request.UserId,
                 ChatSession: chatSession,
-                History: HistoryBuilder.BuildHistory(chatSession, aiAgent, userSettings, MessageDto.FromEntity(aiMessage)),
+                History: history,
                 AiAgent: aiAgent,
                 UserSettings: userSettings,
                 SpecificModel: chatSession.AiModel,

@@ -45,17 +45,27 @@ public class RegenerateResponseHandler : Application.Abstractions.Messaging.ICom
 
         var userMessage = chatSession.Messages.FirstOrDefault(m => m.Id == command.UserMessageId && m.UserId == command.UserId && !m.IsFromAi);
         if (userMessage == null) throw new Exception("Original user message not found or access denied.");
-
-        var aiMessageToDelete = chatSession.Messages
+        
+        var messagesToDelete = chatSession.Messages
             .Where(m => m.CreatedAt > userMessage.CreatedAt)
             .OrderBy(m => m.CreatedAt)
-            .Select(x => x.Id)
+            .ToList();
+        
+        var messageIdsToDelete = messagesToDelete.Select(m => m.Id).ToList();
+
+        if (messageIdsToDelete.Any())
+        {
+            await _messageRepository.BulkDeleteAsync(chatSession.UserId, messageIdsToDelete, cancellationToken);
+            await new MessageDeletedNotification(command.ChatSessionId, messageIdsToDelete.AsReadOnly()).PublishAsync(cancellation: cancellationToken);
+        }
+        
+        var history = chatSession.Messages
+            .Except(messagesToDelete)
+            .OrderBy(m => m.CreatedAt)
             .ToList();
 
-        await _messageRepository.BulkDeleteAsync(chatSession.UserId, aiMessageToDelete, cancellationToken);
-        await new MessageDeletedNotification(command.ChatSessionId, aiMessageToDelete.AsReadOnly()).PublishAsync(cancellation: cancellationToken);
-
         var newAiMessage = await CreateAndSaveAiMessageAsync(command.UserId, command.ChatSessionId, cancellationToken);
+        history.Add(newAiMessage);
         
         try
         {
@@ -63,6 +73,7 @@ public class RegenerateResponseHandler : Application.Abstractions.Messaging.ICom
                 ChatSessionId: command.ChatSessionId,
                 UserId: command.UserId,
                 AiMessageId: newAiMessage.Id,
+                History: history,
                 EnableThinking: false,
                 ImageSize: null,
                 NumImages: null,
