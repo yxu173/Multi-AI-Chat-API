@@ -14,6 +14,8 @@ using Domain.Aggregates.Chats;
 using Application.Abstractions.Interfaces;
 using Domain.Enums;
 using Hangfire;
+using Application.Features.Chats.GenerateTitle;
+using Application.Features.Chats.SummarizeHistory;
 
 namespace Application.Features.Chats.SendMessage;
 
@@ -24,7 +26,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
     private readonly IStreamingService _streamingService;
     private readonly ILogger<SendMessageHandler> _logger;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
-    private readonly ChatTitleGenerator _titleGenerator;
     private readonly IBackgroundJobClient _backgroundJobClient;
 
     public SendMessageHandler(
@@ -33,7 +34,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         IStreamingService streamingService,
         ILogger<SendMessageHandler> logger,
         IAiModelServiceFactory aiModelServiceFactory,
-        ChatTitleGenerator titleGenerator,
         IBackgroundJobClient backgroundJobClient)
     {
         _chatSessionRepository =
@@ -43,7 +43,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _aiModelServiceFactory =
             aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
-        _titleGenerator = titleGenerator ?? throw new ArgumentNullException(nameof(titleGenerator));
         _backgroundJobClient = backgroundJobClient ?? throw new ArgumentNullException(nameof(backgroundJobClient));
     }
 
@@ -80,16 +79,12 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
 
             await _streamingService.StreamResponseAsync(streamingRequest, ct);
 
-        //    await UpdateChatSessionTitleAsync(chatSession, command.Content, ct);
-
-            // Generate title for new chats
             var currentChat = await _chatSessionRepository.GetByIdAsync(command.ChatSessionId);
+            
             if (currentChat!.Messages.Count == 2 && currentChat.Title == "New Chat")
             {
-                var title = await _titleGenerator.GenerateTitleAsync(currentChat, currentChat.Messages.ToList(), ct);
-                currentChat.UpdateTitle(title);
-                await _chatSessionRepository.UpdateAsync(currentChat, CancellationToken.None);
-                await new ChatTitleUpdatedNotification(command.ChatSessionId, title).PublishAsync(cancellation: CancellationToken.None);
+                _backgroundJobClient.Enqueue<GenerateChatTitleJob>(j => j.GenerateAsync(command.ChatSessionId, CancellationToken.None));
+                _logger.LogInformation("Enqueued title generation job for chat {ChatSessionId}", command.ChatSessionId);
             }
 
             // Enqueue summarization job for longer chats
@@ -102,7 +97,7 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
 
                 if (messagesSinceLastSummary >= summarizationMessageThreshold / 2)
                 {
-                    _backgroundJobClient.Enqueue<SummarizeHistory.SummarizeChatHistoryJob>(j => j.SummarizeAsync(command.ChatSessionId, CancellationToken.None));
+                    _backgroundJobClient.Enqueue<SummarizeChatHistoryJob>(j => j.SummarizeAsync(command.ChatSessionId, CancellationToken.None));
                     _logger.LogInformation("Enqueued history summarization job for chat {ChatSessionId}", command.ChatSessionId);
                 }
             }
@@ -116,27 +111,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
             await FailMessageAsync(aiMessage, ex.Message, CancellationToken.None);
             throw;
         }
-    }
-
-    private async Task UpdateChatSessionTitleAsync(ChatSession chatSession, string content,
-        CancellationToken cancellationToken = default)
-    {
-        if (chatSession.Messages.Count > 2)
-        {
-            return;
-        }
-
-
-        var messages = chatSession.Messages
-            .OrderBy(m => m.CreatedAt)
-            .Take(2)
-            .ToList();
-
-
-        var title = await _titleGenerator.GenerateTitleAsync(chatSession, messages, cancellationToken);
-        chatSession.UpdateTitle(title);
-        await _chatSessionRepository.UpdateAsync(chatSession, cancellationToken);
-        await new ChatTitleUpdatedNotification(chatSession.Id, title).PublishAsync(cancellation: cancellationToken);
     }
 
     private async Task<Message> CreateAndSaveUserMessageAsync(

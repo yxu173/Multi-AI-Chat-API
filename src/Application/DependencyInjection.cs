@@ -23,6 +23,7 @@ using Domain.Repositories;
 using Hangfire;
 using Microsoft.Extensions.Logging;
 using Application.Services.Resilience;
+using Application.Features.Chats.GenerateTitle;
 
 namespace Application;
 
@@ -43,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<IToolDefinitionService, ToolDefinitionService>();
         services.AddScoped<IAiRequestHandler, AiRequestHandler>();
         services.AddScoped<ChatTitleGenerator>();
+        services.AddScoped<GenerateChatTitleJob>();
         
         services.AddScoped<IStreamingService, StreamingService>();
         services.AddScoped<IStreamingContextService, StreamingContextService>();
