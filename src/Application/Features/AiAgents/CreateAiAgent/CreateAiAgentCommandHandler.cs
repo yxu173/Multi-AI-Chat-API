@@ -1,4 +1,5 @@
 using Application.Abstractions.Messaging;
+using Domain.Aggregates.AiAgents;
 using Domain.Aggregates.Chats;
 using Domain.Repositories;
 using Domain.ValueObjects;

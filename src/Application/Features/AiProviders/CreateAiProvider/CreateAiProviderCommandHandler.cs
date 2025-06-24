@@ -1,5 +1,6 @@
 ﻿using Application.Abstractions.Messaging;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using Domain.Repositories;
 using SharedKernal;
 

@@ -1,4 +1,5 @@
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 
 namespace Domain.Repositories;
 

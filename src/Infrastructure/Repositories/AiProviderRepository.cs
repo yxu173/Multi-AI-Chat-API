@@ -3,6 +3,7 @@ using Domain.Repositories;
 using Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions.Interfaces;
+using Domain.Aggregates.Llms;
 
 namespace Infrastructure.Repositories;
 

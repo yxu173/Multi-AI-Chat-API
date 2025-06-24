@@ -1,8 +1,9 @@
 using System.Text.Json.Serialization;
+using Domain.Aggregates.Chats;
 using Domain.Aggregates.Users;
 using Domain.Enums;
 
-namespace Domain.Aggregates.Chats;
+namespace Domain.Aggregates.Llms;
 
 public sealed class AiModel
 {

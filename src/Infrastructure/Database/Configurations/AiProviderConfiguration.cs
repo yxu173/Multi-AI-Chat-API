@@ -1,4 +1,5 @@
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

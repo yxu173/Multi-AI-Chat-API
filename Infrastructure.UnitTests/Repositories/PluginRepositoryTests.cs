@@ -8,6 +8,7 @@ using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 
 namespace Infrastructure.UnitTests.Repositories
 {

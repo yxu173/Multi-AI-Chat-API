@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Domain.Aggregates.AiAgents;
 using FluentAssertions;
 using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using Domain.ValueObjects;
 using Domain.Enums;
 

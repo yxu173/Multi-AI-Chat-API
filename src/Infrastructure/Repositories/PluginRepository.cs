@@ -1,4 +1,5 @@
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using Domain.Repositories;
 using Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;

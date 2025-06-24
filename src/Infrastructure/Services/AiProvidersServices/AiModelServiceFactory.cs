@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Application.Services.AI.Interfaces;
+using Domain.Aggregates.Llms;
 
 namespace Infrastructure.Services.AiProvidersServices;
 

@@ -8,6 +8,7 @@ using Infrastructure.UnitTests.TestHelpers;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using Domain.Enums;
 
 namespace Infrastructure.UnitTests.Repositories

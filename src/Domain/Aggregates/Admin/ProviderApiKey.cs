@@ -1,6 +1,7 @@
 using System;
 using System.Text.Json.Serialization;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using Domain.Common;
 
 namespace Domain.Aggregates.Admin;

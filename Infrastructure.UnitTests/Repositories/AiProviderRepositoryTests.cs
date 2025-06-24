@@ -1,4 +1,5 @@
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using FluentAssertions;
 using Infrastructure.Database;
 using Infrastructure.Repositories;

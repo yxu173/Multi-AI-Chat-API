@@ -1,3 +1,4 @@
+using Domain.Aggregates.AiAgents;
 using Domain.Aggregates.Chats;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;

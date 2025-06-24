@@ -7,7 +7,7 @@ public sealed class SharedChat : BaseAuditableEntity
     public Guid ChatId { get; private set; }
     public Guid OwnerId { get; private set; }
     public string ShareToken { get; private set; } = string.Empty;
-    public DateTime? ExpiresAt { get; private set; }
+    public DateTime? ExpiresAt { get; private init; }
     public bool IsActive { get; private set; }
 
     public ChatSession Chat { get; private set; } = null!;

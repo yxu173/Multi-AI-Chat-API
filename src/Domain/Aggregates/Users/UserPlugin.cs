@@ -1,4 +1,5 @@
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using Domain.Common;
 
 namespace Domain.Aggregates.Users;

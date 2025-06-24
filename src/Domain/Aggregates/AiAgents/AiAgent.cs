@@ -1,9 +1,10 @@
+using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 using Domain.Common;
-using Domain.ValueObjects;
-using System.Text.Json;
 using Domain.Enums;
+using Domain.ValueObjects;
 
-namespace Domain.Aggregates.Chats;
+namespace Domain.Aggregates.AiAgents;
 
 public sealed class AiAgent : BaseAuditableEntity
 {

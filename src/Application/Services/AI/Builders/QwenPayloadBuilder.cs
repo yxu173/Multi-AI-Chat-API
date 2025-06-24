@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Abstractions.Interfaces;
+using Domain.Aggregates.AiAgents;
 
 namespace Application.Services.AI.Builders;
 

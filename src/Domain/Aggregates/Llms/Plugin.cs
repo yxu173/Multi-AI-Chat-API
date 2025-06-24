@@ -1,6 +1,6 @@
 using Domain.Common;
 
-namespace Domain.Aggregates.Chats;
+namespace Domain.Aggregates.Llms;
 
 public class Plugin : BaseEntity
 {

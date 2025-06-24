@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using Domain.Aggregates.Chats;
+using Domain.Aggregates.Llms;
 
 namespace Domain.Aggregates.Users;
 

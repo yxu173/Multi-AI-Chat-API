@@ -4,6 +4,7 @@ using Domain.Aggregates.Users;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Domain.Aggregates.AiAgents;
 
 namespace Application.Services.Helpers;
 
