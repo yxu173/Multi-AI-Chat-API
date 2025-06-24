@@ -30,6 +30,7 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
             chatSession = ChatSession.Create(
                 userId: request.UserId,
                 aiModelId: aiAgent.ModelParameter.DefaultModel,
+                chatType: request.ChatType,
                 folderId: request.FolderId,
                 aiAgent: request.AiAgentId,
                 enableThinking: request.EnableThinking);
@@ -39,6 +40,7 @@ public class CreateChatSessionCommandHandler : ICommandHandler<CreateChatSession
             chatSession = ChatSession.Create(
                 request.UserId, 
                 request.ModelId.Value, 
+                request.ChatType,
                 request.FolderId, 
                 null, 
                 request.EnableThinking);

@@ -9,6 +9,7 @@ using Xunit;
 using Domain.Aggregates.Chats;
 using System.Collections.Generic;
 using System.Linq;
+using Domain.Enums;
 
 namespace Infrastructure.UnitTests.Repositories
 {
@@ -30,7 +31,7 @@ namespace Infrastructure.UnitTests.Repositories
             // Arrange
             var context = CreateContext(nameof(AddAndGetByChatSessionId_ShouldReturnUsage));
             var repo = new ChatTokenUsageRepository(context);
-            var session = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid());
+            var session = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.Add(session);
             await context.SaveChangesAsync();
             var usage = ChatTokenUsage.Create(session.Id, 10, 5, 1.5m);
@@ -51,7 +52,7 @@ namespace Infrastructure.UnitTests.Repositories
             // Arrange
             var context = CreateContext(nameof(Update_ShouldAdjustCountsAndCost));
             var repo = new ChatTokenUsageRepository(context);
-            var session = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid());
+            var session = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.Add(session);
             await context.SaveChangesAsync();
             var usage = ChatTokenUsage.Create(session.Id, 1, 2, 0.5m);
@@ -75,8 +76,8 @@ namespace Infrastructure.UnitTests.Repositories
             var context = CreateContext(nameof(GetTotalTokens_ShouldSumAcrossSessions));
             var repo = new ChatTokenUsageRepository(context);
             var userId = Guid.NewGuid();
-            var s1 = ChatSession.Create(userId, Guid.NewGuid());
-            var s2 = ChatSession.Create(userId, Guid.NewGuid());
+            var s1 = ChatSession.Create(userId, Guid.NewGuid(),ChatType.Text.ToString());
+            var s2 = ChatSession.Create(userId, Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.AddRange(s1, s2);
             await context.SaveChangesAsync();
             await repo.AddAsync(ChatTokenUsage.Create(s1.Id, 5, 7, 0.2m), CancellationToken.None);

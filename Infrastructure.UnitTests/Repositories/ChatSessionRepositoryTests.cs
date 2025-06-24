@@ -7,6 +7,7 @@ using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Domain.Aggregates.Chats;
+using Domain.Enums;
 
 namespace Infrastructure.UnitTests.Repositories
 {
@@ -30,7 +31,7 @@ namespace Infrastructure.UnitTests.Repositories
             var repo = new ChatSessionRepository(context);
             var userId = Guid.NewGuid();
             var modelId = Guid.NewGuid();
-            var chat = ChatSession.Create(userId, modelId);
+            var chat = ChatSession.Create(userId, modelId,ChatType.Text.ToString());
 
             // Act
             await repo.AddAsync(chat, CancellationToken.None);
@@ -62,7 +63,7 @@ namespace Infrastructure.UnitTests.Repositories
             // Arrange
             var context = CreateContext(nameof(Delete_Existing_ShouldReturnSuccess));
             var repo = new ChatSessionRepository(context);
-            var chat = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid());
+            var chat = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid(),ChatType.Text.ToString());
             await repo.AddAsync(chat, CancellationToken.None);
 
             // Act

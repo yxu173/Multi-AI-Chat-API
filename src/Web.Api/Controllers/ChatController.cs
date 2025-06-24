@@ -29,6 +29,7 @@ public class ChatController : BaseController
     public async Task<IResult> CreateChatSession([Microsoft.AspNetCore.Mvc.FromBody] CreateChatSessionRequest request)
     {
         var result = await new CreateChatSessionCommand(
+            request.ChatType,
             UserId,
             request.ModelId,
             request.FolderId,

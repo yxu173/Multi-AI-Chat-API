@@ -21,6 +21,10 @@ public class ChatSessionConfiguration : IEntityTypeConfiguration<ChatSession>
         builder.Property(cs => cs.Title)
             .IsRequired()
             .HasMaxLength(200);
+        
+        builder.Property(cs => cs.ChatType)
+            .IsRequired()
+            .HasConversion<string>();
 
         builder.HasMany(cs => cs.Messages)
             .WithOne(m => m.ChatSession)

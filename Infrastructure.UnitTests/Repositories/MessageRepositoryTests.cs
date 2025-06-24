@@ -7,6 +7,7 @@ using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Domain.Aggregates.Chats;
+using Domain.Enums;
 
 namespace Infrastructure.UnitTests.Repositories
 {
@@ -29,7 +30,7 @@ namespace Infrastructure.UnitTests.Repositories
             var context = CreateContext(nameof(AddGetById_ShouldReturnMessage));
             var repo = new MessageRepository(context);
             var userId = Guid.NewGuid();
-            var chat = ChatSession.Create(userId, Guid.NewGuid());
+            var chat = ChatSession.Create(userId, Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.Add(chat);
             await context.SaveChangesAsync();
             var message = Message.CreateUserMessage(userId, chat.Id, "Hello");
@@ -50,7 +51,7 @@ namespace Infrastructure.UnitTests.Repositories
             // Arrange
             var context = CreateContext(nameof(Update_ShouldModifyMessage));
             var userId = Guid.NewGuid();
-            var chat = ChatSession.Create(userId, Guid.NewGuid());
+            var chat = ChatSession.Create(userId, Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.Add(chat);
             await context.SaveChangesAsync();
             var repo = new MessageRepository(context);
@@ -72,7 +73,7 @@ namespace Infrastructure.UnitTests.Repositories
             // Arrange
             var context = CreateContext(nameof(Delete_ShouldRemoveMessage));
             var userId = Guid.NewGuid();
-            var chat = ChatSession.Create(userId, Guid.NewGuid());
+            var chat = ChatSession.Create(userId, Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.Add(chat);
             await context.SaveChangesAsync();
             var repo = new MessageRepository(context);
@@ -93,7 +94,7 @@ namespace Infrastructure.UnitTests.Repositories
             // Arrange
             var context = CreateContext(nameof(GetLatestAiMessageForChat_ShouldReturnLatestStreaming));
             var userId = Guid.NewGuid();
-            var chat = ChatSession.Create(userId, Guid.NewGuid());
+            var chat = ChatSession.Create(userId, Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.Add(chat);
             await context.SaveChangesAsync();
             var repo = new MessageRepository(context);

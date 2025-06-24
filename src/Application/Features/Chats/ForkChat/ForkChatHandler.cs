@@ -45,7 +45,10 @@ public class ForkChatHandler : ICommandHandler<ForkChatCommand, ForkChatResponse
             return Result.Failure<ForkChatResponse>(Error.NotFound("ForkChat.ModelNotFound", "The selected AI model for the new chat was not found."));
         }
 
-        var forkedChat = Domain.Aggregates.Chats.ChatSession.Create(request.UserId, request.NewAiModelId, originalChat.FolderId, originalChat.AiAgentId);
+        var forkedChat = Domain.Aggregates.Chats.ChatSession.Create(request.UserId, request.NewAiModelId, 
+            originalChat.ChatType.ToString(),
+            originalChat.FolderId,
+            originalChat.AiAgentId);
         var newChatTitle = $"[Forked] {originalChat.Title}";
         forkedChat.UpdateTitle(newChatTitle);
 

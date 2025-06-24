@@ -3,6 +3,7 @@ using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Domain.Aggregates.Chats;
+using Domain.Enums;
 
 namespace Infrastructure.UnitTests.Repositories
 {
@@ -40,7 +41,7 @@ namespace Infrastructure.UnitTests.Repositories
         {
             // Arrange
             var context = CreateContext(nameof(GetByMessageId_ShouldReturnAttachmentsForMessage));
-            var chat = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid());
+            var chat = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.Add(chat);
             await context.SaveChangesAsync();
             var msg = Message.CreateUserMessage(chat.UserId, chat.Id, "hi");
@@ -62,7 +63,7 @@ namespace Infrastructure.UnitTests.Repositories
         {
             // Arrange
             var context = CreateContext(nameof(GetByChatSessionId_ShouldReturnAttachmentsForChat));
-            var chat = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid());
+            var chat = ChatSession.Create(Guid.NewGuid(), Guid.NewGuid(),ChatType.Text.ToString());
             context.ChatSessions.Add(chat);
             await context.SaveChangesAsync();
             var msg = Message.CreateUserMessage(chat.UserId, chat.Id, "msg");

@@ -1,5 +1,6 @@
 using Domain.Aggregates.Llms;
 using Domain.Common;
+using Domain.Enums;
 
 namespace Domain.Aggregates.Chats;
 
@@ -7,6 +8,7 @@ public sealed class ChatSession : BaseAuditableEntity
 {
     public Guid UserId { get; private set; }
     public string Title { get; private set; } = string.Empty;
+    public ChatType ChatType { get; private set; }
     public Guid AiModelId { get; private set; }
     public Guid? FolderId { get; private set; }
     public Guid? AiAgentId { get; private set; }
@@ -30,10 +32,12 @@ public sealed class ChatSession : BaseAuditableEntity
     }
 
     public static ChatSession Create(Guid userId, Guid aiModelId,
+        string chatType,
         Guid? folderId = null,
         Guid? aiAgent = null,
         bool enableThinking = false)
     {
+        var chatTypeEnum = Enum.Parse<ChatType>(chatType);
         if (userId == Guid.Empty) throw new ArgumentException("UserId cannot be empty.", nameof(userId));
         if (aiModelId == Guid.Empty) throw new ArgumentException("AiModelId cannot be empty.", nameof(aiModelId));
 
@@ -42,6 +46,7 @@ public sealed class ChatSession : BaseAuditableEntity
             Id = Guid.NewGuid(),
             UserId = userId,
             Title = "New Chat",
+            ChatType = chatTypeEnum,
             AiModelId = aiModelId,
             FolderId = folderId,
             AiAgentId = aiAgent,
