@@ -116,4 +116,18 @@ public class ChatSessionRepository : IChatSessionRepository
             .Where(c => c.UserId == userId && chatIds.Contains(c.Id))
             .ExecuteDeleteAsync(cancellationToken);
     }
+
+    public async Task<(IReadOnlyList<ChatSession> Chats, int TotalCount)> GetRootChatsByUserIdAsync(Guid userId, int page, int pageSize)
+    {
+        var query = _context.ChatSessions
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && x.FolderId == null);
+        var totalCount = await query.CountAsync();
+        var chats = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+        return (chats, totalCount);
+    }
 }

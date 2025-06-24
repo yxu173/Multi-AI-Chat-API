@@ -47,9 +47,9 @@ public class ChatController : BaseController
     }
 
     [Microsoft.AspNetCore.Mvc.HttpGet("GetAll")]
-    public async Task<IResult> GetAllChats()
+    public async Task<IResult> GetAllChats([Microsoft.AspNetCore.Mvc.FromQuery] int page = 1, [Microsoft.AspNetCore.Mvc.FromQuery] int pageSize = 20)
     {
-        var result = await new GetAllChatsByUserIdQuery(UserId).ExecuteAsync();
+        var result = await new GetAllChatsByUserIdQuery(UserId, page, pageSize).ExecuteAsync();
         return result.Match(Results.Ok, CustomResults.Problem);
     }
 
