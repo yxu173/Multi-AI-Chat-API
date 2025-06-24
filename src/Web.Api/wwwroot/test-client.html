@@ -877,6 +877,7 @@
     const pendingRequests = new Set(); // Keep track of pending fetch/API requests to avoid duplicate actions
     let streamUpdateTimeout = null; // For debouncing UI updates during streaming
     const DEBOUNCE_DELAY = 150; // Milliseconds delay for UI update
+    let isFirstDeepSearchChunk = true;
 
     // --- Connection Management ---
     connectBtn.addEventListener('click', connectToHub);
@@ -1193,6 +1194,7 @@
         // Add deep search event handlers
         connection.on("DeepSearchStarted", (message) => {
             console.log("Deep search started:", message);
+            isFirstDeepSearchChunk = true; // Reset for a new search stream
             const deepSearchElement = document.createElement('div');
             deepSearchElement.className = 'message ai deep-search';
             deepSearchElement.innerHTML = `
@@ -1209,6 +1211,7 @@
 
         connection.on("DeepSearchResults", (results) => {
             console.log("Deep search results received:", results);
+            isFirstDeepSearchChunk = true; // Reset for next time
             const deepSearchElement = document.querySelector('.message.ai.deep-search');
             if (deepSearchElement) {
                 const contentElement = deepSearchElement.querySelector('.message-content');
@@ -1246,8 +1249,22 @@
             if (deepSearchElement) {
                 const contentElement = deepSearchElement.querySelector('.message-content');
                 if (contentElement) {
-                    // Append the chunk to the content
-                    contentElement.innerHTML += escapeHtml(chunk);
+                    if (isFirstDeepSearchChunk) {
+                        // On the first chunk, create the container and add the first piece of content
+                        contentElement.innerHTML = `
+                            <div class="deep-search-results">
+                                <div class="results-header">Deep Search in progress...</div>
+                                <div class="results-content">${escapeHtml(chunk)}</div>
+                            </div>
+                        `;
+                        isFirstDeepSearchChunk = false;
+                    } else {
+                        // On subsequent chunks, just append to the content
+                        const resultsContent = contentElement.querySelector('.results-content');
+                        if (resultsContent) {
+                            resultsContent.innerHTML += escapeHtml(chunk);
+                        }
+                    }
                 }
             }
             scrollToBottom();

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Prometheus for metrics collection
   prometheus:
@@ -17,7 +15,8 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
     restart: on-failure
-    network_mode: "host"
+    networks:
+      - monitoring-net
 
   # Grafana for visualization
   grafana:
@@ -37,8 +36,13 @@ services:
     restart: on-failure
     depends_on:
       - prometheus
-    network_mode: "host"
+    networks:
+      - monitoring-net
 
 volumes:
   prometheus_data:
   grafana_data:
+
+networks:
+  monitoring-net:
+    external: true

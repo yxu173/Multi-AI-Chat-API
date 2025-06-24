@@ -37,11 +37,16 @@ builder.Logging.AddOpenTelemetry(options =>
   //  options.AddConsoleExporter();
 });
 
-//builder.Logging.AddFilter<OpenTelemetry.Logs.OpenTelemetryLoggerProvider>("*", Microsoft.Extensions.Logging.LogLevel.Warning);
+builder.Logging.AddFilter<OpenTelemetry.Logs.OpenTelemetryLoggerProvider>("*", Microsoft.Extensions.Logging.LogLevel.Warning);
 
 builder.Host.UseSerilog((context, loggerConfig) => loggerConfig.ReadFrom.Configuration(context.Configuration));
 
 builder.Services.AddOpenTelemetry()
+    .WithLogging(loggerProviderBuilder =>
+            loggerProviderBuilder
+                .SetResourceBuilder(otelResourceBuilder)
+                .AddConsoleExporter()
+    )
     .WithTracing(tracerProviderBuilder =>
             tracerProviderBuilder
                 .SetResourceBuilder(otelResourceBuilder)
@@ -56,6 +61,9 @@ builder.Services.AddOpenTelemetry()
                 .SetResourceBuilder(otelResourceBuilder)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
+                .AddRuntimeInstrumentation()
+                .AddProcessInstrumentation()
+                .AddSqlClientInstrumentation()
                 .AddPrometheusExporter()
     );
 

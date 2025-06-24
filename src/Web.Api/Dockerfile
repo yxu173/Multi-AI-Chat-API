@@ -27,8 +27,26 @@ FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./Web.Api.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
+# This stage is used for development with hot reload
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS dev
+WORKDIR /src
+COPY ["src/Web.Api/Web.Api.csproj", "src/Web.Api/"]
+COPY ["src/Infrastructure/Infrastructure.csproj", "src/Infrastructure/"]
+COPY ["src/Application/Application.csproj", "src/Application/"]
+COPY ["src/Domain/Domain.csproj", "src/Domain/"]
+COPY ["src/SharedKernal/SharedKernal.csproj", "src/SharedKernal/"]
+RUN dotnet restore "src/Web.Api/Web.Api.csproj"
+COPY . .
+WORKDIR "/src/src/Web.Api"
+
 # This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+# Entrypoint for production
 ENTRYPOINT ["dotnet", "Web.Api.dll"]
+
+# Entrypoint for development (hot reload)
+FROM dev AS watch
+WORKDIR /src/src/Web.Api
+ENTRYPOINT ["dotnet", "watch", "run", "--urls", "http://0.0.0.0:8080"]

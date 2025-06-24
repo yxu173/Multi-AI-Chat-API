@@ -10,8 +10,5 @@ scrape_configs:
   - job_name: 'web-api'
     metrics_path: /metrics
     static_configs:
-      - targets: ['localhost:7089']
-    scheme: https
-    tls_config:
-      insecure_skip_verify: true
+      - targets: ['web-api:8080']
 
