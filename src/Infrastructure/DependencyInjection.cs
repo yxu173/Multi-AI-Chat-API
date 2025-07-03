@@ -75,7 +75,7 @@ public static class DependencyInjection
         // OpenAI client
         services.AddHttpClient<OpenAiService>(client => {
             client.BaseAddress = new Uri("https://api.openai.com/");
-            client.Timeout = TimeSpan.FromSeconds(2000); // This timeout is for the HttpClient itself, Polly will have its own timeout
+            client.Timeout = TimeSpan.FromSeconds(3600); // This timeout is for the HttpClient itself, Polly will have its own timeout
             client.DefaultRequestHeaders.Add("Accept", "application/json");
         }); // Removed .AddPolicyHandler(InitializeRetryPolicy())
         

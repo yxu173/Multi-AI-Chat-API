@@ -65,7 +65,7 @@ namespace Infrastructure.Services.Resilience
             return builder.Build();
         }
         
-        public ResiliencePipeline<HttpResponseMessage> CreateAiServiceProviderPipeline(string providerName)
+        public ResiliencePipeline<HttpResponseMessage> CreateAiServiceProviderPipeline(string providerName, TimeSpan? timeout = null)
         {
             var pipelineBuilder = new ResiliencePipelineBuilder<HttpResponseMessage>();
 
@@ -120,7 +120,7 @@ namespace Infrastructure.Services.Resilience
                 })
                 .AddTimeout(new TimeoutStrategyOptions
                 {
-                    Timeout = TimeSpan.FromSeconds(_options.TimeoutPolicy.TimeoutInSeconds),
+                    Timeout = timeout ?? TimeSpan.FromSeconds(_options.TimeoutPolicy.TimeoutInSeconds),
                     OnTimeout = args =>
                     {
                         _logger.LogWarning(

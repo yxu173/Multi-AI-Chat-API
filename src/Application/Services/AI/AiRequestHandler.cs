@@ -77,6 +77,7 @@ public class AiRequestHandler : IAiRequestHandler
             IAiRequestBuilder builder = modelType switch
             {
                 ModelType.OpenAi => _payloadBuilderFactory.CreateOpenAiBuilder(),
+                ModelType.OpenAiDeepResearch => _payloadBuilderFactory.CreateOpenAiDeepResearchBuilder(),
                 ModelType.Anthropic => _payloadBuilderFactory.CreateAnthropicBuilder(),
                 ModelType.Gemini => _payloadBuilderFactory.CreateGeminiBuilder(),
                 ModelType.DeepSeek => _payloadBuilderFactory.CreateDeepSeekBuilder(),

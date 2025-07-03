@@ -72,6 +72,7 @@ public static class DependencyInjection
         services.AddScoped<GrokPayloadBuilder>();
         services.AddScoped<QwenPayloadBuilder>();
         services.AddScoped<ImagenPayloadBuilder>();
+        services.AddScoped<OpenAiDeepResearchPayloadBuilder>();
 
         services.AddScoped<IAiRequestBuilder, OpenAiPayloadBuilder>();
         services.AddScoped<IAiRequestBuilder, AnthropicPayloadBuilder>();
@@ -81,6 +82,7 @@ public static class DependencyInjection
         services.AddScoped<IAiRequestBuilder, GrokPayloadBuilder>();
         services.AddScoped<IAiRequestBuilder, QwenPayloadBuilder>();
         services.AddScoped<IAiRequestBuilder, ImagenPayloadBuilder>();
+        services.AddScoped<IAiRequestBuilder, OpenAiDeepResearchPayloadBuilder>();
 
         services.AddScoped<IPayloadBuilderFactory, PayloadBuilderFactory>();
         

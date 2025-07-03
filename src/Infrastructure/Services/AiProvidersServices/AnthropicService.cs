@@ -24,17 +24,16 @@ public class AnthropicService : BaseAiService
     protected override string ProviderName => "Anthropic";
 
     public AnthropicService(
-        IHttpClientFactory httpClientFactory, 
+        HttpClient httpClient,
         string? apiKey, 
         string modelCode, 
         ILogger<AnthropicService> logger,
         IResilienceService resilienceService,
-        AnthropicStreamChunkParser chunkParser)
-        : base(httpClientFactory, apiKey, modelCode, AnthropicBaseUrl, chunkParser)
+        IStreamChunkParser chunkParser)
+        : base(httpClient, apiKey, modelCode, AnthropicBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName) 
-                            ?? throw new ArgumentNullException(nameof(resilienceService));
+        _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
     }
 
     protected override void ConfigureHttpClient()

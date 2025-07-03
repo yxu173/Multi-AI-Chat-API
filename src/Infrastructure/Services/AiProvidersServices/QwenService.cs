@@ -20,21 +20,20 @@ public class QwenService : BaseAiService
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.QwenService", "1.0.0");
 
+    protected override string ProviderName => "Qwen";
+
     public QwenService(
-        IHttpClientFactory httpClientFactory, 
-        string? apiKey, 
-        string modelCode, 
+        HttpClient httpClient,
+        string? apiKey,
+        string modelCode,
         ILogger<QwenService> logger,
         IResilienceService resilienceService,
-        QwenStreamChunkParser chunkParser)
-        : base(httpClientFactory, apiKey, modelCode, QwenBaseUrl, chunkParser)
+        IStreamChunkParser chunkParser)
+        : base(httpClient, apiKey, modelCode, QwenBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
-                            ?? throw new ArgumentNullException(nameof(resilienceService));
+        _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
     }
-
-    protected override string ProviderName => "Qwen";
 
     protected override void ConfigureHttpClient()
     {

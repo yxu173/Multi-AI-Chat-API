@@ -148,23 +148,30 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         var qwenLogger = _serviceProvider.GetService<ILogger<QwenService>>();
 
         var resilienceService = _serviceProvider.GetRequiredService<IResilienceService>();
+        var httpClient = _httpClientFactory.CreateClient();
+        
+        if (aiModel.ModelType == ModelType.OpenAiDeepResearch)
+        {
+            httpClient.Timeout = TimeSpan.FromMinutes(10);
+        }
 
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => new OpenAiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetService<ILogger<OpenAiStreamChunkParser>>())),
-            ModelType.Anthropic => new AnthropicService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService, new AnthropicStreamChunkParser(_serviceProvider.GetService<ILogger<AnthropicStreamChunkParser>>())),
-            ModelType.DeepSeek => new DeepSeekService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService, new DeepseekStreamChunkParser(_serviceProvider.GetService<ILogger<DeepseekStreamChunkParser>>())),
-            ModelType.Gemini => new GeminiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService, new GeminiStreamChunkParser(_serviceProvider.GetService<ILogger<GeminiStreamChunkParser>>())),
-            ModelType.AimlFlux => new AimlApiService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, aimlLogger, resilienceService),
+            ModelType.OpenAi => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetService<ILogger<OpenAiStreamChunkParser>>())),
+            ModelType.OpenAiDeepResearch => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetService<ILogger<OpenAiStreamChunkParser>>()), TimeSpan.FromMinutes(10)),
+            ModelType.Anthropic => new AnthropicService(httpClient, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService, new AnthropicStreamChunkParser(_serviceProvider.GetService<ILogger<AnthropicStreamChunkParser>>())),
+            ModelType.DeepSeek => new DeepSeekService(httpClient, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService, new DeepseekStreamChunkParser(_serviceProvider.GetService<ILogger<DeepseekStreamChunkParser>>())),
+            ModelType.Gemini => new GeminiService(httpClient, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService, new GeminiStreamChunkParser(_serviceProvider.GetService<ILogger<GeminiStreamChunkParser>>())),
+            ModelType.AimlFlux => new AimlApiService(httpClient, apiKeySecret, aiModel.ModelCode, aimlLogger, resilienceService),
             ModelType.Imagen => new ImagenService(
-                _httpClientFactory,
+                httpClient,
                 _configuration["AI:Imagen:ProjectId"] ?? throw new InvalidOperationException("Imagen ProjectId not configured."),
                 _configuration["AI:Imagen:Region"] ?? throw new InvalidOperationException("Imagen Region not configured."),
                 aiModel.ModelCode,
                 imagenLogger,
                 resilienceService),
-            ModelType.Grok => new GrokService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService, new GrokStreamChunkParser(_serviceProvider.GetService<ILogger<GrokStreamChunkParser>>())),
-            ModelType.Qwen => new QwenService(_httpClientFactory, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService, new QwenStreamChunkParser(_serviceProvider.GetService<ILogger<QwenStreamChunkParser>>())),
+            ModelType.Grok => new GrokService(httpClient, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService, new GrokStreamChunkParser(_serviceProvider.GetService<ILogger<GrokStreamChunkParser>>())),
+            ModelType.Qwen => new QwenService(httpClient, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService, new QwenStreamChunkParser(_serviceProvider.GetService<ILogger<QwenStreamChunkParser>>())),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported for instantiation with IResilienceService in factory.")
         };
     }

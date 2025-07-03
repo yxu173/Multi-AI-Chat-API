@@ -20,21 +20,20 @@ public class GrokService : BaseAiService
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.GrokService", "1.0.0");
 
+    protected override string ProviderName => "Grok";
+
     public GrokService(
-        IHttpClientFactory httpClientFactory, 
-        string? apiKey, 
+        HttpClient httpClient,
+        string? apiKey,
         string modelCode,
         ILogger<GrokService> logger,
         IResilienceService resilienceService,
-        GrokStreamChunkParser chunkParser)
-        : base(httpClientFactory, apiKey, modelCode, GrokBaseUrl, chunkParser)
+        IStreamChunkParser chunkParser)
+        : base(httpClient, apiKey, modelCode, GrokBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
-                            ?? throw new ArgumentNullException(nameof(resilienceService));
+        _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
     }
-
-    protected override string ProviderName => "Grok";
 
     protected override void ConfigureHttpClient()
     {

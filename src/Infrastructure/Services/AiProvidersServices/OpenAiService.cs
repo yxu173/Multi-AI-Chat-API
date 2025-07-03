@@ -22,17 +22,22 @@ public class OpenAiService : BaseAiService
     protected override string ProviderName => "OpenAI";
 
     public OpenAiService(
-        IHttpClientFactory httpClientFactory, 
+        HttpClient httpClient,
         string? apiKey, 
         string modelCode, 
         ILogger<OpenAiService> logger,
         IResilienceService resilienceService,
-        OpenAiStreamChunkParser chunkParser)
-        : base(httpClientFactory, apiKey, modelCode, OpenAiBaseUrl, chunkParser)
+        OpenAiStreamChunkParser chunkParser,
+        TimeSpan? timeout = null)
+        : base(httpClient, apiKey, modelCode, OpenAiBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName) 
+        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName, timeout) 
                             ?? throw new ArgumentNullException(nameof(resilienceService));
+        if (timeout.HasValue)
+        {
+            HttpClient.Timeout = timeout.Value;
+        }
     }
 
     protected override void ConfigureHttpClient()

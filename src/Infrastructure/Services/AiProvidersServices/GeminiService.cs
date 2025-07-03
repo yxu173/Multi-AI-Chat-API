@@ -14,24 +14,23 @@ namespace Infrastructure.Services.AiProvidersServices;
 
 public class GeminiService : BaseAiService, IAiFileUploader
 {
-    private const string BaseUrl = "https://generativelanguage.googleapis.com/";
+    private const string GeminiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/";
     private readonly ILogger<GeminiService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.GeminiService", "1.0.0");
 
     public GeminiService(
-        IHttpClientFactory httpClientFactory, 
-        string? apiKey,
-        string modelCode,
+        HttpClient httpClient,
+        string? apiKey, 
+        string modelCode, 
         ILogger<GeminiService> logger,
         IResilienceService resilienceService,
-        GeminiStreamChunkParser chunkParser)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, chunkParser)
+        IStreamChunkParser chunkParser)
+        : base(httpClient, apiKey, modelCode, GeminiBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
-                            ?? throw new ArgumentNullException(nameof(resilienceService));
+        _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
     }
 
     protected override string ProviderName => "Gemini";
@@ -87,7 +86,7 @@ public class GeminiService : BaseAiService, IAiFileUploader
         }
     }
 
-    protected override string GetEndpointPath() => $"v1beta/models/{ModelCode}:streamGenerateContent?key={ApiKey}";
+    protected override string GetEndpointPath() => $"models/{ModelCode}:streamGenerateContent?key={ApiKey}";
 
     protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -275,28 +274,28 @@ public class GeminiService : BaseAiService, IAiFileUploader
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Circuit breaker open");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Circuit breaker is open for {ProviderName} stream. Request to {Uri} was not sent.", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName} stream. Request to {Uri} was not sent.", ProviderName, requestUriForLogging ?? new Uri(GeminiBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Request timed out by Polly");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Request to {ProviderName} stream timed out. URI: {Uri}", ProviderName, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Request to {ProviderName} stream timed out. URI: {Uri}", ProviderName, requestUriForLogging ?? new Uri(GeminiBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
             activity?.SetStatus(ActivityStatusCode.Ok, "Operation cancelled by user");
             activity?.AddEvent(new ActivityEvent("Stream request operation was cancelled by user."));
-            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(GeminiBaseUrl + GetEndpointPath()));
             yield break; 
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during API resilience execution.");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Error during {ProviderName} API resilience execution for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(BaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Error during {ProviderName} API resilience execution for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging ?? new Uri(GeminiBaseUrl + GetEndpointPath()));
             throw;
         }
 

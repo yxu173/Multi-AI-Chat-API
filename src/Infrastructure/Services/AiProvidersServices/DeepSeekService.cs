@@ -13,27 +13,26 @@ namespace Infrastructure.Services.AiProvidersServices;
 
 public class DeepSeekService : BaseAiService
 {
-    private const string BaseUrl = "https://api.deepseek.com/v1/";
+    private const string DeepSeekBaseUrl = "https://api.deepseek.com/v1/";
     private readonly ILogger<DeepSeekService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.DeepSeekService", "1.0.0");
 
+    protected override string ProviderName => "DeepSeek";
+
     public DeepSeekService(
-        IHttpClientFactory httpClientFactory, 
+        HttpClient httpClient,
         string? apiKey,
         string modelCode,
         ILogger<DeepSeekService> logger,
         IResilienceService resilienceService,
-        DeepseekStreamChunkParser chunkParser)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, chunkParser)
+        IStreamChunkParser chunkParser)
+        : base(httpClient, apiKey, modelCode, DeepSeekBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
-                            ?? throw new ArgumentNullException(nameof(resilienceService));
+        _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
     }
-
-    protected override string ProviderName => "DeepSeek";
 
     protected override void ConfigureHttpClient()
     {
@@ -151,28 +150,28 @@ public class DeepSeekService : BaseAiService
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Circuit breaker open");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString() ?? (DeepSeekBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Request timed out by Polly");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString() ?? (DeepSeekBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
             activity?.SetStatus(ActivityStatusCode.Ok, "Operation cancelled by user");
             activity?.AddEvent(new ActivityEvent("Stream request operation was cancelled by user."));
-            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (DeepSeekBaseUrl + GetEndpointPath()));
             yield break;
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during API resilience execution.");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (DeepSeekBaseUrl + GetEndpointPath()));
             throw;
         }
 

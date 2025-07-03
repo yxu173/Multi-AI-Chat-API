@@ -15,6 +15,7 @@ namespace Infrastructure.Services.AiProvidersServices;
 
 public class ImagenService : BaseAiService
 {
+    private const string ImagenBaseUrl = "https://us-central1-aiplatform.googleapis.com/";
     private readonly string _projectId;
     private readonly string _region;
     private readonly string _imageSavePath = "wwwroot/images/imagen";
@@ -24,19 +25,18 @@ public class ImagenService : BaseAiService
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.ImagenService", "1.0.0");
 
     public ImagenService(
-        IHttpClientFactory httpClientFactory,
+        HttpClient httpClient,
         string projectId,
         string region,
         string modelCode,
         ILogger<ImagenService> logger,
         IResilienceService resilienceService)
-        : base(httpClientFactory, null, modelCode, $"https://{region}-aiplatform.googleapis.com/", null)
+        : base(httpClient, null, modelCode, ImagenBaseUrl, null)
     {
         _projectId = projectId;
         _region = region;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
-                            ?? throw new ArgumentNullException(nameof(resilienceService));
+        _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
         Directory.CreateDirectory(_imageSavePath);
     }
 

@@ -56,6 +56,12 @@ public class PayloadBuilderFactory : IPayloadBuilderFactory
     {
         return _serviceProvider.GetRequiredService<QwenPayloadBuilder>();
     }
+
+    public IAiRequestBuilder CreateOpenAiDeepResearchBuilder()
+    {
+        return _serviceProvider.GetRequiredService<OpenAiDeepResearchPayloadBuilder>();
+    }
+
     public IAiRequestBuilder GetBuilder(ModelType modelType)
     {
         _logger.LogDebug("Getting payload builder for model type {ModelType}", modelType);
@@ -69,6 +75,7 @@ public class PayloadBuilderFactory : IPayloadBuilderFactory
             ModelType.Grok => CreateGrokBuilder(),
             ModelType.AimlFlux => CreateAimlFluxBuilder(),
             ModelType.Qwen => CreateQwenBuilder(),
+            ModelType.OpenAiDeepResearch => CreateOpenAiDeepResearchBuilder(),
             _ => throw new NotSupportedException($"Payload builder for model type {modelType} is not supported.")
         };
     }

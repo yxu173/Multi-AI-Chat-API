@@ -14,28 +14,27 @@ namespace Infrastructure.Services.AiProvidersServices;
 
 public class AimlApiService : BaseAiService
 {
-    private const string BaseUrl = "https://api.aimlapi.com/v1/";
+    private const string AimlApiBaseUrl = "https://api.aimlapi.com/v1/";
     private readonly string _imageSavePath = Path.Combine("wwwroot", "images", "aiml");
     private readonly ILogger<AimlApiService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.AimlApiService", "1.0.0");
 
+    protected override string ProviderName => "AimlApi";
+
     public AimlApiService(
-        IHttpClientFactory httpClientFactory,
+        HttpClient httpClient,
         string? apiKey,
         string modelCode,
         ILogger<AimlApiService> logger,
         IResilienceService resilienceService)
-        : base(httpClientFactory, apiKey, modelCode, BaseUrl, null)
+        : base(httpClient, apiKey, modelCode, AimlApiBaseUrl, null)
     {
         Directory.CreateDirectory(_imageSavePath);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName)
-                            ?? throw new ArgumentNullException(nameof(resilienceService));
+        _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
     }
-
-    protected override string ProviderName => "AimlApi";
 
     protected override void ConfigureHttpClient()
     {
@@ -127,28 +126,28 @@ public class AimlApiService : BaseAiService
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Circuit breaker open");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString() ?? (AimlApiBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Request timed out by Polly");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString() ?? (AimlApiBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
             activity?.SetStatus(ActivityStatusCode.Ok, "Operation cancelled by user");
             activity?.AddEvent(new ActivityEvent("Image generation request operation was cancelled by user."));
-            _logger.LogInformation(ex, "{ProviderName} image generation request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+            _logger.LogInformation(ex, "{ProviderName} image generation request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (AimlApiBaseUrl + GetEndpointPath()));
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during image generation.");
             activity?.AddException(ex);
             _logger.LogError(ex, "Unhandled exception during {ProviderName} image generation for model {ModelCode}. API Key ID (if managed): {ApiKeyId}, URI: {Uri}",
-                             ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default", requestUriForLogging?.ToString() ?? (BaseUrl + GetEndpointPath()));
+                             ProviderName, ModelCode, providerApiKeyId?.ToString() ?? "Not Managed/Default", requestUriForLogging?.ToString() ?? (AimlApiBaseUrl + GetEndpointPath()));
             throw;
         }
         finally

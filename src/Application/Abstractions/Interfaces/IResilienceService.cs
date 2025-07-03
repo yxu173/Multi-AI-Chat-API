@@ -6,6 +6,6 @@ namespace Application.Abstractions.Interfaces
     {
         ResiliencePipeline<T> CreatePluginResiliencePipeline<T>() where T : class;
         
-        ResiliencePipeline<HttpResponseMessage> CreateAiServiceProviderPipeline(string providerName);
+        ResiliencePipeline<HttpResponseMessage> CreateAiServiceProviderPipeline(string providerName, TimeSpan? timeout = null);
     }
 }

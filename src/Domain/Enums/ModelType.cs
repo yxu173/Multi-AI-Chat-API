@@ -10,5 +10,6 @@ public enum ModelType
     Imagen,
     Grok,
     Qwen,
-    BflApi
+    BflApi,
+    OpenAiDeepResearch
 }

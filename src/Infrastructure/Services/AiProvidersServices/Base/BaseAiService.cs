@@ -66,38 +66,10 @@ public abstract class BaseAiService : IAiModelService
         ModelCode = modelCode;
         ChunkParser = chunkParser;
         
-        // Set default timeout if not set by typed client
-        if (HttpClient.Timeout == TimeSpan.Zero || HttpClient.Timeout == Timeout.InfiniteTimeSpan)
-        {
-            HttpClient.Timeout = TimeSpan.FromSeconds(60);
-        }
         
         ConfigureHttpClient();
     }
     
-    /// <summary>
-    /// Legacy constructor for backward compatibility
-    /// </summary>
-    [Obsolete("Use the constructor with direct HttpClient injection for better performance and reliability")]
-    protected BaseAiService(
-        IHttpClientFactory httpClientFactory,
-        string? apiKey,
-        string modelCode,
-        string baseUrl,
-        IStreamChunkParser? chunkParser)
-    {
-        HttpClient = httpClientFactory.CreateClient();
-        HttpClient.BaseAddress = new Uri(baseUrl);
-        ApiKey = apiKey;
-        ModelCode = modelCode;
-        ChunkParser = chunkParser;
-
-        // Set default timeout
-        HttpClient.Timeout = TimeSpan.FromSeconds(60);
-        
-        ConfigureHttpClient();
-    }
-
     #endregion
 
     #region Abstract Properties and Methods
