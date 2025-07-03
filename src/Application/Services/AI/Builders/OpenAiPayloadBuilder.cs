@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Application.Services.AI.Interfaces;
 using System.Linq;
+using System;
 
 namespace Application.Services.AI.Builders;
 
@@ -30,7 +31,6 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
 
-        // Set base model information
         requestObj["model"] = model.ModelCode;
         requestObj["stream"] = true;
 
@@ -67,15 +67,40 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             Logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
                 tools.Count, model.ModelCode);
 
-            var formattedTools = tools.Select(def => new
+            var formattedTools = tools.Select(def =>
             {
-                type = "function",
-                name = def.Name,
-                description = def.Description,
-                parameters = def.ParametersSchema
+                if (def.ParametersSchema is System.Text.Json.Nodes.JsonObject schema &&
+                    schema.TryGetPropertyValue("mcp", out var mcpVal) &&
+                    mcpVal?.GetValue<bool>() == true)
+                {
+                    var toolObj = new Dictionary<string, object>
+                    {
+                        ["type"] = "mcp"
+                    };
+                    if (schema.TryGetPropertyValue("server_label", out var label) && label is not null)
+                        toolObj["server_label"] = label.GetValue<string>();
+                    if (schema.TryGetPropertyValue("server_url", out var url) && url is not null)
+                        toolObj["server_url"] = url.GetValue<string>();
+                    if (schema.TryGetPropertyValue("require_approval", out var approval) && approval is not null)
+                        toolObj["require_approval"] = approval.GetValue<string>();
+                    if (schema.TryGetPropertyValue("allowed_tools", out var allowed) && allowed is not null)
+                        toolObj["allowed_tools"] = allowed;
+                    if (schema.TryGetPropertyValue("headers", out var headers) && headers is not null)
+                        toolObj["headers"] = headers;
+                    // Add more fields as needed
+                    return (object)toolObj;
+                }
+                else
+                {
+                    return (object)new {
+                        type = "function",
+                        name = def.Name,
+                        description = def.Description,
+                        parameters = def.ParametersSchema
+                    };
+                }
             }).ToList();
 
-            // Log the actual structure of the first tool to diagnose issues
             if (formattedTools.Any())
             {
                 var firstTool = System.Text.Json.JsonSerializer.Serialize(formattedTools[0]);
@@ -84,7 +109,6 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
             requestObj["tools"] = formattedTools;
             
-            // Set tool_choice to auto if we have functions available
             if (!string.IsNullOrEmpty(context.FunctionCall))
             {
                 requestObj["tool_choice"] = context.FunctionCall;
@@ -138,16 +162,13 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                             hasNonTextContent = true;
                             break;
                         case FilePart filePart:
-                            // Check if the file is a CSV, which OpenAI doesn't support directly
                             if (filePart.MimeType == "text/csv" ||
                                 filePart.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
                             {
-                                // Log that CSV files should be handled by our plugin instead of direct upload
                                 Logger?.LogWarning(
                                     "CSV file {FileName} detected - OpenAI doesn't support CSV files directly. " +
                                     "Using the csv_reader plugin is recommended instead.", filePart.FileName);
 
-                                // Add a text content explaining why the file can't be used directly
                                 openAiContentItems.Add(new
                                 {
                                     type = "input_text",
@@ -203,7 +224,6 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
     protected override void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        // Only enable thinking if both the model supports it and it's compatible with reasoning parameters
         bool useEffectiveThinking =
             (context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking);
 
@@ -221,7 +241,6 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         }
         else if (context.SpecificModel.SupportsThinking)
         {
-            // Model is marked as supporting thinking but doesn't support the reasoning parameter
             Logger?.LogDebug("Model {ModelCode} is marked as supporting thinking but doesn't support reasoning.effort parameter",
                 context.SpecificModel.ModelCode);
         }
@@ -235,5 +254,22 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                 Logger?.LogDebug("Mapped 'max_tokens' to 'max_output_tokens'.");
             }
         }
+    }
+
+    public static PluginDefinition CreateDeepWikiMcpTool()
+    {
+        var deepwikiMcpSchema = new System.Text.Json.Nodes.JsonObject
+        {
+            ["mcp"] = true,
+            ["server_label"] = "deepwiki",
+            ["server_url"] = "https://mcp.deepwiki.com/mcp",
+            ["require_approval"] = "never"
+        };
+        return new PluginDefinition(
+            Guid.Parse("b7e7e7e7-e7e7-4e7e-8e7e-e7e7e7e7e7e7"),
+            "deepwiki",
+            "DeepWiki MCP server",
+            deepwikiMcpSchema
+        );
     }
 }

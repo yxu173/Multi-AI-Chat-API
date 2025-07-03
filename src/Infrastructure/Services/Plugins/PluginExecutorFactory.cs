@@ -2,6 +2,7 @@ using Application.Abstractions.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Application.Services.AI.Builders;
 
 namespace Infrastructure.Services.Plugins;
 
@@ -184,6 +185,17 @@ public class PluginExecutorFactory : IPluginExecutorFactory
             description: "Search the web with Jina's DeepSearch for real-time, comprehensive information.",
             parametersSchemaJson: jinaDeepSearchSchema
         );
+
+        // Register DeepWiki MCP tool (no executor, just for OpenAI MCP)
+        var deepwikiPlugin = OpenAiPayloadBuilder.CreateDeepWikiMcpTool();
+        _pluginRegistry[deepwikiPlugin.Id] = new PluginRegistration
+        {
+            Id = deepwikiPlugin.Id,
+            Type = typeof(object), // No executor needed for MCP
+            Name = deepwikiPlugin.Name,
+            Description = deepwikiPlugin.Description,
+            ParametersSchema = deepwikiPlugin.ParametersSchema
+        };
     }
 
     private void RegisterPlugin(Guid id, Type pluginType, string name, string description, string parametersSchemaJson)
