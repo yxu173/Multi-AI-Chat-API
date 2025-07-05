@@ -18,6 +18,7 @@ public class GeminiStreamChunkParser : BaseStreamChunkParser<GeminiStreamChunkPa
         var root = jsonDoc.RootElement;
 
         string? textDelta = null;
+        string? thinkingDelta = null;
         ToolCallChunk? toolCallInfo = null;
         int? inputTokens = null;
         int? outputTokens = null;
@@ -74,8 +75,19 @@ public class GeminiStreamChunkParser : BaseStreamChunkParser<GeminiStreamChunkPa
                 {
                     if (part.TryGetProperty("text", out var textElement) && textElement.ValueKind == JsonValueKind.String)
                     {
-                        textDelta = (textDelta ?? string.Empty) + textElement.GetString(); // Append if multiple text parts
-                        Logger?.LogTrace("Parsed Gemini text content: '{TextDelta}'", textDelta);
+                        var text = textElement.GetString();
+                        
+                        // Check if this is a thought part
+                        if (part.TryGetProperty("thought", out var thoughtElement) && thoughtElement.ValueKind == JsonValueKind.True)
+                        {
+                            thinkingDelta = (thinkingDelta ?? string.Empty) + text;
+                            Logger?.LogTrace("Parsed Gemini thought content: '{ThinkingDelta}'", thinkingDelta);
+                        }
+                        else
+                        {
+                            textDelta = (textDelta ?? string.Empty) + text; // Append if multiple text parts
+                            Logger?.LogTrace("Parsed Gemini text content: '{TextDelta}'", textDelta);
+                        }
                     }
                     else if (part.TryGetProperty("functionCall", out var functionCall))
                     {
@@ -136,13 +148,15 @@ public class GeminiStreamChunkParser : BaseStreamChunkParser<GeminiStreamChunkPa
             Logger?.LogDebug("Overriding finish reason to 'tool_calls' due to detected functionCall part.");
         }
 
-        Logger?.LogTrace("[GeminiSummary] Processed chunk: TextDelta='{TextDelta}', ToolCallName={ToolName}, FinishReason={FR}",
+        Logger?.LogTrace("[GeminiSummary] Processed chunk: TextDelta='{TextDelta}', ThinkingDelta='{ThinkingDelta}', ToolCallName={ToolName}, FinishReason={FR}",
             textDelta,
+            thinkingDelta,
             toolCallInfo?.Name,
             finishReason);
 
         return new ParsedChunkInfo(
             TextDelta: textDelta,
+            ThinkingDelta: thinkingDelta,
             ToolCallInfo: toolCallInfo,
             InputTokens: inputTokens,
             OutputTokens: outputTokens,

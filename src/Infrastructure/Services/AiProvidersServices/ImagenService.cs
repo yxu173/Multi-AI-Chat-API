@@ -10,6 +10,7 @@ using Google.Apis.Auth.OAuth2;
 using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
+using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -20,6 +21,7 @@ public class ImagenService : BaseAiService
     private readonly string _region;
     private readonly string _imageSavePath = "wwwroot/images/imagen";
     private readonly ILogger<ImagenService> _logger;
+    private readonly IConfiguration _configuration;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.ImagenService", "1.0.0");
@@ -30,14 +32,18 @@ public class ImagenService : BaseAiService
         string region,
         string modelCode,
         ILogger<ImagenService> logger,
-        IResilienceService resilienceService)
+        IResilienceService resilienceService,
+        IConfiguration configuration)
         : base(httpClient, null, modelCode, ImagenBaseUrl, null)
     {
         _projectId = projectId;
         _region = region;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
         Directory.CreateDirectory(_imageSavePath);
+        
+        ConfigureHttpClient();
     }
 
     protected override string ProviderName => "Imagen";
@@ -47,21 +53,52 @@ public class ImagenService : BaseAiService
         using var activity = ActivitySource.StartActivity(nameof(ConfigureHttpClient));
         try
         {
-             var credential = GoogleCredential.GetApplicationDefault();
-             if (credential.IsCreateScopedRequired)
-             {
-                 credential = credential.CreateScoped(new[] { "https://www.googleapis.com/auth/cloud-platform" });
-             }
-             var token = credential.UnderlyingCredential.GetAccessTokenForRequestAsync().GetAwaiter().GetResult();
-             HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-             activity?.SetTag("auth.method", "Bearer");
-             _logger.LogInformation("Successfully configured Google Cloud authentication token for Imagen.");
+            var serviceAccountKeyPath = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS") ?? 
+                                      _configuration["AI:Imagen:ServiceAccountKeyPath"];
+            
+            GoogleCredential credential;
+            if (!string.IsNullOrEmpty(serviceAccountKeyPath) && File.Exists(serviceAccountKeyPath))
+            {
+                _logger.LogInformation("Using service account key from path: {KeyPath}", serviceAccountKeyPath);
+                credential = GoogleCredential.FromFile(serviceAccountKeyPath);
+            }
+            else
+            {
+                _logger.LogInformation("Service account key not found, using application default credentials");
+                if (!string.IsNullOrEmpty(serviceAccountKeyPath))
+                {
+                    _logger.LogWarning("Service account key path specified but file not found: {KeyPath}", serviceAccountKeyPath);
+                }
+                credential = GoogleCredential.GetApplicationDefault();
+            }
+            
+            if (credential.IsCreateScopedRequired)
+            {
+                credential = credential.CreateScoped(new[] { "https://www.googleapis.com/auth/cloud-platform" });
+            }
+            
+            var token = credential.UnderlyingCredential.GetAccessTokenForRequestAsync().GetAwaiter().GetResult();
+            HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            activity?.SetTag("auth.method", "Bearer");
+            _logger.LogInformation("Successfully configured Google Cloud authentication token for Imagen.");
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Failed to configure Google Cloud authentication token.");
             activity?.AddException(ex);
             _logger.LogError(ex, "Failed to configure Google Cloud authentication token for Imagen.");
+            
+            var errorMessage = ex.InnerException?.Message ?? ex.Message;
+            if (errorMessage.Contains("default credentials were not found"))
+            {
+                throw new InvalidOperationException(
+                    "Google Cloud authentication failed. Please set up authentication by either:\n" +
+                    "1. Setting GOOGLE_APPLICATION_CREDENTIALS environment variable to your service account key file path\n" +
+                    "2. Running 'gcloud auth application-default login' for development\n" +
+                    "3. Configuring ServiceAccountKeyPath in appsettings.json\n" +
+                    "See: https://cloud.google.com/docs/authentication/external/set-up-adc", ex);
+            }
+            
             throw new InvalidOperationException("Failed to configure Google Cloud authentication for Imagen.", ex);
         }
     }

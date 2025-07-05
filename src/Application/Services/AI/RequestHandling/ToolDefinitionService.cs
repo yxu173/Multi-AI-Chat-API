@@ -31,9 +31,20 @@ public class ToolDefinitionService : IToolDefinitionService
         new Guid("3d5ec31c-5e6c-437d-8494-2ca942c9e2fe")
     };
 
+    // Define provider-specific plugins
+    private static readonly Dictionary<ModelType, HashSet<Guid>> _providerSpecificPlugins = new()
+    {
+        // DeepWiki MCP plugin is only for OpenAI
+        [ModelType.OpenAi] = new HashSet<Guid>
+        {
+            new Guid("b7e7e7e7-e7e7-4e7e-8e7e-e7e7e7e7e7e7") // DeepWiki MCP
+        }
+    };
+
     public async Task<List<PluginDefinition>?> GetToolDefinitionsAsync(
         Guid userId,
         bool enableDeepSearch,
+        ModelType? modelType = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -62,6 +73,28 @@ public class ToolDefinitionService : IToolDefinitionService
                 .Where(id => !disabledPluginIds.Contains(id) &&
                              (!_requiresExplicitActivation.Contains(id) || explicitlyEnabledPluginIds.Contains(id)))
                 .ToHashSet();
+
+            // Filter out provider-specific plugins that don't match the current model type
+            if (modelType.HasValue)
+            {
+                var pluginsToExclude = new HashSet<Guid>();
+                foreach (var kvp in _providerSpecificPlugins)
+                {
+                    if (kvp.Key != modelType.Value)
+                    {
+                        foreach (var pluginId in kvp.Value)
+                        {
+                            pluginsToExclude.Add(pluginId);
+                        }
+                    }
+                }
+                
+                activePluginIds.ExceptWith(pluginsToExclude);
+                
+                _logger.LogInformation(
+                    "Filtered plugins for model type {ModelType}: Excluded {ExcludedCount} provider-specific plugins",
+                    modelType.Value, pluginsToExclude.Count);
+            }
 
             _logger.LogInformation(
                 "Plugin activation: Standard plugins: {StandardCount}, Activation-required plugins: {ActivationCount}, User-enabled: {EnabledCount}, User-disabled: {DisabledCount}",

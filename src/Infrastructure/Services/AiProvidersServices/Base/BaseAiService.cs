@@ -67,7 +67,7 @@ public abstract class BaseAiService : IAiModelService
         ChunkParser = chunkParser;
         
         
-        ConfigureHttpClient();
+        // ConfigureHttpClient() is called by derived classes after they initialize their dependencies
     }
     
     #endregion

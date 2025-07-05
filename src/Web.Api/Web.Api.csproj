@@ -48,7 +48,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="uploads\2025-06-22\" />
     <Folder Include="wwwroot\images\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="uploads\2025-06-22\4adc7434-44c5-495d-a4aa-a46a54946d9d_Screenshot 2025-01-22 103440.png" />
   </ItemGroup>
 
 </Project>

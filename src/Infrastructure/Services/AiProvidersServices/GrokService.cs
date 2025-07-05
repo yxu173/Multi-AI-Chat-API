@@ -33,6 +33,8 @@ public class GrokService : BaseAiService
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
+        
+        ConfigureHttpClient();
     }
 
     protected override void ConfigureHttpClient()
@@ -45,7 +47,7 @@ public class GrokService : BaseAiService
         }
         else
         {
-            HttpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
+            HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
             activity?.SetTag("auth.method", "Bearer");
         }
     }

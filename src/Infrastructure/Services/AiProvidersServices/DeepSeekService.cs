@@ -32,6 +32,8 @@ public class DeepSeekService : BaseAiService
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
+        
+        ConfigureHttpClient();
     }
 
     protected override void ConfigureHttpClient()

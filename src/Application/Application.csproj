@@ -38,6 +38,8 @@
 
   <ItemGroup>
     <Compile Remove="Abstractions\Interfaces\IAiAdapterFactory.cs" />
+    <Compile Remove="Services\AI\Streaming\SemanticKernelStreamChunkParser.cs" />
+    <Compile Remove="Services\AI\Builders\SemanticKernelPayloadBuilder.cs" />
   </ItemGroup>
 
 </Project>

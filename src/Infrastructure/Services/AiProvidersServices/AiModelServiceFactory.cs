@@ -60,26 +60,22 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         Guid? aiAgentId,
         CancellationToken cancellationToken = default)
     {
-        string cacheKey = "aimodel:" + modelId;
-        var aiModel = await _cacheService.GetAsync<AiModel>(cacheKey, cancellationToken);
+        // string cacheKey = "aimodel:" + modelId;
+        // var aiModel = await _cacheService.GetAsync<AiModel>(cacheKey, cancellationToken);
+        
+        _logger.LogDebug("Fetching AiModel {ModelId} from database.", modelId);
+        var aiModel = await _dbContext.AiModels
+                          .Include(m => m.AiProvider)
+                          .AsNoTracking()
+                          .FirstOrDefaultAsync(m => m.Id == modelId, cancellationToken);
 
         if (aiModel == null)
         {
-            _logger.LogDebug("AiModel {ModelId} not found in cache. Fetching from database.", modelId);
-            aiModel = await _dbContext.AiModels
-                              .Include(m => m.AiProvider)
-                              .AsNoTracking()
-                              .FirstOrDefaultAsync(m => m.Id == modelId, cancellationToken);
-
-            if (aiModel != null)
-            {
-                await _cacheService.SetAsync(cacheKey, aiModel, TimeSpan.FromHours(1), cancellationToken);
-            }
-            else
-            {
-                throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
-            }
+            throw new NotSupportedException($"No AI Model or Provider configured with ID: {modelId}");
         }
+
+        _logger.LogDebug("AiModel {ModelId} found in database. Provider: {ProviderId}, ProviderName: {ProviderName}", 
+            modelId, aiModel.AiProviderId, aiModel.AiProvider?.Name ?? "NULL");
 
         var (hasQuota, quotaErrorMessage) = await _subscriptionService.CheckUserQuotaAsync(userId, aiModel.RequestCost, cancellationToken: cancellationToken);
         if (!hasQuota)
@@ -101,6 +97,16 @@ public class AiModelServiceFactory : IAiModelServiceFactory
             _logger.LogWarning(
                 "No managed API key available from pool for provider {ProviderId}. Falling back to provider default key.",
                 aiModel.AiProviderId);
+            
+            if (aiModel.AiProvider == null)
+            {
+                _logger.LogError(
+                    "AiProvider is null for model {ModelName} (ID: {ModelId}). This indicates a data integrity issue.",
+                    aiModel.Name, aiModel.Id);
+                throw new InvalidOperationException(
+                    $"AI Provider is null for model {aiModel.Name}. This indicates a data integrity issue. Please check the database.");
+            }
+            
             apiKeySecretToUse = aiModel.AiProvider.DefaultApiKey;
             if (!string.IsNullOrEmpty(apiKeySecretToUse))
             {
@@ -111,11 +117,12 @@ public class AiModelServiceFactory : IAiModelServiceFactory
         if (string.IsNullOrEmpty(apiKeySecretToUse) && aiModel.ModelType != ModelType.Imagen &&
             aiModel.ModelType != ModelType.AimlFlux)
         {
+            var providerName = aiModel.AiProvider?.Name ?? "Unknown";
             _logger.LogError(
                 "No API key available for provider {ProviderName} (ID: {ProviderId}) and model {ModelName}. Neither managed nor default key found.",
-                aiModel.AiProvider.Name, aiModel.AiProviderId, aiModel.Name);
+                providerName, aiModel.AiProviderId, aiModel.Name);
             throw new Exception(
-                $"No API keys available for provider {aiModel.AiProvider.Name}. Please configure a managed key or a default key for the provider.");
+                $"No API keys available for provider {providerName}. Please configure a managed key or a default key for the provider.");
         }
 
         IAiModelService serviceInstance = InstantiateServiceModel(aiModel, apiKeySecretToUse);
@@ -138,14 +145,14 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
     private IAiModelService InstantiateServiceModel(AiModel aiModel, string? apiKeySecret)
     {
-        var openAiLogger = _serviceProvider.GetService<ILogger<OpenAiService>>();
-        var anthropicLogger = _serviceProvider.GetService<ILogger<AnthropicService>>();
-        var deepSeekLogger = _serviceProvider.GetService<ILogger<DeepSeekService>>();
-        var geminiLogger = _serviceProvider.GetService<ILogger<GeminiService>>();
-        var aimlLogger = _serviceProvider.GetService<ILogger<AimlApiService>>();
-        var imagenLogger = _serviceProvider.GetService<ILogger<ImagenService>>();
-        var grokLogger = _serviceProvider.GetService<ILogger<GrokService>>();
-        var qwenLogger = _serviceProvider.GetService<ILogger<QwenService>>();
+        var openAiLogger = _serviceProvider.GetRequiredService<ILogger<OpenAiService>>();
+        var anthropicLogger = _serviceProvider.GetRequiredService<ILogger<AnthropicService>>();
+        var deepSeekLogger = _serviceProvider.GetRequiredService<ILogger<DeepSeekService>>();
+        var geminiLogger = _serviceProvider.GetRequiredService<ILogger<GeminiService>>();
+        var aimlLogger = _serviceProvider.GetRequiredService<ILogger<AimlApiService>>();
+        var imagenLogger = _serviceProvider.GetRequiredService<ILogger<ImagenService>>();
+        var grokLogger = _serviceProvider.GetRequiredService<ILogger<GrokService>>();
+        var qwenLogger = _serviceProvider.GetRequiredService<ILogger<QwenService>>();
 
         var resilienceService = _serviceProvider.GetRequiredService<IResilienceService>();
         var httpClient = _httpClientFactory.CreateClient();
@@ -157,11 +164,11 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetService<ILogger<OpenAiStreamChunkParser>>())),
-            ModelType.OpenAiDeepResearch => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetService<ILogger<OpenAiStreamChunkParser>>()), TimeSpan.FromMinutes(10)),
-            ModelType.Anthropic => new AnthropicService(httpClient, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService, new AnthropicStreamChunkParser(_serviceProvider.GetService<ILogger<AnthropicStreamChunkParser>>())),
-            ModelType.DeepSeek => new DeepSeekService(httpClient, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService, new DeepseekStreamChunkParser(_serviceProvider.GetService<ILogger<DeepseekStreamChunkParser>>())),
-            ModelType.Gemini => new GeminiService(httpClient, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService, new GeminiStreamChunkParser(_serviceProvider.GetService<ILogger<GeminiStreamChunkParser>>())),
+            ModelType.OpenAi => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<OpenAiStreamChunkParser>>())),
+            ModelType.OpenAiDeepResearch => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<OpenAiStreamChunkParser>>()), TimeSpan.FromMinutes(10)),
+            ModelType.Anthropic => new AnthropicService(httpClient, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService, new AnthropicStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<AnthropicStreamChunkParser>>())),
+            ModelType.DeepSeek => new DeepSeekService(httpClient, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService, new DeepseekStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<DeepseekStreamChunkParser>>())),
+            ModelType.Gemini => new GeminiService(httpClient, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService, new GeminiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<GeminiStreamChunkParser>>())),
             ModelType.AimlFlux => new AimlApiService(httpClient, apiKeySecret, aiModel.ModelCode, aimlLogger, resilienceService),
             ModelType.Imagen => new ImagenService(
                 httpClient,
@@ -169,9 +176,10 @@ public class AiModelServiceFactory : IAiModelServiceFactory
                 _configuration["AI:Imagen:Region"] ?? throw new InvalidOperationException("Imagen Region not configured."),
                 aiModel.ModelCode,
                 imagenLogger,
-                resilienceService),
-            ModelType.Grok => new GrokService(httpClient, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService, new GrokStreamChunkParser(_serviceProvider.GetService<ILogger<GrokStreamChunkParser>>())),
-            ModelType.Qwen => new QwenService(httpClient, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService, new QwenStreamChunkParser(_serviceProvider.GetService<ILogger<QwenStreamChunkParser>>())),
+                resilienceService,
+                _configuration),
+            ModelType.Grok => new GrokService(httpClient, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService, new GrokStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<GrokStreamChunkParser>>())),
+            ModelType.Qwen => new QwenService(httpClient, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService, new QwenStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<QwenStreamChunkParser>>())),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported for instantiation with IResilienceService in factory.")
         };
     }

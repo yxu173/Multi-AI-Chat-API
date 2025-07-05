@@ -44,7 +44,11 @@ public class StreamingContextService : IStreamingContextService
             ? await _aiAgentRepository.GetByIdAsync(chatSession.AiAgentId.Value, cancellationToken)
             : null;
 
-        var toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(request.UserId, request.EnableDeepSearch, cancellationToken);
+        var toolDefinitions = await _toolDefinitionService.GetToolDefinitionsAsync(
+            request.UserId, 
+            request.EnableDeepSearch, 
+            chatSession.AiModel.ModelType,
+            cancellationToken);
 
         var history = request.History is not null && request.History.Any()
             ? HistoryBuilder.BuildHistory(request.History.Select(m => MessageDto.FromEntity(m)).ToList())

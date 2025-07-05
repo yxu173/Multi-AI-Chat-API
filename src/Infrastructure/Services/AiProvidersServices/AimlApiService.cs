@@ -34,6 +34,8 @@ public class AimlApiService : BaseAiService
         Directory.CreateDirectory(_imageSavePath);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
+        
+        ConfigureHttpClient();
     }
 
     protected override void ConfigureHttpClient()

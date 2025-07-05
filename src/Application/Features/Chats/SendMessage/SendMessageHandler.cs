@@ -48,11 +48,8 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
 
     public async Task<Result> ExecuteAsync(SendMessageCommand command, CancellationToken ct)
     {
-        var chatSession =
-            await _chatSessionRepository.GetByIdWithMessagesAndModelAndProviderAsync(command.ChatSessionId)
-            ?? throw new NotFoundException(nameof(ChatSession), command.ChatSessionId);
-
-        var userMessage = await CreateAndSaveUserMessageAsync(
+     
+         await CreateAndSaveUserMessageAsync(
             command.UserId,
             command.ChatSessionId,
             command.Content,

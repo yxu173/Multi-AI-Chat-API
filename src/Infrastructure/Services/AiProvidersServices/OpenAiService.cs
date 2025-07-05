@@ -38,6 +38,8 @@ public class OpenAiService : BaseAiService
         {
             HttpClient.Timeout = timeout.Value;
         }
+        
+        ConfigureHttpClient();
     }
 
     protected override void ConfigureHttpClient()
@@ -137,11 +139,6 @@ public class OpenAiService : BaseAiService
             activity?.AddException(ex);
             _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
             throw; 
-        }
-        
-        if (response == null) 
-        {
-            yield break;
         }
 
         try

@@ -35,7 +35,7 @@ public class GeminiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
         if (useThinking)
         {
-            int thinkingBudget = 1024;
+            int thinkingBudget = -1;
             generationConfig["thinkingConfig"] = new Dictionary<string, object>
             {
                 { "thinkingBudget", thinkingBudget },

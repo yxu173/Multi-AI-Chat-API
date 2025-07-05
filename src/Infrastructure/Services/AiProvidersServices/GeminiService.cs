@@ -31,6 +31,8 @@ public class GeminiService : BaseAiService, IAiFileUploader
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
+        
+        ConfigureHttpClient();
     }
 
     protected override string ProviderName => "Gemini";
@@ -38,9 +40,6 @@ public class GeminiService : BaseAiService, IAiFileUploader
     protected override void ConfigureHttpClient()
     {
         using var activity = ActivitySource.StartActivity(nameof(ConfigureHttpClient));
-        // Gemini API key is usually passed in the URL for REST,
-        // or via gRPC metadata. If specific headers are needed for other Gemini scenarios,
-        // they would be configured here. For now, assuming key in URL is primary.
     }
 
     public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
@@ -96,8 +95,6 @@ public class GeminiService : BaseAiService, IAiFileUploader
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true };
         
-        // Gemini streams an array of 'GenerateContentResponse' objects.
-        // Each object is a complete JSON.
         await foreach (var jsonElement in JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(stream, options, cancellationToken).ConfigureAwait(false))
         {
             if (cancellationToken.IsCancellationRequested)
@@ -105,8 +102,6 @@ public class GeminiService : BaseAiService, IAiFileUploader
                 activity?.AddEvent(new ActivityEvent("Gemini stream reading cancelled."));
                 break;
             }
-            // Extract the text content if needed here, or pass the whole JSON element raw text
-            // For now, passing raw JSON text of the element.
             string rawJsonChunk = jsonElement.GetRawText();
             activity?.AddEvent(new ActivityEvent("Gemini stream chunk received"));
             yield return rawJsonChunk;
