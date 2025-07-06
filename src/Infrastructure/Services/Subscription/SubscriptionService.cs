@@ -1,7 +1,6 @@
 using Application.Abstractions.Interfaces;
 using Domain.Repositories;
 using Domain.Aggregates.Admin;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services.Subscription;
@@ -11,18 +10,15 @@ public class SubscriptionService : ISubscriptionService
     private readonly IUserSubscriptionRepository _userSubscriptionRepository;
     private readonly ISubscriptionPlanRepository _subscriptionPlanRepository;
     private readonly ILogger<SubscriptionService> _logger;
-    private readonly IServiceProvider _serviceProvider;
 
     public SubscriptionService(
         IUserSubscriptionRepository userSubscriptionRepository,
         ISubscriptionPlanRepository subscriptionPlanRepository,
-        ILogger<SubscriptionService> logger,
-        IServiceProvider serviceProvider)
+        ILogger<SubscriptionService> logger)
     {
         _userSubscriptionRepository = userSubscriptionRepository ?? throw new ArgumentNullException(nameof(userSubscriptionRepository));
         _subscriptionPlanRepository = subscriptionPlanRepository ?? throw new ArgumentNullException(nameof(subscriptionPlanRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
     }
 
     public async Task<(bool HasQuota, string? ErrorMessage)> CheckUserQuotaAsync(
@@ -74,37 +70,26 @@ public class SubscriptionService : ISubscriptionService
 
     public async Task IncrementUserUsageAsync(Guid userId, double requestCost, CancellationToken cancellationToken = default)
     {
-        var subscription = await _userSubscriptionRepository.GetActiveSubscriptionAsync(userId, cancellationToken);
-        if (subscription == null)
+        try
         {
-            _logger.LogWarning("No active subscription found for user {UserId} when trying to increment usage", userId);
-            return;
-        }
+            var subscription = await _userSubscriptionRepository.GetActiveSubscriptionAsync(userId, cancellationToken);
+            if (subscription == null)
+            {
+                _logger.LogWarning("No active subscription found for user {UserId} when trying to increment usage", userId);
+                return;
+            }
 
-        var subscriptionIdCapture = subscription.Id;
-        var userIdCapture = userId;
-        var requestCostCapture = requestCost; 
-        
-        _ = Task.Run(async () => 
-        {
-            using var scope = _serviceProvider.CreateScope();
-            var subscriptionRepo = scope.ServiceProvider.GetRequiredService<IUserSubscriptionRepository>();
+            subscription.IncrementUsage(requestCost);
+            await _userSubscriptionRepository.UpdateAsync(subscription, cancellationToken);
             
-            try
-            {
-                var freshSubscription = await subscriptionRepo.GetByIdAsync(subscriptionIdCapture, CancellationToken.None);
-                if (freshSubscription != null)
-                {
-                    freshSubscription.IncrementUsage(requestCostCapture); 
-                    await subscriptionRepo.UpdateAsync(freshSubscription, CancellationToken.None);
-                    _logger.LogInformation("Incremented usage for user {UserId}, subscription {SubscriptionId}, new usage: {Usage}, cost: {RequestCost}", userIdCapture, subscriptionIdCapture, freshSubscription.CurrentMonthUsage, requestCostCapture);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to increment usage for user {UserId}", userIdCapture);
-            }
-        });
+            _logger.LogInformation("Incremented usage for user {UserId}, subscription {SubscriptionId}, new usage: {Usage}, cost: {RequestCost}", 
+                userId, subscription.Id, subscription.CurrentMonthUsage, requestCost);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to increment usage for user {UserId}", userId);
+            throw;
+        }
     }
 
     public async Task ResetMonthlyUsageAsync(CancellationToken cancellationToken = default)

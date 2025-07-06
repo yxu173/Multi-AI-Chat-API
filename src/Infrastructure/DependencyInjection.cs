@@ -64,6 +64,7 @@ public static class DependencyInjection
         services.AddScoped<IUserSubscriptionRepository, UserSubscriptionRepository>();
 
         services.AddScoped<ISubscriptionService, SubscriptionService>();
+        services.AddScoped<ISubscriptionUsageJob, SubscriptionUsageJob>();
         services.AddScoped<IProviderKeyManagementService, ProviderKeyManagementService>();
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();

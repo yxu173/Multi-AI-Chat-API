@@ -14,6 +14,7 @@ using Domain.Aggregates.Chats;
 using Domain.Enums;
 using Domain.Repositories;
 using FastEndpoints;
+using Hangfire;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
@@ -59,6 +60,7 @@ public class StreamingService : IStreamingService
     private readonly IStreamingContextService _streamingContextService;
     private readonly IStreamingResilienceHandler _resilienceHandler;
     private readonly StreamingOptions _options;
+    private readonly IBackgroundJobClient _backgroundJobClient;
 
     private readonly ConcurrentQueue<StringBuilder> _stringBuilderPool = new();
     private readonly ConcurrentQueue<List<MessageDto>> _messageListPool = new();
@@ -80,6 +82,7 @@ public class StreamingService : IStreamingService
         ToolCallHandler toolCallHandler,
         IStreamingContextService streamingContextService,
         IStreamingResilienceHandler resilienceHandler,
+        IBackgroundJobClient backgroundJobClient,
         IOptions<StreamingOptions> options)
     {
         _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
@@ -95,6 +98,7 @@ public class StreamingService : IStreamingService
         _toolCallHandler = toolCallHandler ?? throw new ArgumentNullException(nameof(toolCallHandler));
         _streamingContextService = streamingContextService ?? throw new ArgumentNullException(nameof(streamingContextService));
         _resilienceHandler = resilienceHandler ?? throw new ArgumentNullException(nameof(resilienceHandler));
+        _backgroundJobClient = backgroundJobClient ?? throw new ArgumentNullException(nameof(backgroundJobClient));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
@@ -148,8 +152,8 @@ public class StreamingService : IStreamingService
                         finalCost, CancellationToken.None);
                 }
 
-                // Increment user subscription usage after successful completion
-                await _subscriptionService.IncrementUserUsageAsync(request.UserId, chatSession.AiModel.RequestCost, CancellationToken.None);
+                // Enqueue background job to increment user subscription usage
+                _backgroundJobClient.Enqueue<ISubscriptionUsageJob>(j => j.IncrementUsageAsync(request.UserId, chatSession.AiModel.RequestCost));
 
                 var persistenceToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
                 await _aiMessageFinalizer.FinalizeProgressingMessageAsync(aiMessage, result.ConversationCompleted, persistenceToken);
