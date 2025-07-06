@@ -39,6 +39,19 @@ public class AiModelConfiguration : IEntityTypeConfiguration<AiModel>
             .IsRequired()
             .HasDefaultValue(true);
 
+        // Indexes for frequently queried columns
+        builder.HasIndex(am => am.AiProviderId);
+        builder.HasIndex(am => am.ModelType);
+        builder.HasIndex(am => am.IsEnabled);
+        builder.HasIndex(am => am.ModelCode);
+        
+        // Composite indexes for frequently used queries
+        builder.HasIndex(am => new { am.AiProviderId, am.IsEnabled })
+            .HasDatabaseName("IX_AiModels_AiProviderId_IsEnabled");
+        
+        builder.HasIndex(am => new { am.ModelType, am.IsEnabled })
+            .HasDatabaseName("IX_AiModels_ModelType_IsEnabled");
+
         builder.HasOne(am => am.AiProvider)
             .WithMany(ap => ap.Models)
             .HasForeignKey(am => am.AiProviderId)

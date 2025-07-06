@@ -28,6 +28,15 @@ public class ChatTokenUsageConfiguration : IEntityTypeConfiguration<ChatTokenUsa
         builder.Property(tu => tu.CreatedAt)
             .IsRequired();
 
+        // Indexes for frequently queried columns
+        builder.HasIndex(tu => tu.ChatId);
+        builder.HasIndex(tu => tu.CreatedAt);
+        builder.HasIndex(tu => tu.TotalCost);
+        
+        // Composite indexes for frequently used queries
+        builder.HasIndex(tu => new { tu.ChatId, tu.CreatedAt })
+            .HasDatabaseName("IX_ChatTokenUsages_ChatId_CreatedAt");
+
         builder.HasOne(tu => tu.ChatSession)
             .WithOne()
             .HasForeignKey<ChatTokenUsage>(tu => tu.ChatId)

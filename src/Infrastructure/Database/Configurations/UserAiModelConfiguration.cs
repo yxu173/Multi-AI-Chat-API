@@ -21,6 +21,19 @@ public sealed class UserAiModelConfiguration : IEntityTypeConfiguration<UserAiMo
         builder.Property(x => x.IsEnabled)
             .IsRequired();
 
+        // Indexes for frequently queried columns
+        builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.AiModelId);
+        builder.HasIndex(x => x.IsEnabled);
+        
+        // Composite indexes for frequently used queries
+        builder.HasIndex(x => new { x.UserId, x.AiModelId })
+            .IsUnique()
+            .HasDatabaseName("IX_UserAiModels_UserId_AiModelId");
+        
+        builder.HasIndex(x => new { x.UserId, x.IsEnabled })
+            .HasDatabaseName("IX_UserAiModels_UserId_IsEnabled");
+
         builder.HasOne(x => x.User)
             .WithMany(x => x.UserAiModels)
             .HasForeignKey(x => x.UserId)

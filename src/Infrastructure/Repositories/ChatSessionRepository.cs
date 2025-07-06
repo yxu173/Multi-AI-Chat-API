@@ -19,35 +19,31 @@ public class ChatSessionRepository : IChatSessionRepository
 
     public async Task<ChatSession> GetByIdAsync(Guid id)
     {
-        var chat = await _context.ChatSessions
+        return await _context.ChatSessions
             .AsNoTracking()
             .Include(c => c.Messages)
             .ThenInclude(m => m.FileAttachments)
             .AsSplitQuery()
             .FirstOrDefaultAsync(c => c.Id == id);
-        return chat;
     }
-
 
     public async Task<ChatSession> GetByIdWithMessagesAndModelAndProviderAsync(Guid id)
     {
-        var chat = await _context.ChatSessions
+        return await _context.ChatSessions
             .Include(c => c.Messages)
             .ThenInclude(m => m.FileAttachments)
             .Include(c => c.AiModel)
             .ThenInclude(m => m.AiProvider)
             .AsSplitQuery()
             .FirstOrDefaultAsync(c => c.Id == id);
-        return chat;
     }
 
     public async Task<ChatSession> GetChatWithModel(Guid chatId)
     {
         return await _context.ChatSessions
             .Include(c => c.AiModel)
-            .FirstOrDefaultAsync(c => c.Id == chatId); 
+            .FirstOrDefaultAsync(c => c.Id == chatId);
     }
-
 
     public async Task AddAsync(ChatSession chatSession, CancellationToken cancellationToken)
     {
@@ -104,7 +100,8 @@ public class ChatSessionRepository : IChatSessionRepository
         {
             query = query.Include(c => c.Messages
                     .OrderByDescending(m => m.CreatedAt))
-                .ThenInclude(m => m.FileAttachments);
+                .ThenInclude(m => m.FileAttachments)
+                .AsSplitQuery();
         }
 
         return await query.ToListAsync();
@@ -122,12 +119,14 @@ public class ChatSessionRepository : IChatSessionRepository
         var query = _context.ChatSessions
             .AsNoTracking()
             .Where(x => x.UserId == userId && x.FolderId == null);
+        
         var totalCount = await query.CountAsync();
         var chats = await query
             .OrderByDescending(x => x.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+        
         return (chats, totalCount);
     }
 }

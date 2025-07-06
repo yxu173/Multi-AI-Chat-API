@@ -13,6 +13,7 @@ using Infrastructure.Repositories;
 using Infrastructure.Services.AiProvidersServices;
 using Infrastructure.Services.Caching;
 using Infrastructure.Services.FileStorage;
+using Infrastructure.Services.Infrastructure;
 using Infrastructure.Services.Plugins;
 using Infrastructure.Services.Resilience;
 using Infrastructure.Services.Subscription;
@@ -66,6 +67,7 @@ public static class DependencyInjection
         services.AddScoped<IProviderKeyManagementService, ProviderKeyManagementService>();
         services.AddScoped<IAiModelServiceFactory, AiModelServiceFactory>();
         services.AddScoped<IPluginExecutorFactory, PluginExecutorFactory>();
+        services.AddScoped<IBulkOperationsService, BulkOperationsService>();
         
         services.AddHostedService<DailyQuotaResetService>();
 

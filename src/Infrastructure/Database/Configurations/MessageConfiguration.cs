@@ -27,12 +27,26 @@ public class MessageConfiguration : IEntityTypeConfiguration<Message>
 
         builder.Property(m => m.ChatSessionId)
             .IsRequired();
+        
+        // Single column indexes
         builder.HasIndex(m => m.CreatedAt);
+        builder.HasIndex(m => m.ChatSessionId);
+        builder.HasIndex(m => m.UserId);
+        
+        // Composite indexes for frequently used queries
+        builder.HasIndex(m => new { m.ChatSessionId, m.CreatedAt })
+            .HasDatabaseName("IX_Messages_ChatSessionId_CreatedAt");
+        
+        builder.HasIndex(m => new { m.UserId, m.CreatedAt })
+            .HasDatabaseName("IX_Messages_UserId_CreatedAt");
+        
+        builder.HasIndex(m => new { m.ChatSessionId, m.IsFromAi })
+            .HasDatabaseName("IX_Messages_ChatSessionId_IsFromAi");
+
         builder.HasOne(m => m.ChatSession)
             .WithMany(cs => cs.Messages)
             .HasForeignKey(m => m.ChatSessionId)
             .OnDelete(DeleteBehavior.Cascade);
-
 
         builder.HasMany(m => m.FileAttachments)
             .WithOne()

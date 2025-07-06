@@ -16,6 +16,10 @@ public class AiModelRepository : IAiModelRepository
     private const string CacheKeyPrefix = "aiModels";
     private readonly TimeSpan CacheExpiry = TimeSpan.FromDays(30);
 
+    private static readonly Func<ApplicationDbContext, Guid, Task<bool>> ExistsCompiled =
+        EF.CompileAsyncQuery((ApplicationDbContext context, Guid id) =>
+            context.AiModels.Any(m => m.Id == id));
+
     public AiModelRepository(ApplicationDbContext dbContext, ICacheService cacheService)
     {
         _dbContext = dbContext;
@@ -106,11 +110,14 @@ public class AiModelRepository : IAiModelRepository
             {
                 var userModels = await _dbContext.UserAiModels
                     .Where(um => um.UserId == userId)
+                    .Select(um => new { um.AiModelId, um.IsEnabled })
                     .ToListAsync();
+                
                 var hiddenModelIds = userModels
                     .Where(um => !um.IsEnabled)
                     .Select(um => um.AiModelId)
                     .ToHashSet();
+                
                 return await _dbContext.AiModels
                     .Include(m => m.AiProvider)
                     .Where(m => m.IsEnabled
@@ -131,11 +138,14 @@ public class AiModelRepository : IAiModelRepository
             {
                 var allModels = await _dbContext.AiModels
                     .Where(m => m.IsEnabled)
+                    .AsNoTracking()
                     .ToListAsync();
+                
                 var disabledModelIds = await _dbContext.UserAiModels
                     .Where(x => x.UserId == userId && !x.IsEnabled)
                     .Select(x => x.AiModelId)
                     .ToListAsync();
+                
                 return allModels.Where(m => !disabledModelIds.Contains(m.Id)).ToList();
             },
             CacheExpiry);
@@ -174,7 +184,7 @@ public class AiModelRepository : IAiModelRepository
         string cacheKey = $"{CacheKeyPrefix}:exists:{id}";
         return await _cacheService.GetOrSetAsync(
             cacheKey,
-            async () => await _dbContext.AiModels.AnyAsync(m => m.Id == id),
+            async () => await ExistsCompiled(_dbContext, id),
             CacheExpiry);
     }
 
