@@ -106,6 +106,7 @@ public class GrokService : BaseAiService
 
             if (!string.IsNullOrEmpty(jsonData))
             {
+                _logger.LogInformation("Grok raw chunk: {JsonData}", jsonData);
                 activity?.AddEvent(new ActivityEvent("Yielding data chunk"));
                 yield return jsonData;
             }
@@ -145,6 +146,13 @@ public class GrokService : BaseAiService
                 cancellationToken).ConfigureAwait(false);
 
             activity?.SetTag("http.response_status_code", ((int)response.StatusCode).ToString());
+
+            // Log response headers to see if usage information is available
+            _logger.LogInformation("Grok response headers:");
+            foreach (var header in response.Headers)
+            {
+                _logger.LogInformation("Header: {HeaderName} = {HeaderValue}", header.Key, string.Join(", ", header.Value));
+            }
 
             if (!response.IsSuccessStatusCode)
             {

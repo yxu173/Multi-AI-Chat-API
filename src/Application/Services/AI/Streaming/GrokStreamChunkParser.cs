@@ -24,12 +24,10 @@ public class GrokStreamChunkParser : BaseStreamChunkParser<GrokStreamChunkParser
         string? finishReason = null;
         ToolCallChunk? toolCallInfo = null;
 
-        // Grok's structure is similar to OpenAI: choices -> delta -> content/tool_calls
         if (root.TryGetProperty("choices", out var choicesElement) && choicesElement.ValueKind == JsonValueKind.Array && choicesElement.GetArrayLength() > 0)
         {
             var firstChoice = choicesElement[0];
 
-            // Finish reason can be on the choice itself
             if (firstChoice.TryGetProperty("finish_reason", out var choiceFinishReasonElement) && choiceFinishReasonElement.ValueKind == JsonValueKind.String)
             {
                 finishReason = choiceFinishReasonElement.GetString();
@@ -49,11 +47,11 @@ public class GrokStreamChunkParser : BaseStreamChunkParser<GrokStreamChunkParser
                     toolCallsElement.ValueKind == JsonValueKind.Array &&
                     toolCallsElement.GetArrayLength() > 0)
                 {
-                    var toolCallDelta = toolCallsElement[0]; // Assuming one tool call part per delta chunk
+                    var toolCallDelta = toolCallsElement[0];
                     string? functionId = null;
                     string? functionName = null;
                     string? argumentChunk = null;
-                    int toolCallIndex = 0; // Grok tool_calls in delta might have an index property
+                    int toolCallIndex = 0; 
 
                     if (toolCallDelta.TryGetProperty("index", out var indexElement) && indexElement.TryGetInt32(out int idx))
                     {
@@ -117,27 +115,6 @@ public class GrokStreamChunkParser : BaseStreamChunkParser<GrokStreamChunkParser
             }
             Logger?.LogTrace("Parsed Grok token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
         }
-        
-        if (root.TryGetProperty("x_groq", out var xGroqElement) && xGroqElement.TryGetProperty("usage", out var xGroqUsageElement))
-        {
-            if (xGroqUsageElement.TryGetProperty("prompt_tokens", out var ptElement) && ptElement.TryGetInt32(out var pt))
-            {
-                inputTokens = pt; 
-            }
-            if (xGroqUsageElement.TryGetProperty("completion_tokens", out var ctElement) && ctElement.TryGetInt32(out var ct))
-            {
-                outputTokens = ct; 
-            }
-             if (xGroqUsageElement.TryGetProperty("reasoning_tokens", out var rtElement) && rtElement.TryGetInt32(out var rt))
-            {
-                Logger?.LogTrace("Found Grok reasoning tokens in x_groq usage: {ReasoningTokens}", rt);
-            }
-            if (xGroqUsageElement.TryGetProperty("total_tokens", out var ttElement) && ttElement.TryGetInt32(out var tt))
-            {
-            }
-            Logger?.LogDebug("Parsed Grok x_groq token usage: Input={Input}, Output={Output}", inputTokens, outputTokens);
-        }
-
 
         return new ParsedChunkInfo(
             TextDelta: textDelta,
