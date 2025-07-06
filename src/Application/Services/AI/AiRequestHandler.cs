@@ -61,12 +61,10 @@ public class AiRequestHandler : IAiRequestHandler
         var modelType = updatedContext.SpecificModel.ModelType;
         List<PluginDefinition>? toolDefinitions = updatedContext.ToolDefinitions;
 
-        // If we have tool definitions, make sure we set FunctionCall to "auto" to enable them
         if (toolDefinitions != null && toolDefinitions.Any())
         {
             _logger.LogInformation("Found {Count} plugin tools available for this request", toolDefinitions.Count);
             
-            // Set FunctionCall to "auto" to enable tool use
             updatedContext = updatedContext with { FunctionCall = "auto" };
         }
 

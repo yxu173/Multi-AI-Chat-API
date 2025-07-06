@@ -46,7 +46,6 @@ public record StreamingResult(
 
 public class StreamingService : IStreamingService
 {
-    private readonly ISubscriptionService _subscriptionService;
     private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IProviderKeyManagementService _providerKeyManagementService;
     private readonly ILogger<StreamingService> _logger;
@@ -69,7 +68,6 @@ public class StreamingService : IStreamingService
     private static readonly ActivitySource ActivitySource = new("Application.Services.Streaming.StreamingService", "1.0.0");
 
     public StreamingService(
-        ISubscriptionService subscriptionService,
         IAiModelServiceFactory aiModelServiceFactory,
         IProviderKeyManagementService providerKeyManagementService,
         ILogger<StreamingService> logger,
@@ -85,7 +83,6 @@ public class StreamingService : IStreamingService
         IBackgroundJobClient backgroundJobClient,
         IOptions<StreamingOptions> options)
     {
-        _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
         _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _providerKeyManagementService = providerKeyManagementService ?? throw new ArgumentNullException(nameof(providerKeyManagementService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
