@@ -69,6 +69,18 @@ public class SubscriptionService : ISubscriptionService
             return (false, $"You've reached your monthly limit of {plan.MaxRequestsPerMonth} requests. Your quota will reset at the beginning of the next month.");
         }
 
+        return (true, null);
+    }
+
+    public async Task IncrementUserUsageAsync(Guid userId, double requestCost, CancellationToken cancellationToken = default)
+    {
+        var subscription = await _userSubscriptionRepository.GetActiveSubscriptionAsync(userId, cancellationToken);
+        if (subscription == null)
+        {
+            _logger.LogWarning("No active subscription found for user {UserId} when trying to increment usage", userId);
+            return;
+        }
+
         var subscriptionIdCapture = subscription.Id;
         var userIdCapture = userId;
         var requestCostCapture = requestCost; 
@@ -93,8 +105,6 @@ public class SubscriptionService : ISubscriptionService
                 _logger.LogError(ex, "Failed to increment usage for user {UserId}", userIdCapture);
             }
         });
-
-        return (true, null);
     }
 
     public async Task ResetMonthlyUsageAsync(CancellationToken cancellationToken = default)

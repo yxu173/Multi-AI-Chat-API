@@ -116,12 +116,6 @@ public class StreamingService : IStreamingService
             var chatSession = requestContext.ChatSession;
             var aiMessage = chatSession.Messages.First(m => m.Id == request.AiMessageId);
 
-            var (hasQuota, errorMessage) = await _subscriptionService.CheckUserQuotaAsync(request.UserId, chatSession.AiModel.RequestCost, 0, cancellationToken);
-            if (!hasQuota)
-            {
-                throw new QuotaExceededException(errorMessage ?? "User has exceeded their quota.");
-            }
-
             var cts = new CancellationTokenSource();
             _streamingOperationManager.RegisterOperation(aiMessage.Id, cts);
 
@@ -153,6 +147,9 @@ public class StreamingService : IStreamingService
                     await _tokenUsageService.UpdateTokenUsageAsync(request.ChatSessionId, result.InputTokens, result.OutputTokens,
                         finalCost, CancellationToken.None);
                 }
+
+                // Increment user subscription usage after successful completion
+                await _subscriptionService.IncrementUserUsageAsync(request.UserId, chatSession.AiModel.RequestCost, CancellationToken.None);
 
                 var persistenceToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
                 await _aiMessageFinalizer.FinalizeProgressingMessageAsync(aiMessage, result.ConversationCompleted, persistenceToken);

@@ -8,5 +8,7 @@ public interface ISubscriptionService
         int requiredTokens = 0,
         CancellationToken cancellationToken = default);
         
+    Task IncrementUserUsageAsync(Guid userId, double requestCost, CancellationToken cancellationToken = default);
+        
     Task ResetMonthlyUsageAsync(CancellationToken cancellationToken = default);
 } 
