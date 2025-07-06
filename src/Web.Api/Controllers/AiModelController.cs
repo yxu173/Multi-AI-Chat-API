@@ -24,7 +24,6 @@ public class AiModelController : BaseController
         var result = await new CreateAiModelCommand(
             request.Name,
             request.ModelType,
-            request.AiProviderId,
             request.InputTokenPricePer1M,
             request.OutputTokenPricePer1M,
             request.ModelCode,

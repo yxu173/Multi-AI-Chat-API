@@ -6,6 +6,7 @@ namespace Domain.Repositories;
 public interface IAiProviderRepository
 {
     Task<AiProvider?> GetByIdAsync(Guid id);
+    Task<AiProvider?> GetByNameAsync(string name);
     Task<IReadOnlyList<AiProvider>> GetAllAsync();
     Task<IReadOnlyList<AiProvider>> GetEnabledAsync();
     Task AddAsync(AiProvider aiProvider);

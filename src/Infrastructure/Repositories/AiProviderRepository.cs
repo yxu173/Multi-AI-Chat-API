@@ -29,6 +29,15 @@ public class AiProviderRepository : IAiProviderRepository
             CacheExpiry);
     }
 
+    public async Task<AiProvider?> GetByNameAsync(string name)
+    {
+        string cacheKey = $"{CacheKeyPrefix}:name:{name}";
+        return await _cacheService.GetOrSetAsync(
+            cacheKey,
+            async () => await _dbContext.AiProviders.FirstOrDefaultAsync(p => p.Name == name),
+            CacheExpiry);
+    }
+
     public async Task<IReadOnlyList<AiProvider>> GetAllAsync()
     {
         string cacheKey = $"{CacheKeyPrefix}:all";
