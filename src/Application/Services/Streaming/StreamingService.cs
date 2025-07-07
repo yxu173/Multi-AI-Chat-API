@@ -50,7 +50,6 @@ public class StreamingService : IStreamingService
     private readonly IProviderKeyManagementService _providerKeyManagementService;
     private readonly ILogger<StreamingService> _logger;
     private readonly StreamingOperationManager _streamingOperationManager;
-    private readonly StreamingPerformanceMonitor _performanceMonitor;
     private readonly TokenUsageService _tokenUsageService;
     private readonly IMessageRepository _messageRepository;
     private readonly IAiMessageFinalizer _aiMessageFinalizer;
@@ -72,7 +71,6 @@ public class StreamingService : IStreamingService
         IProviderKeyManagementService providerKeyManagementService,
         ILogger<StreamingService> logger,
         StreamingOperationManager streamingOperationManager,
-        StreamingPerformanceMonitor performanceMonitor,
         TokenUsageService tokenUsageService,
         IMessageRepository messageRepository,
         IAiMessageFinalizer aiMessageFinalizer,
@@ -87,7 +85,6 @@ public class StreamingService : IStreamingService
         _providerKeyManagementService = providerKeyManagementService ?? throw new ArgumentNullException(nameof(providerKeyManagementService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _streamingOperationManager = streamingOperationManager ?? throw new ArgumentNullException(nameof(streamingOperationManager));
-        _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         _tokenUsageService = tokenUsageService ?? throw new ArgumentNullException(nameof(tokenUsageService));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _aiMessageFinalizer = aiMessageFinalizer ?? throw new ArgumentNullException(nameof(aiMessageFinalizer));
@@ -106,10 +103,6 @@ public class StreamingService : IStreamingService
         activity?.SetTag("user.id", request.UserId.ToString());
         activity?.SetTag("ai_message.id", request.AiMessageId.ToString());
 
-        if (_options.EnablePerformanceMonitoring)
-        {
-            _performanceMonitor.StartMonitoring(request.AiMessageId);
-        }
 
         try
         {
@@ -182,11 +175,6 @@ public class StreamingService : IStreamingService
         }
         finally
         {
-            // Stop performance monitoring
-            if (_options.EnablePerformanceMonitoring)
-            {
-                _performanceMonitor.StopMonitoring(request.AiMessageId);
-            }
         }
     }
 
@@ -243,6 +231,39 @@ public class StreamingService : IStreamingService
         // Notification batching
         var notificationBatch = new List<(string Type, object Data)>();
         var lastNotificationTime = DateTime.UtcNow;
+        Timer? idleFlushTimer = null;
+        object notificationLock = new();
+        bool batchFlushed = false;
+
+        void FlushBatchIfNeeded()
+        {
+            lock (notificationLock)
+            {
+                if (notificationBatch.Count > 0 && !batchFlushed)
+                {
+                    FlushNotificationBatchAsync(notificationBatch, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken).GetAwaiter().GetResult();
+                    notificationBatch.Clear();
+                    lastNotificationTime = DateTime.UtcNow;
+                    batchFlushed = true;
+                }
+            }
+        }
+
+        void ResetIdleFlushTimer()
+        {
+            if (idleFlushTimer != null)
+            {
+                idleFlushTimer.Change(_options.NotificationBatchIdleFlushMs, Timeout.Infinite);
+            }
+        }
+
+        if (_options.EnableNotificationBatching)
+        {
+            idleFlushTimer = new Timer(_ =>
+            {
+                FlushBatchIfNeeded();
+            }, null, Timeout.Infinite, Timeout.Infinite);
+        }
 
         try
         {
@@ -275,6 +296,11 @@ public class StreamingService : IStreamingService
                     await foreach (var chunk in stream.WithCancellation(cancellationToken))
                     {
                         var chunkStartTime = DateTime.UtcNow;
+                        batchFlushed = false;
+                        if (_options.EnableNotificationBatching)
+                        {
+                            ResetIdleFlushTimer();
+                        }
                         
                         if (chunk.InputTokens.HasValue) inTokens = chunk.InputTokens.Value;
                         if (chunk.OutputTokens.HasValue) outTokens = chunk.OutputTokens.Value;
@@ -284,20 +310,15 @@ public class StreamingService : IStreamingService
                             finalContent.Append(chunk.TextDelta);
                             
                             // Batch notifications
-                            if (_options.EnableNotificationBatching)
+                            notificationBatch.Add(("text", chunk.TextDelta));
+                            if (await TryFlushBatchAsync(notificationBatch, lastNotificationTime, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken))
                             {
-                                notificationBatch.Add(("text", chunk.TextDelta));
-                                if (ShouldFlushNotifications(notificationBatch, lastNotificationTime))
+                                lastNotificationTime = DateTime.UtcNow;
+                                batchFlushed = true;
+                                if (_options.EnableNotificationBatching)
                                 {
-                                    await FlushNotificationBatchAsync(notificationBatch, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken);
-                                    notificationBatch.Clear();
-                                    lastNotificationTime = DateTime.UtcNow;
+                                    idleFlushTimer?.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
                                 }
-                            }
-                            else
-                            {
-                                await new MessageChunkReceivedNotification(requestContext.ChatSession.Id, aiMessage.Id, chunk.TextDelta)
-                                    .PublishAsync(cancellation: cancellationToken);
                             }
                         }
 
@@ -307,20 +328,15 @@ public class StreamingService : IStreamingService
                             thinkingContentBuilder.Append(chunk.ThinkingDelta);
                             
                             // Batch thinking notifications
-                            if (_options.EnableNotificationBatching)
+                            notificationBatch.Add(("thinking", chunk.ThinkingDelta));
+                            if (await TryFlushBatchAsync(notificationBatch, lastNotificationTime, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken))
                             {
-                                notificationBatch.Add(("thinking", chunk.ThinkingDelta));
-                                if (ShouldFlushNotifications(notificationBatch, lastNotificationTime))
+                                lastNotificationTime = DateTime.UtcNow;
+                                batchFlushed = true;
+                                if (_options.EnableNotificationBatching)
                                 {
-                                    await FlushNotificationBatchAsync(notificationBatch, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken);
-                                    notificationBatch.Clear();
-                                    lastNotificationTime = DateTime.UtcNow;
+                                    idleFlushTimer?.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
                                 }
-                            }
-                            else
-                            {
-                                await new ThinkingUpdateNotification(requestContext.ChatSession.Id, aiMessage.Id, chunk.ThinkingDelta)
-                                    .PublishAsync(cancellation: cancellationToken);
                             }
                         }
 
@@ -355,18 +371,12 @@ public class StreamingService : IStreamingService
                             break;
                         }
 
-                        // Record performance metrics
-                        if (_options.EnablePerformanceMonitoring)
-                        {
-                            var processingTime = DateTime.UtcNow - chunkStartTime;
-                            var chunkSize = (chunk.TextDelta?.Length ?? 0) + (chunk.ThinkingDelta?.Length ?? 0);
-                            _performanceMonitor.RecordChunkProcessed(aiMessage.Id, chunkSize, processingTime);
-                        }
                     }
 
                     if (thinkingContentBuilder.Length > 0)
                     {
                         thinkingContent = thinkingContentBuilder.ToString();
+                        // Do NOT update the DB here; only persist at the end of streaming
                     }
 
                     if (cancellationToken.IsCancellationRequested) break;
@@ -400,9 +410,15 @@ public class StreamingService : IStreamingService
             // Flush any remaining notifications
             if (_options.EnableNotificationBatching && notificationBatch.Any())
             {
+                idleFlushTimer?.Dispose();
                 await FlushNotificationBatchAsync(notificationBatch, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken);
             }
+            else if (_options.EnableNotificationBatching)
+            {
+                idleFlushTimer?.Dispose();
+            }
 
+            // Only persist message content and thinking content at the end or on cancellation
             if (!conversationCompleted && !cancellationToken.IsCancellationRequested)
             {
                 if (finalContent.Length > 0)
@@ -410,6 +426,10 @@ public class StreamingService : IStreamingService
                     aiMessage.UpdateContent(finalContent.ToString());
                     aiMessage.InterruptMessage();
                     await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
+                }
+                if (!string.IsNullOrEmpty(thinkingContent))
+                {
+                    await UpdateMessageThinkingContentAsync(aiMessage, thinkingContent, CancellationToken.None);
                 }
             }
             else if (cancellationToken.IsCancellationRequested)
@@ -420,6 +440,22 @@ public class StreamingService : IStreamingService
                 }
                 aiMessage.InterruptMessage();
                 await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
+                if (!string.IsNullOrEmpty(thinkingContent))
+                {
+                    await UpdateMessageThinkingContentAsync(aiMessage, thinkingContent, CancellationToken.None);
+                }
+            }
+            else if (conversationCompleted)
+            {
+                if (finalContent.Length > 0)
+                {
+                    aiMessage.UpdateContent(finalContent.ToString());
+                    await _messageRepository.UpdateAsync(aiMessage, CancellationToken.None);
+                }
+                if (!string.IsNullOrEmpty(thinkingContent))
+                {
+                    await UpdateMessageThinkingContentAsync(aiMessage, thinkingContent, CancellationToken.None);
+                }
             }
 
             return new StreamingResult(inTokens, outTokens, conversationCompleted, thinkingContent);
@@ -467,15 +503,27 @@ public class StreamingService : IStreamingService
                     .PublishAsync(cancellation: cancellationToken);
             }
 
-            if (_options.EnablePerformanceMonitoring)
-            {
-                _performanceMonitor.RecordNotificationSent(messageId, batch.Count);
-            }
         }
         catch (TaskCanceledException)
         {
             _logger.LogInformation("Notification flush was canceled for message {MessageId}", messageId);
         }
+    }
+
+    private async Task<bool> TryFlushBatchAsync(
+        List<(string Type, object Data)> batch,
+        DateTime lastFlush,
+        Guid chatSessionId,
+        Guid messageId,
+        CancellationToken cancellationToken)
+    {
+        if (ShouldFlushNotifications(batch, lastFlush))
+        {
+            await FlushNotificationBatchAsync(batch, chatSessionId, messageId, cancellationToken);
+            batch.Clear();
+            return true;
+        }
+        return false;
     }
 
     // Object pooling methods
