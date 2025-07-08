@@ -84,7 +84,6 @@ builder.Services.AddHangfireServer(options =>
     options.SchedulePollingInterval = TimeSpan.FromSeconds(15);
 });
 
-// Add this line to ensure proper scoping for Hangfire jobs
 builder.Services.AddScoped<BackgroundFileProcessor>();
 
 builder.Services
@@ -106,7 +105,7 @@ builder.Services.AddSignalR(options =>
     options.EnableDetailedErrors = true;
     options.HandshakeTimeout = TimeSpan.FromSeconds(15);
     options.MaximumReceiveMessageSize = 10 * 1024 * 1024;
-});
+}).AddJsonProtocol();
 
 builder.Services.AddCors(options =>
 {
@@ -126,7 +125,6 @@ builder.Services.AddHttpClient();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
-// Add Prometheus endpoint accessible on both HTTP and HTTPS
 app.MapPrometheusScrapingEndpoint().AllowAnonymous();
 
 await app.UseAdminManagedApiKeysAsync();
@@ -156,10 +154,8 @@ catch (Exception ex)
     Console.WriteLine($"Warning: File uploads directory does not have proper write permissions: {ex.Message}");
 }
 
-// Apply security headers for all responses
 //app.UseSecurityHeaders();
 
-// Enable rate limiting middleware
 app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
@@ -176,7 +172,6 @@ using (var scope = app.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await dbContext.Database.EnsureCreatedAsync();
 
-    // Seed default 'Free Tier' subscription plan if it doesn't exist
     var planRepo = scope.ServiceProvider.GetRequiredService<ISubscriptionPlanRepository>();
     var freePlan = await planRepo.GetByNameAsync("Free Tier", default);
     if (freePlan == null)
@@ -188,19 +183,18 @@ using (var scope = app.Services.CreateScope())
 
 app.UseSerilogRequestLogging();
 
-app.UseCors("CorsPolicy");
 
 app.UseStaticFiles();
 
-// Add Hangfire Dashboard middleware.
-// Ensure it's placed after authentication/authorization if you want to secure it.
+
 app.UseHangfireDashboard("/hangfire", new DashboardOptions
 {
     Authorization = new[] { new HangfireAuthorizationFilter() }
 });
 
 app.UseExceptionHandler();
-app.UseHttpsRedirection();
+app.UseCors("CorsPolicy");
+//app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
