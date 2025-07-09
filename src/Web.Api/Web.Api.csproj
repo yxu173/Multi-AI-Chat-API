@@ -10,6 +10,8 @@
   <ItemGroup>
     <PackageReference Include="FastEndpoints" Version="6.1.0-beta.10" />
     <PackageReference Include="FastEndpoints.Swagger" Version="6.1.0-beta.10" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.70.0" />
+    <PackageReference Include="Google.Apis.Drive.v3" Version="1.70.0.3834" />
     <PackageReference Include="Hangfire.AspNetCore" Version="1.8.20" />
     <PackageReference Include="Hangfire.Console" Version="1.4.3" />
     <PackageReference Include="Hangfire.PostgreSql" Version="1.20.12" />
@@ -48,7 +50,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="uploads\2025-06-22\" />
+    <Folder Include="uploads\" />
     <Folder Include="wwwroot\images\" />
   </ItemGroup>
 

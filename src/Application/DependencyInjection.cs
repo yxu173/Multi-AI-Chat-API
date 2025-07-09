@@ -104,7 +104,7 @@ public static class DependencyInjection
         // Streaming Performance Services
         services.AddSingleton<StreamingOperationManager>();
         services.AddSingleton<StreamingPerformanceMonitor>();
-        
+        services.AddScoped<GoogleDriveService>();
         services.AddGlobalPreProcessors();
 
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);

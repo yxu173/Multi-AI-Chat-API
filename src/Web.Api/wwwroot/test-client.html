@@ -815,6 +815,15 @@
             <div class="status-message">No files uploaded</div>
         </div>
         <button id="clearUploadsBtn" class="btn btn-warning">Clear All</button>
+        <!-- Add Google Drive button and modal to uploads panel -->
+        <button id="googleDriveBtn" class="btn btn-secondary" style="margin-bottom: 10px;">Add from Google Drive</button>
+        <div id="googleDriveModal" style="display:none; position:fixed; top:10%; left:50%; transform:translateX(-50%); background:white; border:1px solid #ccc; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2); z-index:10000; max-width:90vw; max-height:80vh; overflow:auto; padding:20px;">
+          <h3>Google Drive Files</h3>
+          <div id="googleDriveFilesList"></div>
+          <button onclick="document.getElementById('googleDriveModal').style.display='none'" class="btn btn-secondary" style="margin-top:10px;">Close</button>
+        </div>
+        <!-- Add Connect Google Drive button above uploads panel -->
+        <button id="connectGoogleDriveBtn" class="btn btn-secondary" style="margin-bottom: 10px;">Connect Google Drive</button>
     </div>
 </div>
 
@@ -2230,6 +2239,79 @@
             stopGenerationState("Regeneration failed."); // Stop loading state on error
         }
     }
+
+    // Google Drive integration
+    const googleDriveBtn = document.getElementById('googleDriveBtn');
+    const googleDriveModal = document.getElementById('googleDriveModal');
+    const googleDriveFilesList = document.getElementById('googleDriveFilesList');
+
+    googleDriveBtn.addEventListener('click', async () => {
+        const token = tokenInput.value.trim();
+        if (!token) {
+            showToast('Auth Token required', 'error');
+            return;
+        }
+        googleDriveFilesList.innerHTML = '<div>Loading...</div>';
+        googleDriveModal.style.display = 'block';
+        try {
+            const resp = await fetch('/api/file/list-google-drive-files', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!resp.ok) throw new Error('Failed to fetch Google Drive files');
+            const data = await resp.json();
+            if (!data.files || !data.files.length) {
+                googleDriveFilesList.innerHTML = '<div>No files found in Google Drive.</div>';
+                return;
+            }
+            googleDriveFilesList.innerHTML = '';
+            data.files.forEach(file => {
+                const fileDiv = document.createElement('div');
+                fileDiv.style.display = 'flex';
+                fileDiv.style.alignItems = 'center';
+                fileDiv.style.marginBottom = '8px';
+                fileDiv.innerHTML = `
+                    <span style="flex:1;">${file.iconLink ? `<img src="${file.iconLink}" style="width:20px;height:20px;vertical-align:middle;margin-right:5px;">` : ''}${file.name} <span style="color:#888;font-size:0.9em;">(${file.mimeType})</span></span>
+                    <button class="btn btn-success" style="margin-left:10px;">Attach</button>
+                `;
+                fileDiv.querySelector('button').onclick = () => uploadFromGoogleDrive(file.id, file.name);
+                googleDriveFilesList.appendChild(fileDiv);
+            });
+        } catch (err) {
+            googleDriveFilesList.innerHTML = `<div style="color:red;">${err.message}</div>`;
+        }
+    });
+
+    async function uploadFromGoogleDrive(googleFileId, fileName) {
+        const token = tokenInput.value.trim();
+        if (!token) {
+            showToast('Auth Token required', 'error');
+            return;
+        }
+        showToast(`Uploading ${fileName} from Google Drive...`, 'info');
+        try {
+            const resp = await fetch('/api/file/upload-from-google-drive', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ googleFileId })
+            });
+            if (!resp.ok) throw new Error('Failed to upload file from Google Drive');
+            const fileData = await resp.json();
+            addFileToUploadsList(fileData);
+            showToast(`Added ${fileName} from Google Drive.`, 'success');
+            googleDriveModal.style.display = 'none';
+        } catch (err) {
+            showToast(`Google Drive upload failed: ${err.message}`, 'error');
+        }
+    }
+
+    // Google Drive OAuth connect button
+    const connectGoogleDriveBtn = document.getElementById('connectGoogleDriveBtn');
+    connectGoogleDriveBtn.addEventListener('click', function() {
+        window.location.href = '/api/google-drive/auth/start';
+    });
 </script>
 </body>
 </html> 
