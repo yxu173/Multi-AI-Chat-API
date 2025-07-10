@@ -37,7 +37,7 @@ builder.Logging.AddOpenTelemetry(options =>
   //  options.AddConsoleExporter();
 });
 
-builder.Logging.AddFilter<OpenTelemetry.Logs.OpenTelemetryLoggerProvider>("*", Microsoft.Extensions.Logging.LogLevel.Warning);
+builder.Logging.AddFilter<OpenTelemetryLoggerProvider>("*", LogLevel.Warning);
 
 builder.Host.UseSerilog((context, loggerConfig) => loggerConfig.ReadFrom.Configuration(context.Configuration));
 
@@ -124,6 +124,11 @@ builder.Services.AddHttpClient();
 
 builder.Services.AddOpenApi();
 
+// // TODO: For richer health checks, install AspNetCore.HealthChecks.Npgsql and AspNetCore.HealthChecks.Redis NuGet packages
+// builder.Services.AddHealthChecks()
+//     .AddCheck("postgres", () => HealthCheckResult.Healthy("Postgres check placeholder"))
+//     .AddCheck("redis", () => HealthCheckResult.Healthy("Redis check placeholder"));
+
 var app = builder.Build();
 app.MapPrometheusScrapingEndpoint().AllowAnonymous();
 
@@ -202,4 +207,8 @@ app.MapControllers();
 app.MapHub<ChatHub>("/chatHub");
 app.UseFastEndpoints()
     .UseSwaggerGen();
+
+// Add health check endpoint
+// app.MapHealthChecks("/health");
+
 app.Run();

@@ -47,6 +47,7 @@ public class AnthropicService : BaseAiService
             HttpClient.DefaultRequestHeaders.Add("x-api-key", ApiKey);
         }
         HttpClient.DefaultRequestHeaders.Add("anthropic-version", AnthropicApiVersion);
+        //HttpClient.DefaultRequestHeaders.Add("anthropic-beta", "mcp-client-2025-04-04");
     }
 
     public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)

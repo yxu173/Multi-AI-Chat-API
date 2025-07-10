@@ -187,15 +187,15 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         );
 
         // Register DeepWiki MCP tool (no executor, just for OpenAI MCP)
-        var deepwikiPlugin = OpenAiPayloadBuilder.CreateDeepWikiMcpTool();
-        _pluginRegistry[deepwikiPlugin.Id] = new PluginRegistration
-        {
-            Id = deepwikiPlugin.Id,
-            Type = typeof(object), // No executor needed for MCP
-            Name = deepwikiPlugin.Name,
-            Description = deepwikiPlugin.Description,
-            ParametersSchema = deepwikiPlugin.ParametersSchema
-        };
+        // var deepwikiPlugin = OpenAiPayloadBuilder.CreateDeepWikiMcpTool();
+        // _pluginRegistry[deepwikiPlugin.Id] = new PluginRegistration
+        // {
+        //     Id = deepwikiPlugin.Id,
+        //     Type = typeof(object), // No executor needed for MCP
+        //     Name = deepwikiPlugin.Name,
+        //     Description = deepwikiPlugin.Description,
+        //     ParametersSchema = deepwikiPlugin.ParametersSchema
+        // };
     }
 
     private void RegisterPlugin(Guid id, Type pluginType, string name, string description, string parametersSchemaJson)
