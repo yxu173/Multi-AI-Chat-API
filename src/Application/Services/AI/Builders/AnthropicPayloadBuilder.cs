@@ -89,11 +89,28 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
                         case ImagePart ip:
                             if (Validators.IsValidAnthropicImageType(ip.MimeType, out var mediaType)) 
                             {
-                                anthropicContentItems.Add(new
+                                try
                                 {
-                                    type = "image",
-                                    source = new { type = "base64", media_type = mediaType, data = ip.Base64Data }
-                                });
+                                    var (width, height) = Application.Services.Helpers.ImageHelper.GetImageDimensions(ip.Base64Data);
+                                    if (width > 8000 || height > 8000)
+                                    {
+                                        Logger?.LogWarning("Image {FileName} exceeds Anthropic's max dimension (8000px). Skipping image.", ip.FileName);
+                                        anthropicContentItems.Add(new { type = "text", text = $"[Image: {ip.FileName ?? ip.MimeType} - Skipped: Exceeds 8000px dimension limit]" });
+                                    }
+                                    else
+                                    {
+                                        anthropicContentItems.Add(new
+                                        {
+                                            type = "image",
+                                            source = new { type = "base64", media_type = mediaType, data = ip.Base64Data }
+                                        });
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger?.LogWarning(ex, "Failed to get image dimensions for {FileName}. Skipping image.", ip.FileName);
+                                    anthropicContentItems.Add(new { type = "text", text = $"[Image: {ip.FileName ?? ip.MimeType} - Skipped: Unable to read image dimensions]" });
+                                }
                             }
                             else
                             {
@@ -148,8 +165,7 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
     protected override void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        // Anthropic-specific logic: handle max_tokens mapping and thinking mode
-        if (!requestObj.ContainsKey("max_tokens"))
+         if (!requestObj.ContainsKey("max_tokens"))
         {
             if (requestObj.TryGetValue("max_output_tokens", out var maxOutputTokens))
             {
@@ -167,11 +183,6 @@ public class AnthropicPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
             requestObj.Remove("top_k");
             requestObj.Remove("top_p");
             Logger?.LogDebug("Enabled Anthropic native 'thinking' parameter with budget {Budget}", defaultThinkingBudget);
-        }
-        
-        if (!requestObj.ContainsKey("anthropic_version"))
-        {
-            requestObj["anthropic_version"] = "2023-06-01";
         }
     }
 } 

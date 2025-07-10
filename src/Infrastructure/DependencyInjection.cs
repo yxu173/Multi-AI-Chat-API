@@ -326,7 +326,7 @@ public static class DependencyInjection
             });
         services.AddAuthorization();
 
-        services.AddDataProtection();
+       // services.AddDataProtection();
         services.AddSingleton<ApiKeyEncryptionService>();
 
         return services;

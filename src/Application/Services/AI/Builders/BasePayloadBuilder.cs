@@ -66,7 +66,7 @@ public abstract class BasePayloadBuilder
         },
         [ModelType.Anthropic] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "top_p", "top_k", "max_tokens", "stop_sequences", "anthropic_version",
+            "temperature", "top_p", "top_k", "max_tokens", "stop_sequences",
             "system", "tools", "tool_choice"
         },
         [ModelType.DeepSeek] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
