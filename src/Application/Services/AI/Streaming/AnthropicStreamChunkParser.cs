@@ -28,6 +28,7 @@ public class AnthropicStreamChunkParser : BaseStreamChunkParser<AnthropicStreamC
 
         var eventType = typeElement.GetString();
         string? textDelta = null;
+        string? thinkingDelta = null;
         ToolCallChunk? toolCallInfo = null;
         int? inputTokens = null;
         int? outputTokens = null;
@@ -51,13 +52,21 @@ public class AnthropicStreamChunkParser : BaseStreamChunkParser<AnthropicStreamC
             case "content_block_start":
                 if (root.TryGetProperty("content_block", out var contentBlockStart))
                 {
-                    if (contentBlockStart.TryGetProperty("type", out var cBlockType) && cBlockType.GetString() == "tool_use")
+                    if (contentBlockStart.TryGetProperty("type", out var cBlockType))
                     {
-                        int index = root.GetProperty("index").GetInt32();
-                        string? id = contentBlockStart.GetProperty("id").GetString();
-                        string? name = contentBlockStart.GetProperty("name").GetString();
-                        toolCallInfo = new ToolCallChunk(index, id, name, null, false);
-                        Logger.LogDebug("Anthropic tool use started: {ToolName} (ID: {ToolId}, Index: {ToolIndex})", name, id, index);
+                        var cBlockTypeStr = cBlockType.GetString();
+                        if (cBlockTypeStr == "tool_use")
+                        {
+                            int index = root.GetProperty("index").GetInt32();
+                            string? id = contentBlockStart.GetProperty("id").GetString();
+                            string? name = contentBlockStart.GetProperty("name").GetString();
+                            toolCallInfo = new ToolCallChunk(index, id, name, null, false);
+                            Logger.LogDebug("Anthropic tool use started: {ToolName} (ID: {ToolId}, Index: {ToolIndex})", name, id, index);
+                        }
+                        else if (cBlockTypeStr == "thinking")
+                        {
+                            Logger.LogDebug("Anthropic thinking block started.");
+                        }
                     }
                 }
                 break;
@@ -68,15 +77,21 @@ public class AnthropicStreamChunkParser : BaseStreamChunkParser<AnthropicStreamC
                     var index = root.GetProperty("index").GetInt32();
                     if (deltaElement.TryGetProperty("type", out var deltaType))
                     {
-                        if (deltaType.GetString() == "text_delta")
+                        var deltaTypeStr = deltaType.GetString();
+                        if (deltaTypeStr == "text_delta")
                         {
                             textDelta = deltaElement.GetProperty("text").GetString();
                         }
-                        else if (deltaType.GetString() == "input_json_delta")
+                        else if (deltaTypeStr == "input_json_delta")
                         {
                             string? argumentChunk = deltaElement.GetProperty("partial_json").GetString();
                             toolCallInfo = new ToolCallChunk(index, ArgumentChunk: argumentChunk);
                             Logger.LogTrace("Anthropic tool use delta (args): {ArgumentChunk} for index {ToolIndex}", argumentChunk, index);
+                        }
+                        else if (deltaTypeStr == "thinking_delta")
+                        {
+                            thinkingDelta = deltaElement.GetProperty("thinking").GetString();
+                            Logger.LogTrace("Anthropic thinking delta: {ThinkingDelta} for index {Index}", thinkingDelta, index);
                         }
                     }
                 }
@@ -141,6 +156,7 @@ public class AnthropicStreamChunkParser : BaseStreamChunkParser<AnthropicStreamC
 
         return new ParsedChunkInfo(
             TextDelta: textDelta,
+            ThinkingDelta: thinkingDelta,
             ToolCallInfo: toolCallInfo,
             InputTokens: inputTokens,
             OutputTokens: outputTokens,
