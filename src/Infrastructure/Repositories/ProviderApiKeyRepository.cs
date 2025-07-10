@@ -41,31 +41,19 @@ public class ProviderApiKeyRepository : IProviderApiKeyRepository
 
     public async Task<ProviderApiKey?> GetNextAvailableKeyAsync(Guid providerId, CancellationToken cancellationToken = default)
     {
-        // Strategy: Get an active key for the provider that:
-        // 1. Is not currently rate-limited OR its rate limit has expired.
-        // 2. Has available daily quota.
-        // Prioritize the least recently used key to distribute load.
-        // Atomically update LastUsedTimestamp upon selection to minimize race conditions.
-
         var now = DateTime.UtcNow;
         var availableKey = await _dbContext.ProviderApiKeys
             .Where(k => k.AiProviderId == providerId && k.IsActive &&
                         (!k.IsRateLimited || k.RateLimitedUntil <= now) &&
                         k.UsageCountToday < k.MaxRequestsPerDay)
-            .OrderBy(k => k.LastUsedTimestamp) // Oldest used first
+            .OrderBy(k => k.LastUsedTimestamp) 
             .FirstOrDefaultAsync(cancellationToken);
 
         if (availableKey != null)
         {
-            // Immediately mark as used to reduce chance of other requests picking it
-            // In a high concurrency scenario, a more robust distributed lock or optimistic concurrency
-            // with retry on conflict would be needed for true atomicity.
-            // This is a simpler approach for now.
             availableKey.GetType().GetProperty("LastUsedTimestamp")!.SetValue(availableKey, now);
-            // We don't call UpdateUsage() here as that's the responsibility of ProviderKeyManagementService
-            // after a successful API call. We just update the timestamp to affect subsequent GetNextAvailableKeyAsync calls.
              _dbContext.Entry(availableKey).State = EntityState.Modified;
-            await _dbContext.SaveChangesAsync(cancellationToken); // Save the timestamp update
+            await _dbContext.SaveChangesAsync(cancellationToken); 
         }
         
         return availableKey;
@@ -99,13 +87,13 @@ public class ProviderApiKeyRepository : IProviderApiKeyRepository
     {
         await _dbContext.ProviderApiKeys
             .ExecuteUpdateAsync(s => s
-                .SetProperty(k => k.UsageCountToday, 0) // Changed from DailyUsage
+                .SetProperty(k => k.UsageCountToday, 0) 
                 .SetProperty(k => k.IsRateLimited, false)
                 .SetProperty(k => k.RateLimitedUntil, (DateTime?)null),
                 cancellationToken);
     }
 
-    // New method implementations
+    
     public async Task MarkAsRateLimitedAsync(Guid apiKeyId, DateTime rateLimitedUntil, CancellationToken cancellationToken = default)
     {
         var apiKey = await _dbContext.ProviderApiKeys.FindAsync(new object[] { apiKeyId }, cancellationToken);
@@ -133,7 +121,7 @@ public class ProviderApiKeyRepository : IProviderApiKeyRepository
         var apiKey = await _dbContext.ProviderApiKeys.FindAsync(new object[] { apiKeyId }, cancellationToken);
         if (apiKey != null)
         {
-            apiKey.UpdateUsage(); // This method in the entity now updates UsageCountToday and LastUsedTimestamp
+            apiKey.UpdateUsage();
             _dbContext.Entry(apiKey).State = EntityState.Modified;
             await _dbContext.SaveChangesAsync(cancellationToken);
         }

@@ -30,6 +30,8 @@ using Microsoft.IdentityModel.Tokens;
 using Polly;
 using Polly.Extensions.Http;
 using StackExchange.Redis;
+using Microsoft.AspNetCore.DataProtection;
+using Infrastructure.Services;
 
 namespace Infrastructure;
 
@@ -323,6 +325,9 @@ public static class DependencyInjection
                 googleOptions.SaveTokens = true;
             });
         services.AddAuthorization();
+
+        services.AddDataProtection();
+        services.AddSingleton<ApiKeyEncryptionService>();
 
         return services;
     }

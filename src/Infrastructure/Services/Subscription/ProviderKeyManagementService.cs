@@ -13,7 +13,6 @@ public class ProviderKeyManagementService : IProviderKeyManagementService
     private readonly IProviderApiKeyRepository _providerApiKeyRepository;
     private readonly IAiProviderRepository _aiProviderRepository;
     private readonly ILogger<ProviderKeyManagementService> _logger;
-    // Removed IServiceProvider as it's no longer needed for Task.Run logic
 
     public ProviderKeyManagementService(
         IProviderApiKeyRepository providerApiKeyRepository,
@@ -27,8 +26,6 @@ public class ProviderKeyManagementService : IProviderKeyManagementService
 
     public async Task<ProviderApiKey?> GetProviderApiKeyObjectAsync(Guid providerId, CancellationToken cancellationToken = default)
     {
-        // This method returns the full API key object, to be used by AiModelServiceFactory
-        // The factory will then be responsible for reporting success or rate limiting.
         var apiKey = await _providerApiKeyRepository.GetNextAvailableKeyAsync(providerId, cancellationToken);
         
         if (apiKey != null)
@@ -37,21 +34,15 @@ public class ProviderKeyManagementService : IProviderKeyManagementService
         }
 
         _logger.LogWarning("No managed API key available for provider {ProviderId}. Attempting to use default key.", providerId);
-        // Fallback logic for default key should be handled by AiModelServiceFactory if this returns null,
-        // as this service is about managing the pool of keys.
         return null; 
     }
 
-    // Keep original GetAvailableApiKeyAsync for now if it's used elsewhere directly for just the secret,
-    // but new logic should prefer GetProviderApiKeyObjectAsync
     public async Task<string?> GetAvailableApiKeyAsync(Guid providerId, CancellationToken cancellationToken = default)
     {
         var apiKey = await _providerApiKeyRepository.GetNextAvailableKeyAsync(providerId, cancellationToken);
         
         if (apiKey != null)
         {
-            // The Task.Run logic for usage update is removed.
-            // Usage update is now handled by ReportKeySuccessAsync.
             return apiKey.Secret;
         }
 
@@ -78,7 +69,6 @@ public class ProviderKeyManagementService : IProviderKeyManagementService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to increment usage for API key {ApiKeyId}", apiKeyId);
-            // Decide if re-throwing is appropriate or just log
         }
     }
 
