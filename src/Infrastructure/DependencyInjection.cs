@@ -209,14 +209,37 @@ public static class DependencyInjection
         services.AddDistributedMemoryCache();
         services.AddSingleton<IConnectionMultiplexer>(sp =>
         {
-            var redisConfig =
-                ConfigurationOptions.Parse(configuration.GetConnectionString("Redis") ?? "localhost:6379");
-            redisConfig.AbortOnConnectFail = false;
-            redisConfig.ConnectTimeout = 5000;
-            redisConfig.SyncTimeout = 5000;
-            redisConfig.ConnectRetry = 3;
-            // Helps minimize memory fragmentation
-            redisConfig.PreserveAsyncOrder = false;
+            var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+            
+            ConfigurationOptions redisConfig;
+            
+            if (redisConnectionString.Contains("upstash.io"))
+            {
+                // Manual configuration for Upstash Redis
+                redisConfig = new ConfigurationOptions
+                {
+                    EndPoints = { "pretty-mustang-36722.upstash.io:6379" },
+                    Password = "AY9yAAIjcDEzNGFlY2UzMWNlNmQ0MTkzYmE4ZmM1YjhiZDRlN2Q3YXAxMA",
+                    Ssl = true,
+                    SslProtocols = System.Security.Authentication.SslProtocols.Tls12,
+                    AbortOnConnectFail = false,
+                    ConnectTimeout = 10000,
+                    SyncTimeout = 10000,
+                    ConnectRetry = 3,
+                    PreserveAsyncOrder = false
+                };
+            }
+            else
+            {
+                // Parse local Redis connection string
+                redisConfig = ConfigurationOptions.Parse(redisConnectionString);
+                redisConfig.AbortOnConnectFail = false;
+                redisConfig.ConnectTimeout = 5000;
+                redisConfig.SyncTimeout = 5000;
+                redisConfig.ConnectRetry = 3;
+                redisConfig.PreserveAsyncOrder = false;
+            }
+            
             return ConnectionMultiplexer.Connect(redisConfig);
         });
 
