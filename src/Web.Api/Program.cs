@@ -47,7 +47,6 @@ builder.Services
     .AddInfrastructure(builder.Configuration);
 
 
-builder.Services.AddApplicationRateLimiting();
 
 builder.Services.AddSignalR(options =>
 {

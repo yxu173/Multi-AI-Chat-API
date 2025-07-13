@@ -41,10 +41,11 @@ public static class DependencyInjection
             };
             
         });
-
+        services.AddApplicationRateLimiting();
         services.AddOpenTelemetryLogger();
         services.AddFastEndpointsExtensions();
         services.AddHangfireExtensions(configuration);
+        
         
 
     return services;
