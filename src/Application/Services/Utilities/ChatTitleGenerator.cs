@@ -25,7 +25,7 @@ public class ChatTitleGenerator
         {
             var serviceContext = await _aiModelServiceFactory.GetServiceContextAsync(
                 chatSession.UserId,
-               Guid.Parse("c581c22c-5466-42d7-abe1-ce8a6ff62ce6"),
+               Guid.Parse("617453dd-c7e5-4f57-bb79-02d2d8ac38dc"),
                 null,
                 cancellationToken);
 

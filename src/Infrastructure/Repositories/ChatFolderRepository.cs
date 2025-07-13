@@ -25,6 +25,7 @@ public class ChatFolderRepository : IChatFolderRepository
     public async Task<IEnumerable<ChatFolder>> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await _context.ChatFolders
+            .AsNoTracking()
             .Include(f => f.ChatSessions)
             .Where(f => f.UserId == userId)
             .ToListAsync(cancellationToken);

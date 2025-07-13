@@ -132,8 +132,6 @@ builder.Services.AddOpenApi();
 var app = builder.Build();
 app.MapPrometheusScrapingEndpoint().AllowAnonymous();
 
-await app.UseAdminManagedApiKeysAsync();
-
 var uploadsPath = builder.Configuration["FilesStorage:BasePath"] ??
                   Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 

@@ -26,14 +26,13 @@ internal static class HistoryBuilder
             .OrderBy(m => m.CreatedAt)
             .ToList();
         
-        // If a recent summary exists, use it to condense the history
         if (!string.IsNullOrWhiteSpace(chatSession.HistorySummary) &&
             chatSession.LastSummarizedAt.HasValue &&
             allMessages.Count > RecentMessagesToKeep)
         {
             var summaryMessage = new MessageDto(
                 $"This is a summary of the conversation so far: {chatSession.HistorySummary}",
-                true, // The summary acts as a system/AI message
+                true,
                 Guid.NewGuid() 
             );
 
@@ -46,7 +45,6 @@ internal static class HistoryBuilder
             return condensedHistory;
         }
 
-        // Default behavior: use context limit if no summary is applicable
         var contextLimit = 0;
         if (aiAgent?.AssignCustomModelParameters == true && aiAgent.ModelParameter != null)
         {

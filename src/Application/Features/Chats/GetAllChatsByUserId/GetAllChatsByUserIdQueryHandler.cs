@@ -21,8 +21,10 @@ public class GetAllChatsByUserIdQueryHandler : IQueryHandler<GetAllChatsByUserId
         int page = command.Page > 0 ? command.Page : 1;
         int pageSize = command.PageSize > 0 ? command.PageSize : 20;
 
-        var (rootChats, rootTotal) = await _chatSessionRepository.GetRootChatsByUserIdAsync(command.UserId, page, pageSize);
+        var rootChats = await _chatSessionRepository.GetRootChatsByUserIdWithoutCountAsync(command.UserId, page, pageSize);
         var rootChatDtos = rootChats.Select(c => new ChatDto(c.Id, c.Title, c.CreatedAt)).ToList();
+
+        var rootTotal = await _chatSessionRepository.GetRootChatsCountByUserIdAsync(command.UserId);
 
         var chatFolders = await _chatFolderRepository.GetByUserIdAsync(command.UserId, ct);
         var folderDtos = chatFolders.Select(
