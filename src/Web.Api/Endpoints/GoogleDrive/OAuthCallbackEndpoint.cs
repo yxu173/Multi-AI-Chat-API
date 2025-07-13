@@ -39,7 +39,7 @@ public class OAuthCallbackEndpoint : EndpointWithoutRequest
         //     return;
         // }
         
-        var userId = new Guid("01978295-dcf6-7925-aea9-022ee41d75e4");
+        var userId = new Guid("0197f3e8-bc1c-7595-8a79-02737428d931");
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user == null)
         {

@@ -56,15 +56,14 @@ public class UploadFileEndpoint : Endpoint<UploadFileRequest, UploadFileResponse
                 return;
             }
 
-            // Validate file type and size
             if (!IsAllowedFileType(req.File.ContentType))
             {
-                AddError("File type not allowed");
+                AddError($"File type '{req.File.ContentType}' is not allowed. Only PDF, CSV, plain text, and image files (JPEG, PNG, GIF, WebP) are supported.");
                 await SendErrorsAsync(400, ct);
                 return;
             }
 
-            if (req.File.Length > 30_000_000) // 30MB limit
+            if (req.File.Length > 10_000_000)
             {
                 AddError("File size exceeds the limit (30MB)");
                 await SendErrorsAsync(400, ct);
@@ -92,11 +91,13 @@ public class UploadFileEndpoint : Endpoint<UploadFileRequest, UploadFileResponse
 
     private bool IsAllowedFileType(string contentType)
     {
-        // Allow images, documents, PDFs
-        return contentType.StartsWith("image/") ||
-               contentType.StartsWith("application/pdf") ||
-               contentType.StartsWith("application/msword") ||
-               contentType.StartsWith("application/vnd.openxmlformats-officedocument") ||
-               contentType.StartsWith("text/");
+        return contentType == "application/pdf" ||
+               contentType == "text/csv" ||
+               contentType == "application/csv" ||
+               contentType == "text/plain" ||
+               contentType == "image/jpeg" ||
+               contentType == "image/png" ||
+               contentType == "image/gif" ||
+               contentType == "image/webp";
     }
 } 

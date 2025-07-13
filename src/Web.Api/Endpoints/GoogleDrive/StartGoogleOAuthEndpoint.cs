@@ -32,7 +32,7 @@ public class StartGoogleOAuthEndpoint : EndpointWithoutRequest
         var scopes = "https://www.googleapis.com/auth/drive.readonly";
 
         // Get user ID from JWT
-        var userIdStr = "01978295-dcf6-7925-aea9-022ee41d75e4";
+        var userIdStr = "0197f3e8-bc1c-7595-8a79-02737428d931";
         if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
         {
             await SendStringAsync("User not authenticated", 401, cancellation: ct);

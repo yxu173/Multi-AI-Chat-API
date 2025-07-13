@@ -41,7 +41,7 @@ public class ListGoogleDriveFilesEndpoint : EndpointWithoutRequest<ListGoogleDri
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId))
         {
             await SendErrorsAsync(401, ct);

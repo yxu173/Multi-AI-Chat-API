@@ -96,5 +96,25 @@ namespace Infrastructure.UnitTests.Repositories
             // Assert
             fetched.Should().BeNull();
         }
+
+        [Theory]
+        [InlineData("application/pdf", FileType.PDF)]
+        [InlineData("text/csv", FileType.CSV)]
+        [InlineData("application/csv", FileType.CSV)]
+        [InlineData("text/plain", FileType.Text)]
+        [InlineData("image/jpeg", FileType.Image)]
+        [InlineData("image/png", FileType.Image)]
+        [InlineData("image/gif", FileType.Image)]
+        [InlineData("image/webp", FileType.Image)]
+        [InlineData("text/html", FileType.Text)]
+        [InlineData("application/json", FileType.Other)]
+        public void FileType_ShouldBeCorrectlyDetermined(string contentType, FileType expectedFileType)
+        {
+            // Arrange & Act
+            var attachment = FileAttachment.Create("test.file", "/test.file", contentType, 100);
+
+            // Assert
+            attachment.FileType.Should().Be(expectedFileType);
+        }
     }
 } 

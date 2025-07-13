@@ -88,6 +88,22 @@ public class UploadFromGoogleDriveEndpoint : Endpoint<UploadFromGoogleDriveReque
         var fileName = file.Name;
         var contentType = file.MimeType;
         
+        // Validate file type
+        if (!IsAllowedFileType(contentType))
+        {
+            AddError($"File type '{contentType}' is not allowed. Only PDF, CSV, plain text, and image files (JPEG, PNG, GIF, WebP) are supported.");
+            await SendErrorsAsync(400, ct);
+            return;
+        }
+        
+        // Validate file size (30MB limit)
+        if (file.Size > 30_000_000)
+        {
+            AddError("File size exceeds the limit (30MB)");
+            await SendErrorsAsync(400, ct);
+            return;
+        }
+        
         using var memStream = new MemoryStream();
         await driveService.Files.Get(req.GoogleFileId).DownloadAsync(memStream, ct);
         memStream.Position = 0;
@@ -108,5 +124,17 @@ public class UploadFromGoogleDriveEndpoint : Endpoint<UploadFromGoogleDriveReque
             FileSize = fileAttachment.FileSize,
             MessageId = fileAttachment.MessageId
         }, cancellation: ct);
+    }
+    
+    private bool IsAllowedFileType(string contentType)
+    {   
+        return contentType == "application/pdf" ||
+               contentType == "text/csv" ||
+               contentType == "application/csv" ||
+               contentType == "text/plain" ||
+               contentType == "image/jpeg" ||
+               contentType == "image/png" ||
+               contentType == "image/gif" ||
+               contentType == "image/webp";
     }
 } 

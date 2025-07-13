@@ -56,16 +56,27 @@ public sealed class FileAttachment : BaseEntity
     private static FileType DetermineFileType(string contentType)
     {
         if (string.IsNullOrEmpty(contentType)) return FileType.Other;
+        
+        // Images
         if (contentType.StartsWith("image/"))
             return FileType.Image;
-        if (contentType.StartsWith("video/"))
-            return FileType.Video;
-        if (contentType.StartsWith("audio/"))
-            return FileType.Audio;
+            
+        // PDF
         if (contentType == "application/pdf")
             return FileType.PDF;
-        if (contentType.Contains("text/") || contentType.Contains("document") || contentType.Contains("sheet"))
-            return FileType.Document;
+            
+        // CSV
+        if (contentType == "text/csv" || contentType == "application/csv")
+            return FileType.CSV;
+            
+        // Plain text
+        if (contentType == "text/plain")
+            return FileType.Text;
+            
+        // Other text-based documents (fallback)
+        if (contentType.StartsWith("text/"))
+            return FileType.Text;
+            
         return FileType.Other;
     }
 }
@@ -77,5 +88,7 @@ public enum FileType
     Audio,
     Document,
     PDF,
+    CSV,
+    Text,
     Other
 }
