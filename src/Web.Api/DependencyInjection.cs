@@ -3,24 +3,15 @@ using System.Text.Json.Serialization;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Json;
-using Microsoft.OpenApi.Models;
 using NSwag;
 using Web.Api.Infrastructure;
-using Web.Api.NotificationHandlers;
-using Application.Services.Files;
-using Hangfire;
-using Infrastructure.Services.FileStorage;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Domain.Repositories;
 using Web.Api.Extensions;
 
 namespace Web.Api;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddPresentation(this IServiceCollection services)
+    public static IServiceCollection AddPresentation(this IServiceCollection services,IConfiguration configuration)
     {
         services.Configure<JsonOptions>(options =>
         {
@@ -50,6 +41,11 @@ public static class DependencyInjection
             };
             
         });
+
+        services.AddOpenTelemetryLogger();
+        services.AddFastEndpointsExtensions();
+        services.AddHangfireExtensions(configuration);
+        
 
     return services;
     }

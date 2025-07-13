@@ -41,62 +41,11 @@ builder.Logging.AddFilter<OpenTelemetryLoggerProvider>("*", LogLevel.Warning);
 
 builder.Host.UseSerilog((context, loggerConfig) => loggerConfig.ReadFrom.Configuration(context.Configuration));
 
-builder.Services.AddOpenTelemetry()
-    .WithLogging(loggerProviderBuilder =>
-            loggerProviderBuilder
-                .SetResourceBuilder(otelResourceBuilder)
-                .AddConsoleExporter()
-    )
-    .WithTracing(tracerProviderBuilder =>
-            tracerProviderBuilder
-                .SetResourceBuilder(otelResourceBuilder)
-                .AddSource("Multi-AI-Chat-API.Web.Api")
-                .AddAspNetCoreInstrumentation(options => { options.RecordException = true; })
-                .AddHttpClientInstrumentation(options => { options.RecordException = true; })
-                .AddEntityFrameworkCoreInstrumentation(options => { options.SetDbStatementForText = true; })
-            //    .AddConsoleExporter()
-    )
-    .WithMetrics(meterProviderBuilder =>
-            meterProviderBuilder
-                .SetResourceBuilder(otelResourceBuilder)
-                .AddAspNetCoreInstrumentation()
-                .AddHttpClientInstrumentation()
-                .AddRuntimeInstrumentation()
-                .AddProcessInstrumentation()
-                .AddSqlClientInstrumentation()
-                .AddPrometheusExporter()
-    );
-
-builder.Services.AddHangfire(configuration => configuration
-    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
-    .UseSimpleAssemblyNameTypeSerializer()
-    .UseRecommendedSerializerSettings()
-    .UsePostgreSqlStorage(options =>
-    {
-        options.UseNpgsqlConnection(builder.Configuration.GetConnectionString("Database"));
-    })
-    .UseConsole());
-
-builder.Services.AddHangfireServer(options =>
-{
-    options.WorkerCount = Environment.ProcessorCount * 2;
-    options.Queues = new[] { "default", "critical", "low" };
-    options.SchedulePollingInterval = TimeSpan.FromSeconds(15);
-});
-
-builder.Services.AddScoped<BackgroundFileProcessor>();
-
 builder.Services
-    .AddPresentation()
+    .AddPresentation(builder.Configuration)
     .AddApplication(builder.Configuration)
     .AddInfrastructure(builder.Configuration);
 
-builder.Services.AddFastEndpoints()
-    .SwaggerDocument();
-
-builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(RequestLoggingPreProcessor<>));
-builder.Services.AddSingleton(typeof(IPreProcessor<>), typeof(ValidationPreProcessor<>));
-builder.Services.AddSingleton(typeof(IPostProcessor<,>), typeof(RequestLoggingPostProcessor<,>));
 
 builder.Services.AddApplicationRateLimiting();
 
