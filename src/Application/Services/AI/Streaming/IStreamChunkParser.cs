@@ -14,7 +14,9 @@ public record ParsedChunkInfo(
     ToolCallChunk? ToolCallInfo = null,
     int? InputTokens = null,
     int? OutputTokens = null,
-    string? FinishReason = null
+    string? FinishReason = null,
+    string? UrlCitation = null,
+    string? SearchQuery = null
 );
 
 public record ToolCallChunk(

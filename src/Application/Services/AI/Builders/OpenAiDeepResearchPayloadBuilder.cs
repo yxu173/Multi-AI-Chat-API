@@ -25,7 +25,7 @@ public class OpenAiDeepResearchPayloadBuilder : IAiRequestBuilder
 
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
-
+        requestObj["background"] = true;
         requestObj["model"] = model.ModelCode;
 
         var lastUserMessage = context.History.LastOrDefault(m => !m.IsFromAi && !string.IsNullOrWhiteSpace(m.Content));

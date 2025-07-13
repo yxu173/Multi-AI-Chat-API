@@ -1278,6 +1278,57 @@
             }
             scrollToBottom();
         });
+
+        // Handle URL citations from deep search
+        connection.on("DeepSearchUrlCitation", (chatSessionId, title, url) => {
+            console.log("URL citation received:", title, url);
+            showToast(`📄 Citation: ${title}`, "info", 3000);
+            
+            // Create a citation element to display in the chat
+            const citationElement = document.createElement('div');
+            citationElement.className = 'message ai citation';
+            citationElement.style.backgroundColor = '#f8f9fa';
+            citationElement.style.borderLeft = '3px solid #28a745';
+            citationElement.style.marginBottom = '10px';
+            citationElement.style.padding = '10px';
+            citationElement.style.fontSize = '0.9em';
+            citationElement.innerHTML = `
+                <div style="font-weight: bold; color: #28a745; margin-bottom: 5px;">
+                    <i class="fas fa-link"></i> Source Citation
+                </div>
+                <div style="margin-bottom: 5px;"><strong>${escapeHtml(title)}</strong></div>
+                <a href="${escapeHtml(url)}" target="_blank" style="color: #007bff; text-decoration: none; word-break: break-all;">
+                    ${escapeHtml(url)}
+                </a>
+            `;
+            
+            messageList.appendChild(citationElement);
+            scrollToBottom();
+        });
+
+        // Handle search queries from deep search
+        connection.on("DeepSearchQuery", (chatSessionId, query) => {
+            console.log("Search query received:", query);
+            showToast(`🔍 Searching: "${query}"`, "info", 2000);
+            
+            // Create a search query element to display in the chat
+            const searchElement = document.createElement('div');
+            searchElement.className = 'message ai search-query';
+            searchElement.style.backgroundColor = '#fff3cd';
+            searchElement.style.borderLeft = '3px solid #ffc107';
+            searchElement.style.marginBottom = '10px';
+            searchElement.style.padding = '10px';
+            searchElement.style.fontSize = '0.9em';
+            searchElement.innerHTML = `
+                <div style="font-weight: bold; color: #856404; margin-bottom: 5px;">
+                    <i class="fas fa-search"></i> Search Query
+                </div>
+                <div style="font-style: italic;">"${escapeHtml(query)}"</div>
+            `;
+            
+            messageList.appendChild(searchElement);
+            scrollToBottom();
+        });
     }
 
     // --- UI State Management ---

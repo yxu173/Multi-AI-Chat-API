@@ -15,8 +15,7 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
 
     protected override ParsedChunkInfo ParseModelSpecificChunkInternal(JsonDocument jsonDoc)
     {
-        // The main try-catch block is now in the base class.
-        // The null/empty check for rawJson is also in the base class.
+        
         Logger?.LogInformation("[OpenAiParser] Received raw data chunk: {RawContent}", jsonDoc.RootElement.GetRawText());
 
         var root = jsonDoc.RootElement;
@@ -24,7 +23,8 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
         if (!root.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
         {
             Logger?.LogWarning("OpenAI stream chunk missing or invalid 'type' property: {RawJson}", jsonDoc.RootElement.GetRawText());
-            return new ParsedChunkInfo(); // Or perhaps a specific error finish reason
+            Logger.LogWarning("This is the event type: {EventType}", typeElement.GetString());
+            return new ParsedChunkInfo();
         }
 
         var eventType = typeElement.GetString();
@@ -35,6 +35,8 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
         int? outputTokens = null;
         string? finishReason = null;
         string? errorDetails = null;
+        string? urlCitation = null;
+        string? searchQuery = null;
 
         switch (eventType)
         {
@@ -47,7 +49,6 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
                 break;
 
             case "response.function_call.invoked":
-                // ignore legacy invocation events
                 break;
 
             case "response.completed":
@@ -91,7 +92,6 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
                 break;
 
             case "response.output_item.added":
-                // start of function call
                 if (root.TryGetProperty("item", out var addedItem)
                  && addedItem.GetProperty("type").GetString() == "function_call")
                 {
@@ -114,7 +114,6 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
                 break;
 
             case "response.function_call_arguments.done":
-                // signal arguments complete; argument chunks already accumulated
                 {
                     var idx3 = root.GetProperty("output_index").GetInt32();
                     toolCallInfo = new ToolCallChunk(idx3, ArgumentChunk: null, IsComplete: true);
@@ -123,16 +122,32 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
                 break;
 
             case "response.output_item.done":
-                if (root.TryGetProperty("item", out var doneItem)
-                 && doneItem.GetProperty("type").GetString() == "function_call")
+                if (root.TryGetProperty("item", out var doneItem))
                 {
-                    var idx4 = root.GetProperty("output_index").GetInt32();
-                    var id4 = doneItem.GetProperty("call_id").GetString();
-                    var name4 = doneItem.GetProperty("name").GetString();
-                    // finalize function call; use full args from previous event
-                    toolCallInfo = new ToolCallChunk(idx4, id4, name4, ArgumentChunk: null, IsComplete: true);
-                    finishReason = "function_call";
-                    Logger?.LogInformation("[OpenAiParser] Function call completed: {Name} (id={Id})", name4, id4);
+                    var itemType = doneItem.GetProperty("type").GetString();
+                    
+                    if (itemType == "function_call")
+                    {
+                        var idx4 = root.GetProperty("output_index").GetInt32();
+                        var id4 = doneItem.GetProperty("call_id").GetString();
+                        var name4 = doneItem.GetProperty("name").GetString();
+                        toolCallInfo = new ToolCallChunk(idx4, id4, name4, ArgumentChunk: null, IsComplete: true);
+                        finishReason = "function_call";
+                        Logger?.LogInformation("[OpenAiParser] Function call completed: {Name} (id={Id})", name4, id4);
+                    }
+                    else if (itemType == "web_search_call")
+                    {
+                        if (doneItem.TryGetProperty("action", out var actionElement))
+                        {
+                            if (actionElement.TryGetProperty("type", out var actionType) && 
+                                actionType.GetString() == "search" &&
+                                actionElement.TryGetProperty("query", out var queryElement))
+                            {
+                                searchQuery = queryElement.GetString();
+                                Logger?.LogInformation("[OpenAiParser] Web search query completed: {Query}", searchQuery);
+                            }
+                        }
+                    }
                 }
                 break;
 
@@ -149,6 +164,39 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
                 }
                 break;
 
+            case "response.web_search_call.in_progress":
+                Logger?.LogTrace("[OpenAiParser] Web search call in progress for index {Index}", 
+                    root.TryGetProperty("output_index", out var idx5) ? idx5.GetInt32() : -1);
+                break;
+
+            case "response.web_search_call.searching":
+                Logger?.LogTrace("[OpenAiParser] Web search call searching for index {Index}", 
+                    root.TryGetProperty("output_index", out var idx6) ? idx6.GetInt32() : -1);
+                break;
+
+            case "response.web_search_call.completed":
+                Logger?.LogTrace("[OpenAiParser] Web search call completed for index {Index}", 
+                    root.TryGetProperty("output_index", out var idx7) ? idx7.GetInt32() : -1);
+                break;
+
+            case "response.output_text.annotation.added":
+                if (root.TryGetProperty("annotation", out var annotationElement))
+                {
+                    if (annotationElement.TryGetProperty("type", out var annotationType) && 
+                        annotationType.GetString() == "url_citation")
+                    {
+                        if (annotationElement.TryGetProperty("url", out var urlElement) && 
+                            annotationElement.TryGetProperty("title", out var titleElement))
+                        {
+                            var url = urlElement.GetString();
+                            var title = titleElement.GetString();
+                            urlCitation = $"{title}|{url}";
+                            Logger?.LogInformation("[OpenAiParser] URL citation added: {Title} - {Url}", title, url);
+                        }
+                    }
+                }
+                break;
+
             default:
                 Logger?.LogWarning("Unhandled OpenAI event type: {EventType}", eventType);
                 break;
@@ -160,8 +208,9 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
             ToolCallInfo: toolCallInfo,
             InputTokens: inputTokens,
             OutputTokens: outputTokens,
-            FinishReason: finishReason
+            FinishReason: finishReason,
+            UrlCitation: urlCitation,
+            SearchQuery: searchQuery
         );
-        // The outer try-catch for general exceptions and JsonException is in the base class.
     }
 }

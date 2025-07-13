@@ -353,6 +353,26 @@ public class StreamingService : IStreamingService
                             if (toolInfo.ArgumentChunk != null) state.ArgumentBuffer.Append(toolInfo.ArgumentChunk);
                         }
 
+                        if (!string.IsNullOrEmpty(chunk.UrlCitation))
+                        {
+                            var parts = chunk.UrlCitation.Split('|', 2);
+                            if (parts.Length == 2)
+                            {
+                                var title = parts[0];
+                                var url = parts[1];
+                                await new DeepSearchUrlCitationNotification(requestContext.ChatSession.Id, title, url)
+                                    .PublishAsync(Mode.WaitForNone, cancellationToken);
+                                _logger.LogDebug("Published URL citation notification: {Title} - {Url}", title, url);
+                            }
+                        }
+
+                        if (!string.IsNullOrEmpty(chunk.SearchQuery))
+                        {
+                            await new DeepSearchQueryNotification(requestContext.ChatSession.Id, chunk.SearchQuery)
+                                .PublishAsync(Mode.WaitForNone, cancellationToken);
+                            _logger.LogDebug("Published search query notification: {Query}", chunk.SearchQuery);
+                        }
+
                         if (!string.IsNullOrEmpty(chunk.FinishReason))
                         {
                             _logger.LogInformation("Stream turn {Turn} finished with reason: {FinishReason}", turn, chunk.FinishReason);
