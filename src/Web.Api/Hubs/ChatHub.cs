@@ -10,6 +10,7 @@ using Application.Features.Chats.RegenerateResponse;
 using Application.Features.Chats.DeepSearch;
 using FastEndpoints;
 using System.Diagnostics;
+using Application.Features.Chats.GetAllChatsByUserId;
 
 namespace Web.Api.Hubs;
 
@@ -175,9 +176,6 @@ public class ChatHub : Hub
         }
     }
 
-    /// <summary>
-    /// Sends a message with file attachments to the AI
-    /// </summary>
     public async Task SendMessageWithAttachments(
         string chatSessionId,
         string content,
@@ -342,9 +340,6 @@ public class ChatHub : Hub
         }
     }
 
-    /// <summary>
-    /// Edit a message with file attachments
-    /// </summary>
     public async Task EditMessageWithAttachments(string chatSessionId, string messageId, string newContent,
         List<Guid> fileAttachmentIds)
     {
@@ -426,9 +421,6 @@ public class ChatHub : Hub
         }
     }
 
-    /// <summary>
-    /// Get all file attachments for a message
-    /// </summary>
     public async Task GetMessageAttachments(string messageId)
     {
         using var activity = ActivitySource.StartActivity(nameof(GetMessageAttachments));
@@ -480,9 +472,6 @@ public class ChatHub : Hub
         }
     }
 
-    /// <summary>
-    /// Regenerates the AI response for a given user message.
-    /// </summary>
     public async Task RegenerateResponse(string chatSessionId, string userMessageId)
     {
         using var activity = ActivitySource.StartActivity(nameof(RegenerateResponse));
@@ -551,15 +540,64 @@ public class ChatHub : Hub
             await Clients.Caller.SendAsync("Error", $"Failed to regenerate response: {ex.Message}");
         }
     }
+    
+    public async Task GetAllChats(int page = 1, int pageSize = 20)
+    {
+        using var activity = ActivitySource.StartActivity(nameof(GetAllChats));
+        activity?.SetTag("user.id", Context.UserIdentifier);
+        activity?.SetTag("request.page", page);
+        activity?.SetTag("request.page_size", pageSize);
 
-    /// <summary>
-    /// Processes file attachments and integrates them into the message content
-    /// </summary>
+        try
+        {
+            if (Context.UserIdentifier == null)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "User identifier is null.");
+                _logger.LogWarning("GetAllChats called with null user identifier");
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+
+            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Invalid user identifier format.");
+                _logger.LogWarning("GetAllChats called with invalid user identifier");
+                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
+                return;
+            }
+
+            var query = new GetAllChatsByUserIdQuery(userId, page, pageSize);
+            var result = await query.ExecuteAsync();
+
+            if (result.IsSuccess)
+            {
+                activity?.SetTag("response.success", true);
+                activity?.SetTag("response.folders_count", result.Value.Folders.Count);
+                activity?.SetTag("response.root_chats_count", result.Value.RootChats.Count);
+                activity?.SetTag("response.total_count", result.Value.RootChatsTotalCount);
+                
+                await Clients.Caller.SendAsync("ReceiveAllChats", result.Value);
+                activity?.AddEvent(new ActivityEvent("All chats sent to caller."));
+            }
+            else
+            {
+                activity?.SetTag("response.success", false);
+                activity?.SetTag("response.error", result.Error.Description ?? "Unknown error");
+                _logger.LogWarning("Failed to get all chats for user {UserId}. Error: {Error}", userId, result.Error?.Description);
+                await Clients.Caller.SendAsync("Error", $"Failed to get chats: {result.Error?.Description}");
+            }
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, "Error getting all chats.");
+            activity?.AddException(ex);
+            _logger.LogError(ex, "Error getting all chats for user {UserId}", Context.UserIdentifier);
+            await Clients.Caller.SendAsync("Error", $"Failed to get chats: {ex.Message}");
+        }
+    }
+
     private async Task<string> ProcessFileAttachmentsAsync(string content, List<Guid> fileAttachmentIds)
     {
-        // This is a private helper method. Activities within it will be parented to the calling public method's activity.
-        // So, starting a new top-level activity here might be redundant unless it represents a very distinct, long-running sub-operation.
-        // For now, let operations within be part of the caller's span. Logging within will be correlated.
         var processedContent = content ?? string.Empty;
 
         foreach (var fileId in fileAttachmentIds)
@@ -609,7 +647,6 @@ public class ChatHub : Hub
             }
             catch (Exception ex)
             {
-                // Log specific error for this attachment processing to avoid losing context if one of many fails
                 _logger.LogError(ex, "Error processing attachment {FileName} (ID: {FileId}) for inclusion in message content", fileAttachment.FileName, fileId);
                 processedContent += $"\n[Error processing attachment: {fileAttachment.FileName}]";
             }
