@@ -52,7 +52,7 @@ public class StreamingContextService : IStreamingContextService
 
         var history = request.History is not null && request.History.Any()
             ? HistoryBuilder.BuildHistory(request.History.Select(m => MessageDto.FromEntity(m)).ToList())
-            : HistoryBuilder.BuildHistory(chatSession, aiAgent, userSettings, MessageDto.FromEntity(aiMessage));
+            : HistoryBuilder.BuildHistory(chatSession, MessageDto.FromEntity(aiMessage));
 
         return new AiRequestContext(
             UserId: request.UserId,

@@ -22,16 +22,12 @@ public class UpdateAiAgentCommandValidator : AbstractValidator<UpdateAiAgentComm
 
         RuleFor(x => x.AiModelId)
             .NotEmpty().WithMessage("AiModelId is required");
-            
+
         When(x => x.AssignCustomModelParameters == true, () =>
         {
             RuleFor(x => x.Temperature)
                 .InclusiveBetween(0, 2).When(x => x.Temperature.HasValue)
                 .WithMessage("Temperature must be between 0 and 2");
-
-            RuleFor(x => x.TopP)
-                .InclusiveBetween(0, 1).When(x => x.TopP.HasValue)
-                .WithMessage("TopP must be between 0 and 1");
         });
     }
-} 
+}

@@ -27,7 +27,8 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
 
             if (agent.UserId != command.UserId)
             {
-                return Result.Failure<bool>(Error.BadRequest("AiAgent.Unauthorized", "Unauthorized access to this AiAgent"));
+                return Result.Failure<bool>(Error.BadRequest("AiAgent.Unauthorized",
+                    "Unauthorized access to this AiAgent"));
             }
 
             ModelParameters? modelParameters = null;
@@ -36,14 +37,7 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                 modelParameters = ModelParameters.Create(command.AiModelId,
                     command.SystemInstructions,
                     command.Temperature,
-                    command.PresencePenalty,
-                    command.FrequencyPenalty,
-                    command.TopP,
-                    command.TopK,
-                    command.MaxTokens,
-                    command.ContextLimit,
-                    command.PromptCaching,
-                     command.SafetySettings);
+                    command.MaxTokens);
             }
 
             agent.Update(
@@ -60,7 +54,7 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                 foreach (var plugin in command.Plugins)
                 {
                     var existingPlugin = agent.AiAgentPlugins.FirstOrDefault(p => p.PluginId == plugin.PluginId);
-                    
+
                     if (existingPlugin != null)
                     {
                         existingPlugin.SetActive(plugin.IsActive);
@@ -82,4 +76,4 @@ public class UpdateAiAgentCommandHandler : ICommandHandler<UpdateAiAgentCommand,
                 $"Error updating AI agent: {ex.Message}"));
         }
     }
-} 
+}

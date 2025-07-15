@@ -38,15 +38,9 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                 modelParameters = ModelParameters.Create(request.DefaultModel,
                     request.SystemInstructions,
                     temperature: request.Temperature,
-                    presencePenalty: request.PresencePenalty,
-                    frequencyPenalty: request.FrequencyPenalty,
-                    topP: request.TopP,
-                    topK: request.TopK,
-                    maxTokens: request.MaxTokens,
-                    promptCaching: request.PromptCaching,
-                    contextLimit: request.ContextLimit, safetySettings: request.SafetySettings);
+                    maxTokens: request.MaxTokens);
             }
-            
+
             var agent = AiAgent.Create(
                 request.UserId,
                 request.Name,
@@ -65,7 +59,7 @@ public sealed class CreateAiAgentCommandHandler : ICommandHandler<CreateAiAgentC
                     agent.AddPlugin(plugin.PluginId, plugin.IsActive);
                 }
             }
-            
+
             await _aiAgentRepository.AddAsync(agent, ct);
 
             return Result.Success(agent.Id);

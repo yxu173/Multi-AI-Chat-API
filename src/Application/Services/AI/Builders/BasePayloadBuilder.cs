@@ -9,18 +9,14 @@ namespace Application.Services.AI.Builders;
 public abstract class BasePayloadBuilder
 {
     protected readonly ILogger Logger;
-    
-    // Parameter name mapping for different model types
+
     private static readonly Dictionary<ModelType, Dictionary<string, string>> ParameterNameMap = new()
     {
         [ModelType.OpenAi] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            // OpenAI uses standard names
         },
         [ModelType.Gemini] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["top_p"] = "topP",
-            ["top_k"] = "topK",
             ["max_tokens"] = "maxOutputTokens",
             ["stop"] = "stopSequences"
         },
@@ -31,7 +27,6 @@ public abstract class BasePayloadBuilder
         },
         [ModelType.DeepSeek] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            // DeepSeek uses standard names
         },
         [ModelType.Grok] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -50,50 +45,49 @@ public abstract class BasePayloadBuilder
             // Imagen uses standard names
         }
     };
-    
+
     // Allowed parameters for each model type
     private static readonly Dictionary<ModelType, HashSet<string>> AllowedParams = new()
     {
         [ModelType.OpenAi] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "top_p", "max_tokens", "response_format", "tools", 
-            "tool_choice", "user",  "reasoning"
+            "temperature", "max_tokens", "response_format", "tools",
+            "tool_choice", "user", "reasoning"
         },
         [ModelType.Gemini] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "topP", "topK", "maxOutputTokens", "stopSequences", "candidateCount",
+            "temperature", "maxOutputTokens", "stopSequences", "candidateCount",
             "tools", "safetySettings"
         },
         [ModelType.Anthropic] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "top_p", "top_k", "max_tokens", "stop_sequences",
+            "temperature", "max_tokens", "stop_sequences",
             "system", "tools", "tool_choice"
         },
         [ModelType.DeepSeek] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "top_p", "max_tokens", "tools", "tool_choice"
+            "temperature", "max_tokens", "tools", "tool_choice"
         },
         [ModelType.Grok] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "top_p", "top_k", "max_tokens", "stop"
+            "temperature", "max_tokens", "stop"
         },
         [ModelType.Qwen] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "temperature", "top_p", "max_tokens", "tools", "stop"
+            "temperature", "max_tokens", "tools", "stop"
         },
         [ModelType.AimlFlux] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
         },
         [ModelType.Imagen] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-           
         }
     };
-    
+
     // Parameters to ignore in 'thinking' mode to reduce unnecessary processing
     private static readonly HashSet<string> ThinkingIgnoredKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "tools", "tool_choice", "response_format", "reasoning", "image", "images", 
+        "tools", "tool_choice", "response_format", "reasoning", "image", "images",
         "logprobs", "top_logprobs", "logit_bias", "extra_stop_words", "stopSequences", "stop_sequences"
     };
 
@@ -101,54 +95,42 @@ public abstract class BasePayloadBuilder
     {
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
-    
+
     protected void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
-        // Create base parameters dictionary
         var parameters = new Dictionary<string, object>();
         var model = context.SpecificModel;
         var agent = context.AiAgent;
         var userSettings = context.UserSettings;
         var modelType = model.ModelType;
-        
-        // Get parameters from the appropriate source (agent > user settings)
+
         if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
-        {   
-            // Agent has custom parameters
+        {
             var sourceParams = agent.ModelParameter;
             parameters["temperature"] = sourceParams.Temperature;
-            parameters["top_p"] = sourceParams.TopP;
-            parameters["top_k"] = sourceParams.TopK;
-            parameters["frequency_penalty"] = sourceParams.FrequencyPenalty;
-            parameters["presence_penalty"] = sourceParams.PresencePenalty;
             parameters["max_tokens"] = sourceParams.MaxTokens;
         }
         else if (userSettings != null)
-        {   
-            // Use settings from the user
+        {
             parameters["temperature"] = userSettings.ModelParameters.Temperature;
-            parameters["top_p"] = userSettings.ModelParameters.TopP;
-            parameters["top_k"] = userSettings.ModelParameters.TopK;
-            parameters["frequency_penalty"] = userSettings.ModelParameters.FrequencyPenalty;
-            parameters["presence_penalty"] = userSettings.ModelParameters.PresencePenalty;
         }
-        
+
         if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
         {
             parameters["max_tokens"] = model.MaxOutputTokens.Value;
         }
-        
+
         foreach (var kvp in parameters)
         {
             string standardName = kvp.Key;
-            
+
             string providerName = standardName;
-            if (ParameterNameMap.TryGetValue(modelType, out var nameMap) && 
+            if (ParameterNameMap.TryGetValue(modelType, out var nameMap) &&
                 nameMap.TryGetValue(standardName, out var mappedName))
             {
                 providerName = mappedName;
             }
-            
+
             if (!AllowedParams.TryGetValue(modelType, out var allowedSet) ||
                 !allowedSet.Contains(providerName))
             {
@@ -157,15 +139,15 @@ public abstract class BasePayloadBuilder
                     standardName, providerName, modelType);
                 continue;
             }
-            
+
             if (ThinkingIgnoredKeys.Contains(providerName))
             {
                 Logger?.LogDebug(
-                    "Omitting parameter '{ProviderName}' in thinking mode for model type {ModelType}", 
+                    "Omitting parameter '{ProviderName}' in thinking mode for model type {ModelType}",
                     providerName, modelType);
                 continue;
             }
-            
+
             requestObj[providerName] = kvp.Value;
         }
     }
@@ -250,7 +232,7 @@ public abstract class BasePayloadBuilder
                         var lastMsg = cleanedMessages.Last();
                         var currentMsg = messages[i];
                         object mergedMessage = MergeGeminiMessages(lastMsg, currentMsg);
-                        cleanedMessages.RemoveAt(cleanedMessages.Count - 1); // Remove previous model message
+                        cleanedMessages.RemoveAt(cleanedMessages.Count - 1);
                         cleanedMessages.Add(mergedMessage);
                         handled = true;
                     }
@@ -269,17 +251,10 @@ public abstract class BasePayloadBuilder
         messages.AddRange(cleanedMessages);
     }
 
-    /// <summary>
-    /// Merges two Gemini messages with the same role by concatenating their content parts.
-    /// </summary>
-    /// <param name="lastMessage">The previous message in the sequence</param>
-    /// <param name="currentMessage">The current message to merge</param>
-    /// <returns>A new merged message object</returns>
     protected object MergeGeminiMessages(dynamic lastMessage, dynamic currentMessage)
     {
         try
         {
-            // Create a copy of the dictionary structure
             var result = new Dictionary<string, object>();
             if (lastMessage is IDictionary<string, object> lastDict)
             {
@@ -288,33 +263,35 @@ public abstract class BasePayloadBuilder
                     result[key] = lastDict[key];
                 }
             }
-            
+
             if (result.TryGetValue("parts", out var lastPartsObj) && lastPartsObj is List<object> lastParts &&
                 currentMessage is IDictionary<string, object> currentDict &&
-                currentDict.TryGetValue("parts", out var currentPartsObj) && currentPartsObj is List<object> currentParts)
+                currentDict.TryGetValue("parts", out var currentPartsObj) &&
+                currentPartsObj is List<object> currentParts)
             {
                 var mergedParts = new List<object>(lastParts);
                 mergedParts.AddRange(currentParts);
                 result["parts"] = mergedParts;
-                
-                Logger?.LogInformation("Successfully merged {Count} parts from consecutive model messages", 
+
+                Logger?.LogInformation("Successfully merged {Count} parts from consecutive model messages",
                     currentParts.Count);
-                
+
                 return result;
             }
-            
+
             if (result.TryGetValue("content", out var lastContent) && lastContent is string lastContentStr &&
                 currentMessage is IDictionary<string, object> currentMsgDict &&
-                currentMsgDict.TryGetValue("content", out var currentContent) && currentContent is string currentContentStr)
+                currentMsgDict.TryGetValue("content", out var currentContent) &&
+                currentContent is string currentContentStr)
             {
                 result["content"] = lastContentStr + "\n" + currentContentStr;
-                
+
                 Logger?.LogInformation("Successfully merged content from consecutive model messages");
-                
+
                 return result;
             }
-            
-            
+
+
             return lastMessage;
         }
         catch (Exception ex)
@@ -346,7 +323,6 @@ public abstract class BasePayloadBuilder
         }
         catch (Exception ex)
         {
-            //  Logger?.LogWarning(ex, "Could not determine role from dynamic message object of type {Type}. Message: {Message}", message?.GetType().Name ?? "null", TrySerialize(message));
         }
 
 
@@ -372,28 +348,31 @@ public abstract class BasePayloadBuilder
     public virtual string ExtractTextFromMessage(string? messageContent)
     {
         if (string.IsNullOrWhiteSpace(messageContent)) return string.Empty;
-        return System.Text.RegularExpressions.Regex.Replace(messageContent, @"<image|file-base64:.*>", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+        return System.Text.RegularExpressions.Regex.Replace(messageContent, @"<image|file-base64:.*>", string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
     }
 
     protected static class Validators
     {
-        private static readonly Dictionary<string, string> AnthropicSupportedImageTypes = new(StringComparer.OrdinalIgnoreCase)
-        {
-            { "image/jpeg", "image/jpeg" },
-            { "image/png", "image/png" },
-            { "image/gif", "image/gif" },
-            { "image/webp", "image/webp" }
-        };
-        
-        private static readonly Dictionary<string, string> GeminiSupportedImageTypes = new(StringComparer.OrdinalIgnoreCase)
-        {
-            { "image/png", "image/png" },
-            { "image/jpeg", "image/jpeg" },
-            { "image/webp", "image/webp" },
-            { "image/heic", "image/heic" },
-            { "image/heif", "image/heif" }
-        };
-        
+        private static readonly Dictionary<string, string> AnthropicSupportedImageTypes =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                { "image/jpeg", "image/jpeg" },
+                { "image/png", "image/png" },
+                { "image/gif", "image/gif" },
+                { "image/webp", "image/webp" }
+            };
+
+        private static readonly Dictionary<string, string> GeminiSupportedImageTypes =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                { "image/png", "image/png" },
+                { "image/jpeg", "image/jpeg" },
+                { "image/webp", "image/webp" },
+                { "image/heic", "image/heic" },
+                { "image/heif", "image/heif" }
+            };
+
         private static readonly HashSet<string> AnthropicSupportedDocumentTypes = new(StringComparer.OrdinalIgnoreCase)
         {
             "application/pdf",
@@ -403,18 +382,21 @@ public abstract class BasePayloadBuilder
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/msword"
         };
+
         public static bool IsValidAnthropicImageType(string mimeType, out string normalizedMediaType)
         {
             normalizedMediaType = mimeType?.ToLowerInvariant().Trim() ?? string.Empty;
             normalizedMediaType = AnthropicSupportedImageTypes.GetValueOrDefault(normalizedMediaType, string.Empty);
             return !string.IsNullOrEmpty(normalizedMediaType);
         }
+
         public static bool IsValidGeminiImageType(string mimeType, out string normalizedMediaType)
         {
             normalizedMediaType = mimeType?.ToLowerInvariant().Trim() ?? string.Empty;
             normalizedMediaType = GeminiSupportedImageTypes.GetValueOrDefault(normalizedMediaType, string.Empty);
             return !string.IsNullOrEmpty(normalizedMediaType);
         }
+
         public static bool IsValidAnthropicDocumentType(string mimeType, out string normalizedMediaType)
         {
             normalizedMediaType = mimeType?.ToLowerInvariant().Trim() ?? string.Empty;
@@ -422,6 +404,7 @@ public abstract class BasePayloadBuilder
         }
     }
 
-    // Add virtual method for customization
-    protected virtual void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context) { }
+    protected virtual void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+    }
 }
