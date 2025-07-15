@@ -11,6 +11,7 @@ public class GetAllAiModelsEndpoint : EndpointWithoutRequest
     public override void Configure()
     {
         Get("/api/aimodel/GetAll");
+        ResponseCache(120);
         Description(x => x.Produces(200).Produces(400).Produces(500));
     }
 

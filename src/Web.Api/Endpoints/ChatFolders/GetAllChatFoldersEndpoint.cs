@@ -12,6 +12,7 @@ public class GetAllChatFoldersEndpoint : EndpointWithoutRequest
     public override void Configure()
     {
         Get("/api/chatfolder/GetAll");
+        ResponseCache(120);
         Description(x => x.Produces(200).Produces(400).Produces(500));
     }
 

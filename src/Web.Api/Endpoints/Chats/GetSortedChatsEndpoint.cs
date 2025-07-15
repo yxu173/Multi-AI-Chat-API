@@ -18,6 +18,7 @@ public class GetSortedChatsEndpoint : Endpoint<GetSortedChatsRequest>
     public override void Configure()
     {
         Get("/api/chat/GetAll/{SortOrder}");
+        ResponseCache(120);
         Description(x => x.Produces(200).Produces(400).Produces(500));
     }
 

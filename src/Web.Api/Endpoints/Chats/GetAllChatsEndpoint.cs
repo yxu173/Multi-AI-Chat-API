@@ -18,6 +18,7 @@ public class GetAllChatsEndpoint : Endpoint<GetAllChatsRequest>
     public override void Configure()
     {
         Get("/api/chat/GetAll");
+        ResponseCache(120);
         Description(x => x.Produces(200).Produces(500));
     }
 

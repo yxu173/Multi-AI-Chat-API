@@ -151,7 +151,8 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<ChatHub>("/chatHub");
-app.UseFastEndpoints()
+app.UseResponseCaching()
+    .UseFastEndpoints()
     .UseSwaggerGen();
 
 // Add health check endpoint

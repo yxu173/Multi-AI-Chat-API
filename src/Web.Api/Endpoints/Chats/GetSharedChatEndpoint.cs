@@ -16,6 +16,7 @@ public class GetSharedChatEndpoint : Endpoint<GetSharedChatRequest>
     public override void Configure()
     {
         Get("/api/chat/Shared/{Token}");
+        ResponseCache(120);
         AllowAnonymous();
         Description(x => x.Produces(200).Produces(404).Produces(500));
     }

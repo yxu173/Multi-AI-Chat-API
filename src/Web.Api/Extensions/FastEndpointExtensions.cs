@@ -9,6 +9,7 @@ public static class FastEndpointExtensions
     public static IServiceCollection AddFastEndpointsExtensions(this IServiceCollection services)
     {
         services.AddFastEndpoints()
+            .AddResponseCaching()
             .SwaggerDocument();
 
         services.AddSingleton(typeof(IPreProcessor<>), typeof(RequestLoggingPreProcessor<>));

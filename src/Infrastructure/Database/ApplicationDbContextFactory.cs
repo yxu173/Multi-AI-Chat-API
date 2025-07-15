@@ -8,7 +8,7 @@ public sealed class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Ap
     public ApplicationDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
-        optionsBuilder.UseNpgsql("Host=localhost;Database=Multi-Chat;Username=postgres;Password=postgres");
+        optionsBuilder.UseNpgsql("Host=127.0.0.1;Database=Multi-Chat;Username=postgres;Password=postgres");
 
         return new ApplicationDbContext(optionsBuilder.Options);
     }
