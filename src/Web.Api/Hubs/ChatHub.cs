@@ -601,11 +601,11 @@ public class ChatHub : Hub
             {
                 if (fileAttachment.FileType == FileType.Image)
                 {
-                    processedContent += $"\n\n<image:{fileId}>\n\n";
+                    processedContent += $"\n\n<img src=\"/api/file/{fileId}\" alt=\"{fileAttachment.FileName}\" style=\"max-width: 50px; max-height: 50px;\" />\n\n";
                 }
                 else
                 {
-                    processedContent += $"\n\n<file:{fileId}:{fileAttachment.FileName}>\n\n";
+                    processedContent += $"\n\n<a href=\"/api/file/{fileId}\" download=\"{fileAttachment.FileName}\">{fileAttachment.FileName}</a>\n\n";
                 }
             }
             catch (Exception ex)

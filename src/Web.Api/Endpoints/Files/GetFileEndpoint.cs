@@ -31,11 +31,11 @@ public class GetFileEndpoint : Endpoint<GetFileRequest>
     {
         try
         {
-            if (string.IsNullOrEmpty(req.Token) && !User.Identity!.IsAuthenticated)
-            {
-                await SendUnauthorizedAsync(ct);
-                return;
-            }
+            // if (string.IsNullOrEmpty(req.Token) && !User.Identity!.IsAuthenticated)
+            // {
+            //     await SendUnauthorizedAsync(ct);
+            //     return;
+            // }
 
             var fileAttachment = await _fileAttachmentRepository.GetByIdAsync(req.Id, ct);
             if (fileAttachment == null)

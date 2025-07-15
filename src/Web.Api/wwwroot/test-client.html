@@ -681,6 +681,7 @@
             border-left: 4px solid var(--danger-color);
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 </head>
 <body>
 <div class="toast-container" id="toastContainer"></div>
@@ -1723,15 +1724,21 @@
 
     function formatMessageContent(content) {
         if (content === null || content === undefined) return '';
-        // Let marked handle sanitization if configured, otherwise use escapeHtml
-        // For now, assuming marked handles it. If not, uncomment escapeHtml call.
-        // const sanitized = escapeHtml(content);
-        const sanitized = content; 
+        // Use marked to parse markdown, then sanitize with DOMPurify allowing <img> and <a>
         try {
-            return marked.parse(sanitized); // Parses content using marked.js
+            const html = marked.parse(content);
+            // Allow only <img> and <a> tags and their safe attributes
+            return DOMPurify.sanitize(html, {
+                ALLOWED_TAGS: [
+                    'b', 'i', 'em', 'strong', 'a', 'img', 'pre', 'code', 'ul', 'ol', 'li', 'blockquote', 'p', 'br', 'span', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
+                ],
+                ALLOWED_ATTR: [
+                    'href', 'title', 'src', 'alt', 'width', 'height', 'style', 'download', 'target', 'rel', 'class', 'id', 'name'
+                ]
+            });
         } catch (e) {
             console.error("Error parsing markdown:", e);
-            return escapeHtml(sanitized); // Fallback
+            return escapeHtml(content); // Fallback
         }
     }
 
