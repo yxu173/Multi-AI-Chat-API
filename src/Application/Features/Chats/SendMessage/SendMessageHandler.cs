@@ -25,7 +25,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
     private readonly IMessageRepository _messageRepository;
     private readonly IStreamingService _streamingService;
     private readonly ILogger<SendMessageHandler> _logger;
-    private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IBackgroundJobClient _backgroundJobClient;
 
     public SendMessageHandler(
@@ -33,7 +32,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         IMessageRepository messageRepository,
         IStreamingService streamingService,
         ILogger<SendMessageHandler> logger,
-        IAiModelServiceFactory aiModelServiceFactory,
         IBackgroundJobClient backgroundJobClient)
     {
         _chatSessionRepository =
@@ -41,15 +39,12 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _streamingService = streamingService ?? throw new ArgumentNullException(nameof(streamingService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _aiModelServiceFactory =
-            aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _backgroundJobClient = backgroundJobClient ?? throw new ArgumentNullException(nameof(backgroundJobClient));
     }
 
     public async Task<Result> ExecuteAsync(SendMessageCommand command, CancellationToken ct)
     {
-     
-         await CreateAndSaveUserMessageAsync(
+        await CreateAndSaveUserMessageAsync(
             command.UserId,
             command.ChatSessionId,
             command.Content,
@@ -77,10 +72,11 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
             await _streamingService.StreamResponseAsync(streamingRequest, ct);
 
             var currentChat = await _chatSessionRepository.GetByIdAsync(command.ChatSessionId);
-            
+
             if (currentChat!.Messages.Count == 2 && currentChat.Title == "New Chat")
             {
-                _backgroundJobClient.Enqueue<GenerateChatTitleJob>(j => j.GenerateAsync(command.ChatSessionId, CancellationToken.None));
+                _backgroundJobClient.Enqueue<GenerateChatTitleJob>(j =>
+                    j.GenerateAsync(command.ChatSessionId, CancellationToken.None));
                 _logger.LogInformation("Enqueued title generation job for chat {ChatSessionId}", command.ChatSessionId);
             }
 
@@ -94,8 +90,10 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
 
                 if (messagesSinceLastSummary >= summarizationMessageThreshold / 2)
                 {
-                    _backgroundJobClient.Enqueue<SummarizeChatHistoryJob>(j => j.SummarizeAsync(command.ChatSessionId, CancellationToken.None));
-                    _logger.LogInformation("Enqueued history summarization job for chat {ChatSessionId}", command.ChatSessionId);
+                    _backgroundJobClient.Enqueue<SummarizeChatHistoryJob>(j =>
+                        j.SummarizeAsync(command.ChatSessionId, CancellationToken.None));
+                    _logger.LogInformation("Enqueued history summarization job for chat {ChatSessionId}",
+                        command.ChatSessionId);
                 }
             }
 
@@ -110,7 +108,7 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         }
     }
 
-    private async Task<Message> CreateAndSaveUserMessageAsync(
+    private async Task CreateAndSaveUserMessageAsync(
         Guid userId,
         Guid chatSessionId,
         string content,
@@ -132,7 +130,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         var messageDto = MessageDto.FromEntity(message);
 
         await new MessageSentNotification(chatSessionId, messageDto).PublishAsync(cancellation: cancellationToken);
-        return message;
     }
 
     private async Task<Message> CreateAndSaveAiMessageAsync(
