@@ -146,6 +146,18 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
                                 searchQuery = queryElement.GetString();
                                 Logger?.LogInformation("[OpenAiParser] Web search query completed: {Query}", searchQuery);
                             }
+
+                            if (actionElement.TryGetProperty("url", out var urlElement))
+                            {
+                                var url = urlElement.GetString();
+                                string title = string.Empty;
+                                if (actionElement.TryGetProperty("pattern", out var patternElement) && patternElement.ValueKind == JsonValueKind.String)
+                                {
+                                    title = patternElement.GetString() ?? string.Empty;
+                                }
+                                urlCitation = $"{title}|{url}";
+                                Logger?.LogInformation("[OpenAiParser] Web search call URL citation: {Title} - {Url}", title, url);
+                            }
                         }
                     }
                 }
