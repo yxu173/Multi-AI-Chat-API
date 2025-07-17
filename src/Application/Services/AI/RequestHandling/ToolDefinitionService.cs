@@ -34,10 +34,11 @@ public class ToolDefinitionService : IToolDefinitionService
     // Define provider-specific plugins
     private static readonly Dictionary<ModelType, HashSet<Guid>> _providerSpecificPlugins = new()
     {
-        // DeepWiki MCP plugin is only for OpenAI
+        // DeepWiki MCP and Code Interpreter plugins are only for OpenAI
         [ModelType.OpenAi] = new HashSet<Guid>
         {
-            new Guid("b7e7e7e7-e7e7-4e7e-8e7e-e7e7e7e7e7e7") // DeepWiki MCP
+            new Guid("b7e7e7e7-e7e7-4e7e-8e7e-e7e7e7e7e7e7"), // DeepWiki MCP
+            new Guid("c0de1e7e-7e7e-4e7e-8e7e-e7e7e7e7c0de")  // Code Interpreter
         }
     };
 

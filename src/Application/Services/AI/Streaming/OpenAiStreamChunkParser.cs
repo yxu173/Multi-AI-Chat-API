@@ -37,6 +37,10 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
         string? errorDetails = null;
         string? urlCitation = null;
         string? searchQuery = null;
+        string? codeDelta = null;
+        string? code = null;
+        string? codeInterpreterStatus = null;
+        string? outputTextDelta = null;
 
         switch (eventType)
         {
@@ -209,6 +213,42 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
                 }
                 break;
 
+            case "response.code_interpreter_call_code.delta":
+                if (root.TryGetProperty("delta", out var codeDeltaElement) && codeDeltaElement.ValueKind == JsonValueKind.String)
+                {
+                    codeDelta = codeDeltaElement.GetString();
+                    Logger?.LogTrace("Parsed OpenAI code interpreter code delta: '{CodeDelta}'", codeDelta);
+                }
+                break;
+            case "response.code_interpreter_call_code.done":
+                if (root.TryGetProperty("code", out var codeElement) && codeElement.ValueKind == JsonValueKind.String)
+                {
+                    code = codeElement.GetString();
+                    Logger?.LogInformation("Code interpreter code complete: {FullCode}", code);
+                }
+                break;
+            case "response.code_interpreter_call.interpreting":
+                codeInterpreterStatus = "interpreting";
+                Logger?.LogInformation("Code interpreter is running the code.");
+                break;
+            case "response.code_interpreter_call.completed":
+                codeInterpreterStatus = "completed";
+                Logger?.LogInformation("Code interpreter call completed.");
+                break;
+            case "response.content_part.added":
+                if (root.TryGetProperty("part", out var partElement) && partElement.ValueKind == JsonValueKind.Object)
+                {
+                    if (partElement.TryGetProperty("type", out var partType) && partType.GetString() == "output_text")
+                    {
+                        if (partElement.TryGetProperty("text", out var outputTextElement) && outputTextElement.ValueKind == JsonValueKind.String)
+                        {
+                            outputTextDelta = outputTextElement.GetString();
+                            Logger?.LogTrace("Parsed OpenAI code interpreter output text delta: '{OutputTextDelta}'", outputTextDelta);
+                        }
+                    }
+                }
+                break;
+
             default:
                 Logger?.LogWarning("Unhandled OpenAI event type: {EventType}", eventType);
                 break;
@@ -222,7 +262,11 @@ public class OpenAiStreamChunkParser : BaseStreamChunkParser<OpenAiStreamChunkPa
             OutputTokens: outputTokens,
             FinishReason: finishReason,
             UrlCitation: urlCitation,
-            SearchQuery: searchQuery
+            SearchQuery: searchQuery,
+            CodeDelta: codeDelta,
+            Code: code,
+            CodeInterpreterStatus: codeInterpreterStatus,
+            OutputTextDelta: outputTextDelta
         );
     }
 }

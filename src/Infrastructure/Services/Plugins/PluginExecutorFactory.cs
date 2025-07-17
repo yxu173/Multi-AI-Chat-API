@@ -196,6 +196,15 @@ public class PluginExecutorFactory : IPluginExecutorFactory
         //     Description = deepwikiPlugin.Description,
         //     ParametersSchema = deepwikiPlugin.ParametersSchema
         // };
+
+         _pluginRegistry[new Guid("c0de1e7e-7e7e-4e7e-8e7e-e7e7e7e7c0de")] = new PluginRegistration
+        {
+            Id = new Guid("c0de1e7e-7e7e-4e7e-8e7e-e7e7e7e7c0de"),
+            Type = typeof(object), // No executor needed
+            Name = "code_interpreter",
+            Description = "Run Python code in a sandboxed environment.",
+            ParametersSchema = null
+        };
     }
 
     private void RegisterPlugin(Guid id, Type pluginType, string name, string description, string parametersSchemaJson)

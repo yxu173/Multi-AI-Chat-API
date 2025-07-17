@@ -16,7 +16,11 @@ public record ParsedChunkInfo(
     int? OutputTokens = null,
     string? FinishReason = null,
     string? UrlCitation = null,
-    string? SearchQuery = null
+    string? SearchQuery = null,
+    string? CodeDelta = null,
+    string? Code = null,
+    string? CodeInterpreterStatus = null,
+    string? OutputTextDelta = null
 );
 
 public record ToolCallChunk(

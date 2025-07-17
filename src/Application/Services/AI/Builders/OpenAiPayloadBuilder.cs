@@ -69,6 +69,13 @@ public class OpenAiPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
 
             var formattedTools = tools.Select(def =>
             {
+                if (def.Name == "code_interpreter")
+                {
+                    return (object)new {
+                        type = "code_interpreter",
+                        container = new { type = "auto" }
+                    };
+                }
                 if (def.ParametersSchema is System.Text.Json.Nodes.JsonObject schema &&
                     schema.TryGetPropertyValue("mcp", out var mcpVal) &&
                     mcpVal?.GetValue<bool>() == true)
