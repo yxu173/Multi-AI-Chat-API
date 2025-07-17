@@ -100,9 +100,7 @@ public class EditMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 EnableThinking: false,
                 ImageSize: command.ImageSize,
                 NumImages: command.NumImages,
-                OutputFormat: command.OutputFormat,
-                EnableSafetyChecker: command.EnableSafetyChecker,
-                SafetyTolerance: command.SafetyTolerance
+                OutputFormat: command.OutputFormat
             );
 
             await _streamingService.StreamResponseAsync(streamingRequest, cancellationToken);

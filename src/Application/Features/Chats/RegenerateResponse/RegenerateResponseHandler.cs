@@ -77,9 +77,7 @@ public class RegenerateResponseHandler : Application.Abstractions.Messaging.ICom
                 EnableThinking: false,
                 ImageSize: null,
                 NumImages: null,
-                OutputFormat: null,
-                EnableSafetyChecker: null,
-                SafetyTolerance: null
+                OutputFormat: null
             );
 
             await _streamingService.StreamResponseAsync(streamingRequest, cancellationToken);
