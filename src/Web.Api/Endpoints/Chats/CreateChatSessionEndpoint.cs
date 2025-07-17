@@ -2,6 +2,7 @@ using Application.Features.Chats.CreateChatSession;
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using Application.Features.Chats.GetChatById;
 using Web.Api.Contracts.Chats;
 using Web.Api.Infrastructure;
 
@@ -35,8 +36,18 @@ public class CreateChatSessionEndpoint : Endpoint<CreateChatSessionRequest>
             req.EnableThinking).ExecuteAsync(ct: ct);
 
         if (result.IsSuccess)
+        {
+            var chatSessionId = result.Value;
+            var chatDto = new ChatDto(
+                chatSessionId,
+                "New Chat",
+                DateTime.UtcNow,
+                new List<MessageDto>()
+            );
+            ChatSseEndpoint.NotifyNewChat(chatDto);
             await SendOkAsync(result.Value, ct);
+        }
         else
             await SendAsync(CustomResults.Problem(result), 400, ct);
     }
-} 
+}
