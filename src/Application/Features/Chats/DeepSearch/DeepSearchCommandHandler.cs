@@ -53,7 +53,6 @@ public class DeepSearchCommandHandler : Application.Abstractions.Messaging.IComm
             }
             else
             {
-                // fallback: just execute and send full result at once
                 var pluginResult = await plugin.ExecuteAsync(new JsonObject { ["query"] = command.Content }, cancellationToken);
                 fullResult = pluginResult.Result;
             }
@@ -67,9 +66,7 @@ public class DeepSearchCommandHandler : Application.Abstractions.Messaging.IComm
                 command.EnableThinking,
                 command.ImageSize,
                 command.NumImages,
-                command.OutputFormat,
-                command.EnableSafetyChecker,
-                command.SafetyTolerance
+                command.OutputFormat
             );
             await sendMessageCommand.ExecuteAsync(cancellationToken);
             return Result.Success();
@@ -81,13 +78,11 @@ public class DeepSearchCommandHandler : Application.Abstractions.Messaging.IComm
             var sendMessageCommand = new SendMessageCommand(
                 command.ChatSessionId,
                 command.UserId,
-                command.Content, // Send original content on failure
+                command.Content,
                 command.EnableThinking,
                 command.ImageSize,
                 command.NumImages,
-                command.OutputFormat,
-                command.EnableSafetyChecker,
-                command.SafetyTolerance
+                command.OutputFormat
             );
             await sendMessageCommand.ExecuteAsync(cancellationToken);
             return Result.Failure(Error.Failure("DeepSearch.Failed", ex.Message));

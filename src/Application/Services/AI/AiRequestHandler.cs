@@ -24,8 +24,6 @@ public record AiRequestContext(
     string? ImageSize = null,
     int? NumImages = null,
     string? OutputFormat = null,
-    bool? EnableSafetyChecker = null,
-    string? SafetyTolerance = null,
     string? FunctionCall = null,
     List<PluginDefinition>? ToolDefinitions = null,
     bool EnableDeepSearch = false

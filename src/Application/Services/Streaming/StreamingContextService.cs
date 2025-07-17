@@ -14,20 +14,17 @@ public class StreamingContextService : IStreamingContextService
     private readonly IUserAiModelSettingsRepository _userAiModelSettingsRepository;
     private readonly IAiAgentRepository _aiAgentRepository;
     private readonly IToolDefinitionService _toolDefinitionService;
-    private readonly IMessageRepository _messageRepository;
 
     public StreamingContextService(
         IChatSessionRepository chatSessionRepository,
         IUserAiModelSettingsRepository userAiModelSettingsRepository,
         IAiAgentRepository aiAgentRepository,
-        IToolDefinitionService toolDefinitionService,
-        IMessageRepository messageRepository)
+        IToolDefinitionService toolDefinitionService)
     {
         _chatSessionRepository = chatSessionRepository;
         _userAiModelSettingsRepository = userAiModelSettingsRepository;
         _aiAgentRepository = aiAgentRepository;
         _toolDefinitionService = toolDefinitionService;
-        _messageRepository = messageRepository;
     }
 
     public async Task<AiRequestContext> BuildContextAsync(StreamingRequest request, CancellationToken cancellationToken)
@@ -65,8 +62,6 @@ public class StreamingContextService : IStreamingContextService
             ImageSize: request.ImageSize,
             NumImages: request.NumImages,
             OutputFormat: request.OutputFormat,
-            EnableSafetyChecker: request.EnableSafetyChecker,
-            SafetyTolerance: request.SafetyTolerance,
             ToolDefinitions: toolDefinitions,
             EnableDeepSearch: request.EnableDeepSearch);
     }

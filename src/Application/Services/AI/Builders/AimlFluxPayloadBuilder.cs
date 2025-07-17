@@ -41,8 +41,6 @@ public class AimlFluxPayloadBuilder : BasePayloadBuilder, IAiRequestBuilder
         requestObj["image_size"] = context.ImageSize ?? "landscape_16_9";
         requestObj["num_images"] = context.NumImages ?? 1;
         requestObj["output_format"] = context.OutputFormat ?? "jpeg";
-        requestObj["enable_safety_checker"] = context.EnableSafetyChecker ?? true;
-        requestObj["safety_tolerance"] = context.SafetyTolerance ?? "2";
 
         Logger?.LogDebug("AIMLAPI Payload Prepared: Model={Model}, Prompt='{Prompt}', Size={ImageSize}, Num={NumImages}, Format={Format}, Safety={Safety}, Tolerance={Tolerance}",
             requestObj.GetValueOrDefault("model", "N/A"),

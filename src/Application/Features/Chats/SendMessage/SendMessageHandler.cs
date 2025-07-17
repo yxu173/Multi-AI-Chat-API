@@ -64,8 +64,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 ImageSize: command.ImageSize,
                 NumImages: command.NumImages,
                 OutputFormat: command.OutputFormat,
-                EnableSafetyChecker: command.EnableSafetyChecker,
-                SafetyTolerance: command.SafetyTolerance,
                 EnableDeepSearch: command.EnableDeepSearch
             );
 

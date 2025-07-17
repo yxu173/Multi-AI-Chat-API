@@ -123,8 +123,6 @@ public class ChatHub : Hub
         string? imageSize = null,
         int? numImages = null,
         string? outputFormat = null,
-        bool? enableSafetyChecker = null,
-        string? safetyTolerance = null,
         bool enableDeepSearch = false)
     {
         try
@@ -150,8 +148,6 @@ public class ChatHub : Hub
                 imageSize,
                 numImages,
                 outputFormat,
-                enableSafetyChecker,
-                safetyTolerance,
                 enableDeepSearch
             );
 
@@ -171,9 +167,7 @@ public class ChatHub : Hub
         bool enableThinking = false,
         string? imageSize = null,
         int? numImages = null,
-        string? outputFormat = null,
-        bool? enableSafetyChecker = null,
-        string? safetyTolerance = null
+        string? outputFormat = null
     )
     {
         try
@@ -220,9 +214,7 @@ public class ChatHub : Hub
                 enableThinking,
                 imageSize,
                 numImages,
-                outputFormat,
-                enableSafetyChecker,
-                safetyTolerance);
+                outputFormat);
 
             await command.ExecuteAsync();
         }

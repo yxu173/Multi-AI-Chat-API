@@ -10,7 +10,5 @@ public record SendMessageCommand(
     string? ImageSize = null,
     int? NumImages = null,
     string? OutputFormat = null,
-    bool? EnableSafetyChecker = null,
-    string? SafetyTolerance = null,
     bool EnableDeepSearch = false
 ) : ICommand; 

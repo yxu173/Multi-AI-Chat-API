@@ -1448,9 +1448,7 @@
                     enableThinking, 
                     imageSize, 
                     numImages, 
-                    outputFormat, 
-                    enableSafetyChecker, 
-                    safetyTolerance);
+                    outputFormat);
                 clearUploadedFiles(); // Clear only if sent successfully
             } else {
                 await connection.invoke("SendMessage", 
@@ -1459,9 +1457,7 @@
                     enableThinking,
                     imageSize, 
                     numImages, 
-                    outputFormat, 
-                    enableSafetyChecker, 
-                    safetyTolerance,
+                    outputFormat,
                     enableDeepSearch); // Add deep search parameter
             }
 
