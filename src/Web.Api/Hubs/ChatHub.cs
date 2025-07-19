@@ -116,163 +116,128 @@ public class ChatHub : Hub
         }
     }
 
-    public async Task SendMessage(
-        string chatSessionId,
-        string content,
-        bool enableThinking = false,
-        string? imageSize = null,
-        int? numImages = null,
-        string? outputFormat = null,
-        bool enableDeepSearch = false)
+    public class SendMessageRequest
+    {
+        public string ChatSessionId { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        public List<Guid>? FileAttachmentIds { get; set; }
+        public List<Guid>? ImageAttachmentIds { get; set; }
+        public bool EnableThinking { get; set; } = false;
+        public string? ImageSize { get; set; }
+        public int? NumImages { get; set; }
+        public string? OutputFormat { get; set; }
+        public bool EnableDeepSearch { get; set; } = false;
+    }
+
+    public async Task SendMessage(SendMessageRequest request)
     {
         try
         {
-            if (!Guid.TryParse(chatSessionId, out var chatSessionGuid))
+            if (!Guid.TryParse(request.ChatSessionId, out var chatSessionGuid))
             {
                 await Clients.Caller.SendAsync("Error", "Invalid chat session ID");
                 return;
             }
-
             var userIdValue = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdValue, out var userId))
             {
                 await Clients.Caller.SendAsync("Error", "User not authenticated or invalid ID format");
                 return;
             }
+            string processedContent = request.Content ?? string.Empty;
+            if (request.FileAttachmentIds != null)
+            {
+                foreach (var fileId in request.FileAttachmentIds)
+                {
+                    var file = await _fileAttachmentRepository.GetByIdAsync(fileId);
+                    if (file != null && !processedContent.Contains($"<file:{fileId}:{file.FileName}>", StringComparison.Ordinal))
+                    {
+                        processedContent += $"\n<file:{fileId}:{file.FileName}>";
+                    }
+                }
+            }
 
+            if (request.ImageAttachmentIds != null)
+            {
+                foreach (var imageId in request.ImageAttachmentIds)
+                {
+                    var image = await _fileAttachmentRepository.GetByIdAsync(imageId);
+                    if (image != null && !processedContent.Contains($"<image:{imageId}>", StringComparison.Ordinal))
+                    {
+                        processedContent += $"\n<image:{imageId}>";
+                    }
+                }
+            }
             var command = new SendMessageCommand(
                 chatSessionGuid,
                 userId,
-                content,
-                enableThinking,
-                imageSize,
-                numImages,
-                outputFormat,
-                enableDeepSearch
+                processedContent,
+                request.FileAttachmentIds,
+                request.ImageAttachmentIds,
+                request.EnableThinking,
+                request.ImageSize,
+                request.NumImages,
+                request.OutputFormat,
+                request.EnableDeepSearch
             );
-
             await command.ExecuteAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending message in chat {ChatSessionId}", chatSessionId);
+            _logger.LogError(ex, "Error sending message in chat {ChatSessionId}", request.ChatSessionId);
             await Clients.Caller.SendAsync("Error", "Failed to send message");
         }
     }
 
-    public async Task SendMessageWithAttachments(
-        string chatSessionId,
-        string content,
-        List<Guid> fileAttachmentIds,
-        bool enableThinking = false,
-        string? imageSize = null,
-        int? numImages = null,
-        string? outputFormat = null
-    )
+    public class EditMessageRequest
     {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(chatSessionId))
-            {
-                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
-                return;
-            }
-
-            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
-            {
-                _logger.LogWarning("SendMessageWithAttachments called with invalid chat session ID format");
-                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
-                return;
-            }
-
-            if (Context.UserIdentifier == null)
-            {
-                _logger.LogWarning("Method called with null user identifier");
-                await Clients.Caller.SendAsync("Error", "User not authenticated");
-                return;
-            }
-
-            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
-            {
-                _logger.LogWarning("Method called with invalid user identifier");
-                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
-                return;
-            }
-
-            string processedContent = content ?? string.Empty;
-
-            if (fileAttachmentIds != null && fileAttachmentIds.Any())
-            {
-                using var processAttachmentsActivity = ActivitySource.StartActivity("ProcessAttachmentsInHub");
-                processedContent = await ProcessFileAttachmentsAsync(processedContent, fileAttachmentIds);
-            }
-
-            var command = new SendMessageCommand(
-                chatGuid,
-                userId,
-                processedContent,
-                enableThinking,
-                imageSize,
-                numImages,
-                outputFormat);
-
-            await command.ExecuteAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error sending message with attachments in session {ChatSessionId}", chatSessionId);
-            await Clients.Caller.SendAsync("Error", $"Failed to send message: {ex.Message}");
-        }
+        public string ChatSessionId { get; set; } = string.Empty;
+        public string MessageId { get; set; } = string.Empty;
+        public string NewContent { get; set; } = string.Empty;
+        public List<Guid>? FileAttachmentIds { get; set; }
+        public List<Guid>? ImageAttachmentIds { get; set; }
     }
 
-    public async Task EditMessage(string chatSessionId, string messageId, string newContent)
+    public async Task EditMessage(EditMessageRequest request)
     {
         using var activity = ActivitySource.StartActivity();
-
         try
         {
-            if (string.IsNullOrWhiteSpace(chatSessionId))
+            if (string.IsNullOrWhiteSpace(request.ChatSessionId))
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Chat session ID is empty.");
                 _logger.LogWarning("EditMessage called with empty chat session ID");
                 await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
                 return;
             }
-
-            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
+            if (!Guid.TryParse(request.ChatSessionId, out Guid chatGuid))
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Invalid chat session ID format.");
                 _logger.LogWarning("EditMessage called with invalid chat session ID format");
                 await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
                 return;
             }
-
-            if (string.IsNullOrWhiteSpace(messageId))
+            if (string.IsNullOrWhiteSpace(request.MessageId))
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Message ID is empty.");
                 _logger.LogWarning("EditMessage called with empty message ID");
                 await Clients.Caller.SendAsync("Error", "Message ID cannot be empty");
                 return;
             }
-
-            if (!Guid.TryParse(messageId, out Guid messageGuid))
+            if (!Guid.TryParse(request.MessageId, out Guid messageGuid))
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Invalid message ID format.");
                 _logger.LogWarning("EditMessage called with invalid message ID format");
                 await Clients.Caller.SendAsync("Error", "Invalid message ID format");
                 return;
             }
-
-            if (string.IsNullOrWhiteSpace(newContent))
+            if (string.IsNullOrWhiteSpace(request.NewContent))
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "New message content empty.");
-                _logger.LogWarning(
-                    "EditMessage called with empty new content for message {MessageId} in session {ChatSessionId}",
-                    messageId, chatSessionId);
+                _logger.LogWarning("EditMessage called with empty new content for message {MessageId} in session {ChatSessionId}", request.MessageId, request.ChatSessionId);
                 await Clients.Caller.SendAsync("Error", "Message content cannot be empty");
                 return;
             }
-
             if (Context.UserIdentifier == null)
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "User identifier is null.");
@@ -280,7 +245,6 @@ public class ChatHub : Hub
                 await Clients.Caller.SendAsync("Error", "User not authenticated");
                 return;
             }
-
             if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Invalid user identifier format.");
@@ -288,8 +252,35 @@ public class ChatHub : Hub
                 await Clients.Caller.SendAsync("Error", "Invalid user identifier");
                 return;
             }
-
-            var command = new EditMessageCommand(chatGuid, userId, messageGuid, newContent);
+            string processedContent = request.NewContent ?? string.Empty;
+            if (request.FileAttachmentIds != null)
+            {
+                foreach (var fileId in request.FileAttachmentIds)
+                {
+                    var file = await _fileAttachmentRepository.GetByIdAsync(fileId);
+                    if (file != null && !processedContent.Contains($"<file:{fileId}:{file.FileName}>", StringComparison.Ordinal))
+                    {
+                        processedContent += $"\n<file:{fileId}:{file.FileName}>";
+                    }
+                }
+            }
+            if (request.ImageAttachmentIds != null)
+            {
+                foreach (var imageId in request.ImageAttachmentIds)
+                {
+                    var image = await _fileAttachmentRepository.GetByIdAsync(imageId);
+                    if (image != null && !processedContent.Contains($"<image:{imageId}>", StringComparison.Ordinal))
+                    {
+                        processedContent += $"\n<image:{imageId}>";
+                    }
+                }
+            }
+            var command = new EditMessageCommand(
+                chatGuid,
+                userId,
+                messageGuid,
+                processedContent
+            );
             await command.ExecuteAsync();
             activity?.AddEvent(new ActivityEvent("Edit message request sent to ChatService."));
         }
@@ -297,75 +288,7 @@ public class ChatHub : Hub
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Error editing message.");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Error editing message {MessageId} in session {ChatSessionId}", messageId,
-                chatSessionId);
-            await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
-        }
-    }
-
-    public async Task EditMessageWithAttachments(string chatSessionId, string messageId, string newContent,
-        List<Guid> fileAttachmentIds)
-    {
-        using var activity = ActivitySource.StartActivity();
-
-        try
-        {
-            if (string.IsNullOrWhiteSpace(chatSessionId))
-            {
-                _logger.LogWarning("EditMessageWithAttachments called with empty chat session ID");
-                await Clients.Caller.SendAsync("Error", "Chat session ID cannot be empty");
-                return;
-            }
-
-            if (!Guid.TryParse(chatSessionId, out Guid chatGuid))
-            {
-                _logger.LogWarning("EditMessageWithAttachments called with invalid chat session ID format");
-                await Clients.Caller.SendAsync("Error", "Invalid chat session ID format");
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(messageId))
-            {
-                _logger.LogWarning("EditMessageWithAttachments called with empty message ID");
-                await Clients.Caller.SendAsync("Error", "Message ID cannot be empty");
-                return;
-            }
-
-            if (!Guid.TryParse(messageId, out Guid messageGuid))
-            {
-                _logger.LogWarning("EditMessageWithAttachments called with invalid message ID format");
-                await Clients.Caller.SendAsync("Error", "Invalid message ID format");
-                return;
-            }
-
-            if (Context.UserIdentifier == null)
-            {
-                _logger.LogWarning("Method called with null user identifier");
-                await Clients.Caller.SendAsync("Error", "User not authenticated");
-                return;
-            }
-
-            if (!Guid.TryParse(Context.UserIdentifier, out Guid userId))
-            {
-                _logger.LogWarning("Method called with invalid user identifier");
-                await Clients.Caller.SendAsync("Error", "Invalid user identifier");
-                return;
-            }
-
-            string processedContent = newContent ?? string.Empty;
-
-            if (fileAttachmentIds != null && fileAttachmentIds.Any())
-            {
-                processedContent = await ProcessFileAttachmentsAsync(processedContent, fileAttachmentIds);
-            }
-
-            var command = new EditMessageCommand(chatGuid, userId, messageGuid, processedContent);
-            await command.ExecuteAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error editing message {MessageId} with attachments in session {ChatSessionId}",
-                messageId, chatSessionId);
+            _logger.LogError(ex, "Error editing message {MessageId} in session {ChatSessionId}", request.MessageId, request.ChatSessionId);
             await Clients.Caller.SendAsync("Error", $"Failed to edit message: {ex.Message}");
         }
     }

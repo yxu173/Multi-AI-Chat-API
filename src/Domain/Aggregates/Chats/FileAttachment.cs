@@ -53,6 +53,11 @@ public sealed class FileAttachment : BaseEntity
         FileType = DetermineFileType(newContentType);
     }
 
+    public void SetMessageId(Guid messageId)
+    {
+        MessageId = messageId;
+    }
+
     private static FileType DetermineFileType(string contentType)
     {
         if (string.IsNullOrEmpty(contentType)) return FileType.Other;

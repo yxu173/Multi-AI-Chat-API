@@ -63,6 +63,8 @@ public class DeepSearchCommandHandler : Application.Abstractions.Messaging.IComm
                 command.ChatSessionId,
                 command.UserId,
                 contentToSend,
+                null, // FileAttachmentIds
+                null, // ImageAttachmentIds
                 command.EnableThinking,
                 command.ImageSize,
                 command.NumImages,
@@ -79,6 +81,8 @@ public class DeepSearchCommandHandler : Application.Abstractions.Messaging.IComm
                 command.ChatSessionId,
                 command.UserId,
                 command.Content,
+                null, // FileAttachmentIds
+                null, // ImageAttachmentIds
                 command.EnableThinking,
                 command.ImageSize,
                 command.NumImages,

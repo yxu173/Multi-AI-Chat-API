@@ -26,13 +26,15 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
     private readonly IStreamingService _streamingService;
     private readonly ILogger<SendMessageHandler> _logger;
     private readonly IBackgroundJobClient _backgroundJobClient;
+    private readonly IFileAttachmentRepository _fileAttachmentRepository;
 
     public SendMessageHandler(
         IChatSessionRepository chatSessionRepository,
         IMessageRepository messageRepository,
         IStreamingService streamingService,
         ILogger<SendMessageHandler> logger,
-        IBackgroundJobClient backgroundJobClient)
+        IBackgroundJobClient backgroundJobClient,
+        IFileAttachmentRepository fileAttachmentRepository)
     {
         _chatSessionRepository =
             chatSessionRepository ?? throw new ArgumentNullException(nameof(chatSessionRepository));
@@ -40,15 +42,34 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
         _streamingService = streamingService ?? throw new ArgumentNullException(nameof(streamingService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _backgroundJobClient = backgroundJobClient ?? throw new ArgumentNullException(nameof(backgroundJobClient));
+        _fileAttachmentRepository = fileAttachmentRepository ??
+                                    throw new ArgumentNullException(nameof(fileAttachmentRepository));
     }
 
     public async Task<Result> ExecuteAsync(SendMessageCommand command, CancellationToken ct)
     {
+        var allAttachmentIds = new List<Guid>();
+        if (command.FileAttachmentIds != null)
+            allAttachmentIds.AddRange(command.FileAttachmentIds);
+        if (command.ImageAttachmentIds != null)
+            allAttachmentIds.AddRange(command.ImageAttachmentIds);
+        List<FileAttachment>? allAttachments = null;
+        if (allAttachmentIds.Count > 0)
+        {
+            allAttachments = new List<FileAttachment>();
+            foreach (var id in allAttachmentIds)
+            {
+                var attachment = await _fileAttachmentRepository.GetByIdAsync(id, ct);
+                if (attachment != null)
+                    allAttachments.Add(attachment);
+            }
+        }
+
         await CreateAndSaveUserMessageAsync(
             command.UserId,
             command.ChatSessionId,
             command.Content,
-            fileAttachments: null,
+            allAttachments,
             cancellationToken: ct);
 
 
@@ -115,18 +136,18 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
     {
         var message = Message.CreateUserMessage(userId, chatSessionId, content);
 
+        await _messageRepository.AddAsync(message, cancellationToken);
+
         if (fileAttachments != null)
         {
             foreach (var attachment in fileAttachments)
             {
-                message.AddFileAttachment(attachment);
+                attachment.SetMessageId(message.Id);
+                await _fileAttachmentRepository.UpdateAsync(attachment, cancellationToken);
             }
         }
 
-        await _messageRepository.AddAsync(message, cancellationToken);
-
         var messageDto = MessageDto.FromEntity(message);
-
         await new MessageSentNotification(chatSessionId, messageDto).PublishAsync(cancellation: cancellationToken);
     }
 

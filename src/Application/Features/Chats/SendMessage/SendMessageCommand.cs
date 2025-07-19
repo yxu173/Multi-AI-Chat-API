@@ -6,6 +6,8 @@ public record SendMessageCommand(
     Guid ChatSessionId,
     Guid UserId,
     string? Content,
+    List<Guid>? FileAttachmentIds = null,
+    List<Guid>? ImageAttachmentIds = null,
     bool EnableThinking = false,
     string? ImageSize = null,
     int? NumImages = null,

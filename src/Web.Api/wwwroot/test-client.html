@@ -1415,58 +1415,44 @@
 
         const content = messageInput.value.trim();
         const filesToSend = [...uploadedFiles]; // Copy the array
-        
         if (!content && filesToSend.length === 0) {
             showToast("Please enter a message or add files.", "warning");
             return;
         }
-
         const chatId = chatIdInput.value.trim();
         const enableThinking = thinkingToggle.checked;
         const enableDeepSearch = document.getElementById('deepSearchToggle').checked;
-        
-        // --- Read image settings from new inputs ---
         const imageSize = imageSizeSelect.value || null;
         const numImagesRaw = numImagesInput.value;
         const numImages = numImagesRaw ? parseInt(numImagesRaw, 10) : null;
         const outputFormat = outputFormatSelect.value || null;
         const enableSafetyChecker = enableSafetyCheckerToggle.checked;
         const safetyTolerance = safetyToleranceSelect.value || null;
-
-        // Start UI blocking immediately
-        startGenerationState(null, "Sending..."); 
-
+        startGenerationState(null, "Sending...");
         try {
-            const fileIds = filesToSend.map(file => file.id);
-
-            // Use the method signature that includes the new parameters
-            if (fileIds.length > 0) {
-                await connection.invoke("SendMessageWithAttachments", 
-                    chatId, 
-                    content, 
-                    fileIds, 
-                    enableThinking, 
-                    imageSize, 
-                    numImages, 
-                    outputFormat);
-                clearUploadedFiles(); // Clear only if sent successfully
-            } else {
-                await connection.invoke("SendMessage", 
-                    chatId, 
-                    content, 
-                    enableThinking,
-                    imageSize, 
-                    numImages, 
-                    outputFormat,
-                    enableDeepSearch); // Add deep search parameter
-            }
-
-            messageInput.value = ''; // Clear input after successful send invocation
-            messageInput.style.height = 'auto'; // Reset height
+            // Split uploaded files into files and images by fileType
+            const fileIds = filesToSend.filter(f => f.fileType !== 'Image').map(f => f.id);
+            const imageIds = filesToSend.filter(f => f.fileType === 'Image').map(f => f.id);
+            // Build the new request object
+            const request = {
+                ChatSessionId: chatId,
+                Content: content,
+                FileAttachmentIds: fileIds.length > 0 ? fileIds : undefined,
+                ImageAttachmentIds: imageIds.length > 0 ? imageIds : undefined,
+                EnableThinking: enableThinking,
+                ImageSize: imageSize,
+                NumImages: numImages,
+                OutputFormat: outputFormat,
+                EnableDeepSearch: enableDeepSearch
+            };
+            await connection.invoke("SendMessage", request);
+            clearUploadedFiles(); // Clear only if sent successfully
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
         } catch (err) {
             console.error("Error sending message via SignalR:", err);
             showToast(`Failed to send message: ${err.message || 'Unknown error'}`, "error");
-            stopGenerationState("Send failed."); // Stop generation state on SignalR error
+            stopGenerationState("Send failed.");
         }
     }
 
@@ -2035,18 +2021,29 @@
                 return;
             }
             const chatId = chatIdInput.value.trim();
+            // Use the current uploadedFiles for attachments
+            const filesToSend = [...uploadedFiles];
+            const fileIds = filesToSend.filter(f => f.fileType !== 'Image').map(f => f.id);
+            const imageIds = filesToSend.filter(f => f.fileType === 'Image').map(f => f.id);
+            const request = {
+                ChatSessionId: chatId,
+                MessageId: messageId,
+                NewContent: newContent.trim(),
+                FileAttachmentIds: fileIds.length > 0 ? fileIds : undefined,
+                ImageAttachmentIds: imageIds.length > 0 ? imageIds : undefined
+            };
             if (connection && isConnected) {
-                 connection.invoke("EditMessage", chatId, messageId, newContent.trim())
-                     .then(() => {
-                         showToast("Message edit request sent.", "info");
-                         // Update UI immediately for responsiveness (optional)
-                         const msgElement = document.querySelector(`.message[data-message-id="${messageId}"] .message-content`);
-                         if(msgElement) msgElement.innerHTML = formatMessageContent(newContent.trim());
-                     })
-                     .catch(err => {
-                         console.error("Error invoking EditMessage:", err);
-                         showToast(`Failed to send edit request: ${err.message}`, "error");
-                     });
+                connection.invoke("EditMessage", request)
+                    .then(() => {
+                        showToast("Message edit request sent.", "info");
+                        // Update UI immediately for responsiveness (optional)
+                        const msgElement = document.querySelector(`.message[data-message-id="${messageId}"] .message-content`);
+                        if(msgElement) msgElement.innerHTML = formatMessageContent(newContent.trim());
+                    })
+                    .catch(err => {
+                        console.error("Error invoking EditMessage:", err);
+                        showToast(`Failed to send edit request: ${err.message}`, "error");
+                    });
             }
         }
     }
