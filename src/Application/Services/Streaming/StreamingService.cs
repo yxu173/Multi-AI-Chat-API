@@ -103,7 +103,6 @@ public class StreamingService : IStreamingService
         activity?.SetTag("user.id", request.UserId.ToString());
         activity?.SetTag("ai_message.id", request.AiMessageId.ToString());
 
-
         try
         {
             var requestContext = await _streamingContextService.BuildContextAsync(request, cancellationToken);
@@ -195,14 +194,10 @@ public class StreamingService : IStreamingService
             serviceContext.Service,
             cancellationToken,
             serviceContext.ApiKey?.Id);
-
         if (serviceContext.ApiKey != null)
         {
             await _providerKeyManagementService.ReportKeySuccessAsync(serviceContext.ApiKey.Id, CancellationToken.None);
         }
-
-        _logger.LogInformation("Successfully streamed AI response for chat {ChatSessionId}",
-            requestContext.ChatSession.Id);
         return result;
     }
 
@@ -234,6 +229,7 @@ public class StreamingService : IStreamingService
         Timer? idleFlushTimer = null;
         object notificationLock = new();
         bool batchFlushed = false;
+        bool isFirstChunk = true;
 
         void FlushBatchIfNeeded()
         {
@@ -280,7 +276,6 @@ public class StreamingService : IStreamingService
 
                 var ctxTurn = requestContext with { History = historyTurn };
                 var payload = await _aiRequestHandler.PrepareRequestPayloadAsync(ctxTurn, cancellationToken);
-                var stream = aiService.StreamResponseAsync(payload, cancellationToken, providerApiKeyId);
 
                 toolResults.Clear();
                 toolRequestMsg = null;
@@ -293,9 +288,10 @@ public class StreamingService : IStreamingService
 
                 try
                 {
+                    var stream = aiService.StreamResponseAsync(payload, cancellationToken, providerApiKeyId);
+
                     await foreach (var chunk in stream.WithCancellation(cancellationToken))
                     {
-                        var chunkStartTime = DateTime.UtcNow;
                         batchFlushed = false;
                         if (_options.EnableNotificationBatching)
                         {
@@ -308,10 +304,16 @@ public class StreamingService : IStreamingService
                         if (!string.IsNullOrEmpty(chunk.TextDelta))
                         {
                             finalContent.Append(chunk.TextDelta);
-                            
-                            // Batch notifications
                             notificationBatch.Add(("text", chunk.TextDelta));
-                            if (await TryFlushBatchAsync(notificationBatch, lastNotificationTime, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken))
+                            if (isFirstChunk)
+                            {
+                                await FlushNotificationBatchAsync(notificationBatch, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken);
+                                notificationBatch.Clear();
+                                lastNotificationTime = DateTime.UtcNow;
+                                batchFlushed = true;
+                                isFirstChunk = false;
+                            }
+                            else if (await TryFlushBatchAsync(notificationBatch, lastNotificationTime, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken))
                             {
                                 lastNotificationTime = DateTime.UtcNow;
                                 batchFlushed = true;
@@ -327,7 +329,6 @@ public class StreamingService : IStreamingService
                         {
                             thinkingContentBuilder.Append(chunk.ThinkingDelta);
                             
-                            // Batch thinking notifications
                             notificationBatch.Add(("thinking", chunk.ThinkingDelta));
                             if (await TryFlushBatchAsync(notificationBatch, lastNotificationTime, requestContext.ChatSession.Id, aiMessage.Id, cancellationToken))
                             {
@@ -396,7 +397,6 @@ public class StreamingService : IStreamingService
                     if (thinkingContentBuilder.Length > 0)
                     {
                         thinkingContent = thinkingContentBuilder.ToString();
-                        // Do NOT update the DB here; only persist at the end of streaming
                     }
 
                     if (cancellationToken.IsCancellationRequested) break;
@@ -427,7 +427,6 @@ public class StreamingService : IStreamingService
                 }
             }
 
-            // Flush any remaining notifications
             if (_options.EnableNotificationBatching && notificationBatch.Any())
             {
                 idleFlushTimer?.Dispose();
@@ -438,7 +437,6 @@ public class StreamingService : IStreamingService
                 idleFlushTimer?.Dispose();
             }
 
-            // Only persist message content and thinking content at the end or on cancellation
             if (!conversationCompleted && !cancellationToken.IsCancellationRequested)
             {
                 if (finalContent.Length > 0)
