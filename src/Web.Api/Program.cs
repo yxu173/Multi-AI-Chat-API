@@ -20,6 +20,8 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using Application.Services.Files.BackgroundProcessing;
+using Grafana.OpenTelemetry;
+using OpenTelemetry;
 
 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 
@@ -28,17 +30,6 @@ var builder = WebApplication.CreateBuilder(args);
 var otelResourceBuilder = ResourceBuilder.CreateDefault()
     .AddService(serviceName: "Multi-AI-Chat-API", serviceVersion: "1.0.0");
 
-builder.Logging.AddOpenTelemetry(options =>
-{
-    options.SetResourceBuilder(otelResourceBuilder);
-    options.IncludeFormattedMessage = true;
-    options.IncludeScopes = true;
-    options.ParseStateValues = true;
-  //  options.AddConsoleExporter();
-});
-
-builder.Logging.AddFilter<OpenTelemetryLoggerProvider>("*", LogLevel.Warning);
-
 builder.Host.UseSerilog((context, loggerConfig) => loggerConfig.ReadFrom.Configuration(context.Configuration));
 
 builder.Services
@@ -46,7 +37,12 @@ builder.Services
     .AddApplication(builder.Configuration)
     .AddInfrastructure(builder.Configuration);
 
-
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .UseGrafana()
+    .Build();
+using var meterProvider = Sdk.CreateMeterProviderBuilder()
+    .UseGrafana()
+    .Build();
 
 builder.Services.AddSignalR(options =>
 {
@@ -78,7 +74,7 @@ builder.Services.AddOpenApi();
 //     .AddCheck("redis", () => HealthCheckResult.Healthy("Redis check placeholder"));
 
 var app = builder.Build();
-app.MapPrometheusScrapingEndpoint().AllowAnonymous();
+//app.MapPrometheusScrapingEndpoint().AllowAnonymous();
 
 var uploadsPath = builder.Configuration["FilesStorage:BasePath"] ??
                   Path.Combine(Directory.GetCurrentDirectory(), "uploads");
