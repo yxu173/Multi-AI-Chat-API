@@ -47,7 +47,15 @@ public static class DependencyInjection
         services.AddScoped<GenerateChatTitleJob>();
         
         services.AddScoped<IStreamingService, StreamingService>();
-        services.AddScoped<IStreamingContextService, StreamingContextService>();
+        services.AddScoped<IStreamingContextService, StreamingContextService>(sp =>
+            new StreamingContextService(
+                sp.GetRequiredService<IChatSessionRepository>(),
+                sp.GetRequiredService<IUserAiModelSettingsRepository>(),
+                sp.GetRequiredService<IAiAgentRepository>(),
+                sp.GetRequiredService<IToolDefinitionService>(),
+                sp.GetRequiredService<IAiModelRepository>()
+            )
+        );
         services.AddScoped<IStreamingResilienceHandler, StreamingResilienceHandler>();
 
         services.AddScoped<HistorySummarizationService>();

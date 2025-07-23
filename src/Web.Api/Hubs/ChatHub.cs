@@ -308,7 +308,7 @@ public class ChatHub : Hub
 
             if (!Guid.TryParse(messageId, out Guid messageGuid))
             {
-                _logger.LogWarning("GetMessageAttachments called with invalid message ID format");
+                _logger.LogWarning("GetMessageAttachments called with invalid mzessage ID format");
                 await Clients.Caller.SendAsync("Error", "Invalid message ID format");
                 return;
             }

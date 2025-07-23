@@ -29,46 +29,18 @@ public class DeepSearchCommandHandler : Application.Abstractions.Messaging.IComm
     {
         try
         {
-            await new DeepSearchStartedNotification(command.ChatSessionId, "Starting deep search...").PublishAsync(Mode.WaitForNone, cancellationToken);
-
-            var pluginId = new Guid("3d5ec31c-5e6c-437d-8494-2ca942c9e2fe"); // JinaDeepSearchPlugin ID
-            var arguments = new JsonObject
-            {
-                ["query"] = command.Content
-            };
-
-            // Get the plugin instance and stream the result
-            var plugin = _pluginExecutorFactory.GetPlugin(pluginId);
-            var sb = new System.Text.StringBuilder();
-            string fullResult = null;
-            var jinaPlugin = plugin as dynamic; // Use dynamic to avoid direct reference
-            if (jinaPlugin != null && jinaPlugin.GetType().Name == "JinaDeepSearchPlugin")
-            {
-                fullResult = await jinaPlugin.StreamWithNotificationAsync(
-                    command.Content,
-                    command.ChatSessionId,
-                    (Func<string, Guid, Task>) (async (chunk, chatSessionId) => await new DeepSearchChunkReceivedNotification(chatSessionId, chunk)
-                        .PublishAsync(Mode.WaitForNone, cancellationToken)),
-                    cancellationToken);
-            }
-            else
-            {
-                var pluginResult = await plugin.ExecuteAsync(new JsonObject { ["query"] = command.Content }, cancellationToken);
-                fullResult = pluginResult.Result;
-            }
-            await new DeepSearchResultsNotification(command.ChatSessionId, fullResult).PublishAsync(Mode.WaitForNone, cancellationToken);
-
-            var contentToSend = $"{command.Content}\n\nDeep Search Results:\n{fullResult}";
+           
             var sendMessageCommand = new SendMessageCommand(
                 command.ChatSessionId,
                 command.UserId,
-                contentToSend,
-                null, // FileAttachmentIds
-                null, // ImageAttachmentIds
+                command.Content,
+                null, 
+                null, 
                 command.EnableThinking,
                 command.ImageSize,
                 command.NumImages,
-                command.OutputFormat
+                command.OutputFormat,
+                true // EnableDeepSearch
             );
             await sendMessageCommand.ExecuteAsync(cancellationToken);
             return Result.Success();
@@ -81,12 +53,13 @@ public class DeepSearchCommandHandler : Application.Abstractions.Messaging.IComm
                 command.ChatSessionId,
                 command.UserId,
                 command.Content,
-                null, // FileAttachmentIds
-                null, // ImageAttachmentIds
+                null, 
+                null, 
                 command.EnableThinking,
                 command.ImageSize,
                 command.NumImages,
-                command.OutputFormat
+                command.OutputFormat,
+                true // EnableDeepSearch
             );
             await sendMessageCommand.ExecuteAsync(cancellationToken);
             return Result.Failure(Error.Failure("DeepSearch.Failed", ex.Message));
