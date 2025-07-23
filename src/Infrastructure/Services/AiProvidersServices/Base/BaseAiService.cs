@@ -147,6 +147,11 @@ public abstract class BaseAiService : IAiModelService
         return Task.FromException<MessageDto>(new NotSupportedException($"{ProviderName} does not support tool result formatting."));
     }
 
+    public abstract Task<AiRequestPayload> BuildPayloadAsync(
+        AiRequestContext context,
+        List<PluginDefinition>? tools = null,
+        CancellationToken cancellationToken = default);
+
     #endregion
 
     #region HTTP and Streaming

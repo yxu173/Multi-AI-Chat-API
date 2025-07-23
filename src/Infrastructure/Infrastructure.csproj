@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="9.0.4" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.3.1" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.3.1" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.60.0" />
     <PackageReference Include="MimeKit" Version="4.10.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="StackExchange.Redis" Version="2.8.31" />
@@ -28,6 +29,12 @@
 
   <ItemGroup>
     <Folder Include="Database\Migrations\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.SemanticKernel.Abstractions">
+      <HintPath>..\..\..\..\.nuget\packages\microsoft.semantickernel.abstractions\1.60.0\lib\net8.0\Microsoft.SemanticKernel.Abstractions.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <PropertyGroup>

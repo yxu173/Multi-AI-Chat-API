@@ -11,6 +11,7 @@ using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Microsoft.Extensions.Configuration;
+using Application.Services.AI.Builders;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -323,4 +324,42 @@ public class ImagenService : BaseAiService
              return $"/images/error.png"; 
         }
     }
+
+    public override Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
+    {
+        if (context == null) throw new ArgumentNullException(nameof(context));
+        if (context.History == null || !context.History.Any()) throw new ArgumentException("History cannot be null or empty", nameof(context.History));
+        var latestUserMessage = context.History
+            .Where(m => !m.IsFromAi && !string.IsNullOrWhiteSpace(m.Content))
+            .LastOrDefault();
+        if (latestUserMessage == null)
+        {
+            throw new InvalidOperationException("Could not find a valid user message in the history to use as a prompt.");
+        }
+        int numImages = context.NumImages ?? 1;
+        string imageSize = context.ImageSize ?? "1024x1024";
+        var instance = new ImagenInstance
+        {
+            Prompt = latestUserMessage.Content,
+            NumberOfImages = numImages,
+            Size = imageSize
+        };
+        var payload = new ImagenPayload
+        {
+            Instances = new[] { instance }
+        };
+        return Task.FromResult(new AiRequestPayload(payload));
+    }
+}
+
+public class ImagenInstance
+{
+    public string Prompt { get; set; } = string.Empty;
+    public int? NumberOfImages { get; set; }
+    public string? Size { get; set; }
+}
+
+public class ImagenPayload
+{
+    public ImagenInstance[] Instances { get; set; } = [];
 }

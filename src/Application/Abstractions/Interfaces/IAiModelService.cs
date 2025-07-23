@@ -21,6 +21,11 @@ public interface IAiModelService
         Guid? providerApiKeyId = null);
 
     Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken);
+
+    Task<AiRequestPayload> BuildPayloadAsync(
+        AiRequestContext context,
+        List<PluginDefinition>? tools = null,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

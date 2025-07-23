@@ -1,8 +1,7 @@
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
-using Application.Services.AI.Builders;
-using Application.Services.AI.Interfaces;
 using Application.Services.AI.RequestHandling.Interfaces;
+using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
 using Domain.Aggregates.AiAgents;
 using Domain.Aggregates.Chats;
@@ -31,16 +30,16 @@ public record AiRequestContext(
 
 public class AiRequestHandler : IAiRequestHandler
 {
-    private readonly IPayloadBuilderFactory _payloadBuilderFactory;
+    private readonly IAiModelServiceFactory _aiModelServiceFactory;
     private readonly IHistoryProcessor _historyProcessor;
     private readonly ILogger<AiRequestHandler> _logger;
 
     public AiRequestHandler(
-        IPayloadBuilderFactory payloadBuilderFactory,
+        IAiModelServiceFactory aiModelServiceFactory,
         IHistoryProcessor historyProcessor,
         ILogger<AiRequestHandler> logger)
     {
-        _payloadBuilderFactory = payloadBuilderFactory ?? throw new ArgumentNullException(nameof(payloadBuilderFactory));
+        _aiModelServiceFactory = aiModelServiceFactory ?? throw new ArgumentNullException(nameof(aiModelServiceFactory));
         _historyProcessor = historyProcessor ?? throw new ArgumentNullException(nameof(historyProcessor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -62,33 +61,25 @@ public class AiRequestHandler : IAiRequestHandler
         if (toolDefinitions != null && toolDefinitions.Any())
         {
             _logger.LogInformation("Found {Count} plugin tools available for this request", toolDefinitions.Count);
-            
             updatedContext = updatedContext with { FunctionCall = "auto" };
         }
 
         _logger.LogDebug("Building payload for model {ModelType}", modelType);
-        
+
         try
         {
-            IAiRequestBuilder builder = modelType switch
-            {
-                ModelType.OpenAi => _payloadBuilderFactory.CreateOpenAiBuilder(),
-                ModelType.OpenAiDeepResearch => _payloadBuilderFactory.CreateOpenAiDeepResearchBuilder(),
-                ModelType.Anthropic => _payloadBuilderFactory.CreateAnthropicBuilder(),
-                ModelType.Gemini => _payloadBuilderFactory.CreateGeminiBuilder(),
-                ModelType.DeepSeek => _payloadBuilderFactory.CreateDeepSeekBuilder(),
-                ModelType.AimlFlux => _payloadBuilderFactory.CreateAimlFluxBuilder(),
-                ModelType.Imagen => _payloadBuilderFactory.CreateImagenBuilder(),
-                ModelType.Grok => _payloadBuilderFactory.CreateGrokBuilder(),
-                ModelType.Qwen => _payloadBuilderFactory.CreateQwenBuilder(),
-                _ => throw new NotSupportedException($"Payload builder for model type {modelType} is not supported.")
-            };
-            
-            return await builder.PreparePayloadAsync(updatedContext, toolDefinitions, cancellationToken);
+            var serviceContext = await _aiModelServiceFactory.GetServiceContextAsync(
+                updatedContext.UserId,
+                updatedContext.ChatSession.AiModelId,
+                updatedContext.ChatSession.AiAgentId,
+                cancellationToken);
+            var aiService = serviceContext.Service;
+            // All provider services now have BuildPayloadAsync
+            return await aiService.BuildPayloadAsync(updatedContext, toolDefinitions, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating or using payload builder for {ModelType}", modelType);
+            _logger.LogError(ex, "Error creating or using provider service for {ModelType}", modelType);
             throw;
         }
     }

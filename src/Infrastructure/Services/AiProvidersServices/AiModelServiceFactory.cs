@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Domain.Aggregates.Llms;
+using Application.Services.Helpers;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -155,6 +156,7 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
         var resilienceService = _serviceProvider.GetRequiredService<IResilienceService>();
         var httpClient = _httpClientFactory.CreateClient();
+        var multimodalContentParser = _serviceProvider.GetRequiredService<MultimodalContentParser>();
         
         if (aiModel.ModelType == ModelType.OpenAiDeepResearch)
         {
@@ -163,11 +165,11 @@ public class AiModelServiceFactory : IAiModelServiceFactory
 
         return aiModel.ModelType switch
         {
-            ModelType.OpenAi => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<OpenAiStreamChunkParser>>())),
-            ModelType.OpenAiDeepResearch => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<OpenAiStreamChunkParser>>()), TimeSpan.FromMinutes(10)),
-            ModelType.Anthropic => new AnthropicService(httpClient, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService, new AnthropicStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<AnthropicStreamChunkParser>>())),
-            ModelType.DeepSeek => new DeepSeekService(httpClient, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService, new DeepseekStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<DeepseekStreamChunkParser>>())),
-            ModelType.Gemini => new GeminiService(httpClient, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService, new GeminiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<GeminiStreamChunkParser>>())),
+            ModelType.OpenAi => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<OpenAiStreamChunkParser>>()), multimodalContentParser),
+            ModelType.OpenAiDeepResearch => new OpenAiService(httpClient, apiKeySecret, aiModel.ModelCode, openAiLogger, resilienceService, new OpenAiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<OpenAiStreamChunkParser>>()), multimodalContentParser, TimeSpan.FromMinutes(10)),
+            ModelType.Anthropic => new AnthropicService(httpClient, apiKeySecret, aiModel.ModelCode, anthropicLogger, resilienceService, new AnthropicStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<AnthropicStreamChunkParser>>()), multimodalContentParser),
+            ModelType.DeepSeek => new DeepSeekService(httpClient, apiKeySecret, aiModel.ModelCode, deepSeekLogger, resilienceService, new DeepseekStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<DeepseekStreamChunkParser>>()), multimodalContentParser),
+            ModelType.Gemini => new GeminiService(httpClient, apiKeySecret, aiModel.ModelCode, geminiLogger, resilienceService, new GeminiStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<GeminiStreamChunkParser>>()), multimodalContentParser, _serviceProvider.GetRequiredService<IAiModelServiceFactory>()),
             ModelType.AimlFlux => new AimlApiService(httpClient, apiKeySecret, aiModel.ModelCode, aimlLogger, resilienceService),
             ModelType.Imagen => new ImagenService(
                 httpClient,
@@ -177,8 +179,8 @@ public class AiModelServiceFactory : IAiModelServiceFactory
                 imagenLogger,
                 resilienceService,
                 _configuration),
-            ModelType.Grok => new GrokService(httpClient, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService, new GrokStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<GrokStreamChunkParser>>())),
-            ModelType.Qwen => new QwenService(httpClient, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService, new QwenStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<QwenStreamChunkParser>>())),
+            ModelType.Grok => new GrokService(httpClient, apiKeySecret, aiModel.ModelCode, grokLogger, resilienceService, new GrokStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<GrokStreamChunkParser>>()), multimodalContentParser),
+            ModelType.Qwen => new QwenService(httpClient, apiKeySecret, aiModel.ModelCode, qwenLogger, resilienceService, new QwenStreamChunkParser(_serviceProvider.GetRequiredService<ILogger<QwenStreamChunkParser>>()), multimodalContentParser),
             _ => throw new NotSupportedException($"Model type {aiModel.ModelType} not supported for instantiation with IResilienceService in factory.")
         };
     }

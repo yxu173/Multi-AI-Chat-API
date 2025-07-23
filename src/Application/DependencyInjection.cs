@@ -72,27 +72,6 @@ public static class DependencyInjection
 
         services.AddScoped<MultimodalContentParser>();
 
-        services.AddScoped<OpenAiPayloadBuilder>();
-        services.AddScoped<AnthropicPayloadBuilder>();
-        services.AddScoped<GeminiPayloadBuilder>();
-        services.AddScoped<DeepSeekPayloadBuilder>();
-        services.AddScoped<AimlFluxPayloadBuilder>();
-        services.AddScoped<GrokPayloadBuilder>();
-        services.AddScoped<QwenPayloadBuilder>();
-        services.AddScoped<ImagenPayloadBuilder>();
-        services.AddScoped<OpenAiDeepResearchPayloadBuilder>();
-
-        services.AddScoped<IAiRequestBuilder, OpenAiPayloadBuilder>();
-        services.AddScoped<IAiRequestBuilder, AnthropicPayloadBuilder>();
-        services.AddScoped<IAiRequestBuilder, GeminiPayloadBuilder>();
-        services.AddScoped<IAiRequestBuilder, DeepSeekPayloadBuilder>();
-        services.AddScoped<IAiRequestBuilder, AimlFluxPayloadBuilder>();
-        services.AddScoped<IAiRequestBuilder, GrokPayloadBuilder>();
-        services.AddScoped<IAiRequestBuilder, QwenPayloadBuilder>();
-        services.AddScoped<IAiRequestBuilder, ImagenPayloadBuilder>();
-        services.AddScoped<IAiRequestBuilder, OpenAiDeepResearchPayloadBuilder>();
-
-        services.AddScoped<IPayloadBuilderFactory, PayloadBuilderFactory>();
         
         services.AddScoped<TokenUsageService>();
         services.AddScoped<PluginService>();

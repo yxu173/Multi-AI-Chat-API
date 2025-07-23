@@ -167,6 +167,30 @@ public class AimlApiService : BaseAiService
         }
     }
 
+    public override Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
+    {
+        if (context == null) throw new ArgumentNullException(nameof(context));
+        if (context.History == null || !context.History.Any()) throw new ArgumentException("History cannot be null or empty", nameof(context.History));
+        var latestUserMessageText = context.History
+            .Where(m => !m.IsFromAi && !string.IsNullOrWhiteSpace(m.Content))
+            .Select(m => m.Content)
+            .LastOrDefault(text => !string.IsNullOrWhiteSpace(text));
+        if (string.IsNullOrWhiteSpace(latestUserMessageText))
+        {
+            _logger?.LogError("Cannot prepare AIMLAPI request: No valid user prompt text found in history for ChatSession {ChatSessionId}", context.ChatSession.Id);
+            throw new InvalidOperationException("Cannot generate image without a valid user prompt text.");
+        }
+        var requestObj = new Dictionary<string, object>
+        {
+            ["model"] = context.SpecificModel.ModelCode,
+            ["prompt"] = latestUserMessageText.Trim(),
+            ["image_size"] = context.ImageSize ?? "landscape_16_9",
+            ["num_images"] = context.NumImages ?? 1,
+            ["output_format"] = context.OutputFormat ?? "jpeg"
+        };
+        return Task.FromResult(new AiRequestPayload(requestObj));
+    }
+
     private string ParseImageResponseAndGetMarkdown(string jsonResponse, Activity? parentActivity)
     {
         using var activity = ActivitySource.StartActivity(nameof(ParseImageResponseAndGetMarkdown), ActivityKind.Internal, parentActivity?.Context ?? default);

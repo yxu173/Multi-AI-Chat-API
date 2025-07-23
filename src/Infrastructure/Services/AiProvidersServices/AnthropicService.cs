@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using System.Diagnostics;
 using Application.Services.Messaging;
+using Application.Services.Helpers;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -18,6 +19,7 @@ public class AnthropicService : BaseAiService
     private const string AnthropicApiVersion = "2023-06-01";
     private readonly ILogger<AnthropicService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
+    private readonly MultimodalContentParser _multimodalContentParser;
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.AnthropicService", "1.0.0");
 
@@ -29,12 +31,13 @@ public class AnthropicService : BaseAiService
         string modelCode, 
         ILogger<AnthropicService> logger,
         IResilienceService resilienceService,
-        IStreamChunkParser chunkParser)
+        IStreamChunkParser chunkParser,
+        MultimodalContentParser multimodalContentParser)
         : base(httpClient, apiKey, modelCode, AnthropicBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
-        
+        _multimodalContentParser = multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
         ConfigureHttpClient();
     }
 
@@ -226,6 +229,341 @@ public class AnthropicService : BaseAiService
         finally
         {
             response.Dispose();
+        }
+    }
+
+    // --- Begin merged payload builder logic ---
+
+    public override async Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
+    {
+        var requestObj = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+
+        requestObj["model"] = model.ModelCode;
+        requestObj["stream"] = true;
+
+        AddParameters(requestObj, context);
+
+        var (systemPrompt, processedMessages) = await ProcessMessagesForAnthropicAsync(context.History, context, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(systemPrompt))
+        {
+            requestObj["system"] = systemPrompt;
+        }
+        requestObj["messages"] = processedMessages;
+
+        if (tools?.Any() == true) 
+        {
+            _logger?.LogInformation("Adding {ToolCount} tool definitions to Anthropic payload for model {ModelCode}",
+                tools.Count, model.ModelCode);
+            var formattedTools = tools.Select(def => new
+            {
+                name = def.Name,
+                description = def.Description,
+                input_schema = def.ParametersSchema
+            }).ToList();
+            requestObj["tools"] = formattedTools;
+            requestObj["tool_choice"] = new { type = "auto" };
+        }
+
+        CustomizePayload(requestObj, context);
+
+        return new AiRequestPayload(requestObj);
+    }
+
+    private async Task<(string? SystemPrompt, List<object> Messages)> ProcessMessagesForAnthropicAsync(List<MessageDto> history, AiRequestContext context, CancellationToken cancellationToken)
+    {
+        string? agentSystemMessage = context.AiAgent?.ModelParameter.SystemInstructions;
+        string? userSystemMessage = context.UserSettings?.ModelParameters.SystemInstructions;
+        string? finalSystemPrompt = agentSystemMessage ?? userSystemMessage;
+
+        var otherMessages = new List<object>();
+        var mergedHistory = MergeConsecutiveRoles( 
+            history.Select(m => (m.IsFromAi ? "assistant" : "user", m.Content?.Trim() ?? "")).ToList());
+
+        foreach (var (role, rawContent) in mergedHistory)
+        {
+            string anthropicRole = role; 
+            if (string.IsNullOrEmpty(rawContent)) continue;
+
+            var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
+            if (contentParts.Count > 1 || contentParts.Any(p => p is not TextPart))
+            {
+                var anthropicContentItems = new List<object>();
+                foreach (var part in contentParts)
+                {
+                    switch (part)
+                    {
+                        case TextPart tp: anthropicContentItems.Add(new { type = "text", text = tp.Text }); break;
+                        case ImagePart ip:
+                            if (Validators.IsValidAnthropicImageType(ip.MimeType, out var mediaType)) 
+                            {
+                                try
+                                {
+                                    var (width, height) = Application.Services.Helpers.ImageHelper.GetImageDimensions(ip.Base64Data);
+                                    if (width > 8000 || height > 8000)
+                                    {
+                                        _logger?.LogWarning("Image {FileName} exceeds Anthropic's max dimension (8000px). Skipping image.", ip.FileName);
+                                        anthropicContentItems.Add(new { type = "text", text = $"[Image: {ip.FileName ?? ip.MimeType} - Skipped: Exceeds 8000px dimension limit]" });
+                                    }
+                                    else
+                                    {
+                                        anthropicContentItems.Add(new
+                                        {
+                                            type = "image",
+                                            source = new { type = "base64", media_type = mediaType, data = ip.Base64Data }
+                                        });
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger?.LogWarning(ex, "Failed to get image dimensions for {FileName}. Skipping image.", ip.FileName);
+                                    anthropicContentItems.Add(new { type = "text", text = $"[Image: {ip.FileName ?? ip.MimeType} - Skipped: Unable to read image dimensions]" });
+                                }
+                            }
+                            else
+                            {
+                                _logger?.LogWarning("Unsupported image type '{MimeType}' for Anthropic. Sending placeholder text.", ip.MimeType);
+                                anthropicContentItems.Add(new { type = "text", text = $"[Image: {ip.FileName ?? ip.MimeType} - Unsupported Type]" });
+                            }
+                            break;
+                        case FilePart fp:
+                            if (fp.MimeType == "text/csv" || fp.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
+                            {
+                                _logger?.LogWarning("CSV file {FileName} detected - Anthropic doesn't support CSV files directly. " +
+                                    "Using the csv_reader plugin is recommended instead.", fp.FileName);
+                                anthropicContentItems.Add(new { 
+                                    type = "text", 
+                                    text = $"Note: The CSV file '{fp.FileName}' can't be processed directly by Anthropic. " +
+                                           $"Please use the csv_reader tool to analyze this file. Example usage:\n\n" +
+                                           $"{{\n  \"name\": \"csv_reader\",\n  \"input\": {{\n    \"file_name\": \"{fp.FileName}\",\n    \"max_rows\": 100,\n    \"analyze\": true\n  }}\n}}" 
+                                });
+                            }
+                            else if (Validators.IsValidAnthropicDocumentType(fp.MimeType, out var docMediaType))
+                            {
+                                _logger?.LogInformation("Adding document {FileName} ({MediaType}) to Anthropic message using 'document' type.", fp.FileName, docMediaType);
+                                var mediaTypeValue = docMediaType;
+                                var dataValue = fp.Base64Data;
+                                anthropicContentItems.Add(new
+                                {
+                                    type = "document",
+                                    source = new { type = "base64", media_type = mediaTypeValue, data = dataValue }
+                                });
+                            }
+                            else
+                            {
+                                _logger?.LogWarning("Document type '{MimeType}' is not listed as supported by Anthropic. Sending placeholder text for file {FileName}.", fp.MimeType, fp.FileName);
+                                anthropicContentItems.Add(new { type = "text", text = $"[Document Attached: {fp.FileName} - Unsupported Type ({fp.MimeType}) for direct API processing]" });
+                            }
+                            break;
+                    }
+                }
+                if (anthropicContentItems.Any()) otherMessages.Add(new { role = anthropicRole, content = anthropicContentItems.ToArray() });
+            }
+            else if (contentParts.Count == 1 && contentParts[0] is TextPart singleTextPart)
+            {
+                otherMessages.Add(new { role = anthropicRole, content = singleTextPart.Text });
+            }
+        }
+
+        EnsureAlternatingRoles(otherMessages, "user", "assistant"); 
+        return (finalSystemPrompt?.Trim(), otherMessages);
+    }
+
+    private void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        var parameters = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+        var agent = context.AiAgent;
+        var userSettings = context.UserSettings;
+        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
+        {
+            var sourceParams = agent.ModelParameter;
+            parameters["temperature"] = sourceParams.Temperature;
+            parameters["max_tokens"] = sourceParams.MaxTokens;
+        }
+        else if (userSettings != null)
+        {
+            parameters["temperature"] = userSettings.ModelParameters.Temperature;
+        }
+        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
+        {
+            parameters["max_tokens"] = model.MaxOutputTokens.Value;
+        }
+        foreach (var kvp in parameters)
+        {
+            string standardName = kvp.Key;
+            string providerName = standardName;
+            requestObj[providerName] = kvp.Value;
+        }
+    }
+
+    private List<(string Role, string Content)> MergeConsecutiveRoles(List<(string Role, string Content)> messages)
+    {
+        if (messages == null || !messages.Any()) return new List<(string Role, string Content)>();
+        var merged = new List<(string Role, string Content)>();
+        var currentRole = messages[0].Role;
+        var currentContent = new StringBuilder(messages[0].Content);
+        for (int i = 1; i < messages.Count; i++)
+        {
+            if (messages[i].Role == currentRole)
+            {
+                if (currentContent.Length > 0 && !string.IsNullOrWhiteSpace(currentContent.ToString()))
+                {
+                    currentContent.AppendLine().AppendLine();
+                }
+                currentContent.Append(messages[i].Content);
+            }
+            else
+            {
+                merged.Add((currentRole, currentContent.ToString().Trim()));
+                currentRole = messages[i].Role;
+                currentContent.Clear().Append(messages[i].Content);
+            }
+        }
+        merged.Add((currentRole, currentContent.ToString().Trim()));
+        return merged.Where(m => !string.IsNullOrEmpty(m.Content)).ToList();
+    }
+
+    private void EnsureAlternatingRoles(List<object> messages, string userRole, string modelRole)
+    {
+        if (messages == null || !messages.Any()) return;
+        string firstRole = GetRoleFromDynamicMessage(messages[0]);
+        if (firstRole != userRole)
+        {
+            _logger?.LogError(
+                "History for {ModelRole} provider does not start with a {UserRole} message. First role: {FirstRole}. This might cause API errors.",
+                modelRole, userRole, firstRole);
+        }
+        var cleanedMessages = new List<object>();
+        if (messages.Count > 0)
+        {
+            cleanedMessages.Add(messages[0]);
+            for (int i = 1; i < messages.Count; i++)
+            {
+                string previousRole = GetRoleFromDynamicMessage(cleanedMessages.Last());
+                string currentRole = GetRoleFromDynamicMessage(messages[i]);
+                if (currentRole != previousRole)
+                {
+                    cleanedMessages.Add(messages[i]);
+                }
+                else
+                {
+                    _logger?.LogWarning(
+                        "Found consecutive '{CurrentRole}' roles at index {Index} for {ModelRole} provider.",
+                        currentRole, i, modelRole);
+                    bool handled = false;
+                    if (modelRole == "assistant" && currentRole == userRole)
+                    {
+                        _logger?.LogWarning(
+                            "Injecting placeholder '{ModelRole}' message to fix consecutive '{UserRole}' roles for Anthropic.",
+                            modelRole, userRole);
+                        cleanedMessages.Add(new { role = modelRole, content = "..." });
+                        cleanedMessages.Add(messages[i]);
+                        handled = true;
+                    }
+                    if (!handled)
+                    {
+                        _logger?.LogError(
+                            "Unhandled consecutive '{CurrentRole}' role at index {Index} for {ModelRole}. Skipping message to avoid potential API error. Original Message: {OriginalMessage}",
+                            currentRole, i, modelRole, TrySerialize(messages[i]));
+                    }
+                }
+            }
+        }
+        messages.Clear();
+        messages.AddRange(cleanedMessages);
+    }
+
+    private string GetRoleFromDynamicMessage(dynamic message)
+    {
+        try
+        {
+            if (message is IDictionary<string, object> dict && dict.TryGetValue("role", out var roleValue) &&
+                roleValue is string roleStr)
+            {
+                return roleStr;
+            }
+            var roleProp = message.GetType().GetProperty("role");
+            if (roleProp != null && roleProp.PropertyType == typeof(string))
+            {
+                var value = roleProp.GetValue(message);
+                if (value is string roleVal)
+                {
+                    return roleVal;
+                }
+            }
+        }
+        catch (Exception) { }
+        return string.Empty;
+    }
+
+    private string TrySerialize(object obj)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(obj, new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles
+            });
+        }
+        catch (Exception ex)
+        {
+            return $"[Serialization Error: {ex.Message}] - Type: {obj?.GetType().Name ?? "null"}";
+        }
+    }
+
+    private static class Validators
+    {
+        private static readonly Dictionary<string, string> AnthropicSupportedImageTypes =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                { "image/jpeg", "image/jpeg" },
+                { "image/png", "image/png" },
+                { "image/gif", "image/gif" },
+                { "image/webp", "image/webp" }
+            };
+        private static readonly HashSet<string> AnthropicSupportedDocumentTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "application/pdf",
+            "text/plain",
+            "text/csv",
+            "text/markdown",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword"
+        };
+        public static bool IsValidAnthropicImageType(string mimeType, out string normalizedMediaType)
+        {
+            normalizedMediaType = mimeType?.ToLowerInvariant().Trim() ?? string.Empty;
+            normalizedMediaType = AnthropicSupportedImageTypes.GetValueOrDefault(normalizedMediaType, string.Empty);
+            return !string.IsNullOrEmpty(normalizedMediaType);
+        }
+        public static bool IsValidAnthropicDocumentType(string mimeType, out string normalizedMediaType)
+        {
+            normalizedMediaType = mimeType?.ToLowerInvariant().Trim() ?? string.Empty;
+            return AnthropicSupportedDocumentTypes.Contains(normalizedMediaType);
+        }
+    }
+
+    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+         if (!requestObj.ContainsKey("max_tokens"))
+        {
+            if (requestObj.TryGetValue("max_output_tokens", out var maxOutputTokens))
+            {
+                requestObj["max_tokens"] = maxOutputTokens;
+                _logger?.LogDebug("Mapped 'max_output_tokens' to 'max_tokens' for Anthropic");
+            }
+        }
+        bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        if (useThinking)
+        {
+            const int defaultThinkingBudget = 1024;
+            requestObj["thinking"] = new { type = "enabled", budget_tokens = defaultThinkingBudget };
+            requestObj["temperature"] = 1.0;
+            requestObj.Remove("top_k");
+            requestObj.Remove("top_p");
+            _logger?.LogDebug("Enabled Anthropic native 'thinking' parameter with budget {Budget}", defaultThinkingBudget);
         }
     }
 }

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using System.Diagnostics;
 using Application.Services.Messaging;
+using Application.Services.Helpers;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -16,6 +17,7 @@ public class DeepSeekService : BaseAiService
     private const string DeepSeekBaseUrl = "https://api.deepseek.com/v1/";
     private readonly ILogger<DeepSeekService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
+    private readonly MultimodalContentParser _multimodalContentParser;
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.DeepSeekService", "1.0.0");
 
@@ -27,12 +29,13 @@ public class DeepSeekService : BaseAiService
         string modelCode,
         ILogger<DeepSeekService> logger,
         IResilienceService resilienceService,
-        IStreamChunkParser chunkParser)
+        IStreamChunkParser chunkParser,
+        MultimodalContentParser multimodalContentParser)
         : base(httpClient, apiKey, modelCode, DeepSeekBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
-        
+        _multimodalContentParser = multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
         ConfigureHttpClient();
     }
 
@@ -212,6 +215,203 @@ public class DeepSeekService : BaseAiService
         finally
         {
             response.Dispose();
+        }
+    }
+
+    // --- Begin merged payload builder logic ---
+
+    public override async Task<AiRequestPayload> BuildPayloadAsync(
+        AiRequestContext context,
+        List<PluginDefinition>? tools = null,
+        CancellationToken cancellationToken = default)
+    {
+        var requestObj = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+        requestObj["model"] = model.ModelCode;
+        requestObj["stream"] = true;
+        AddParameters(requestObj, context);
+        var processedMessages = await ProcessMessagesForDeepSeekAsync(context, cancellationToken);
+        requestObj["messages"] = processedMessages;
+        if (tools?.Any() == true)
+        {
+            var formattedTools = tools.Select(def => new
+            {
+                type = "function",
+                function = new
+                {
+                    name = def.Name,
+                    description = def.Description,
+                    parameters = def.ParametersSchema
+                }
+            }).ToList();
+            requestObj["tools"] = formattedTools;
+            requestObj["tool_choice"] = "auto";
+            _logger?.LogInformation("Adding {ToolCount} tool definitions to DeepSeek payload for model {ModelCode}", tools.Count, model.ModelCode);
+        }
+        CustomizePayload(requestObj, context);
+        return new AiRequestPayload(requestObj);
+    }
+
+    private async Task<List<object>> ProcessMessagesForDeepSeekAsync(AiRequestContext context, CancellationToken cancellationToken)
+    {
+        var processedMessages = new List<object>();
+        string? systemMessage = context.AiAgent?.ModelParameter.SystemInstructions ?? context.UserSettings?.ModelParameters.SystemInstructions;
+        if (!string.IsNullOrWhiteSpace(systemMessage))
+        {
+            processedMessages.Add(new { role = "system", content = systemMessage.Trim() });
+        }
+        var mergedHistory = MergeConsecutiveRoles(
+            context.History.Select(m => (m.IsFromAi ? "assistant" : "user", m.Content?.Trim() ?? "")).ToList());
+        foreach (var (role, rawContent) in mergedHistory)
+        {
+            if (string.IsNullOrEmpty(rawContent)) continue;
+            var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
+            var processedParts = new List<string>();
+            foreach (var part in contentParts)
+            {
+                string partText = "";
+                if (part is TextPart tp)
+                {
+                    partText = tp.Text;
+                }
+                else if (part is ImagePart ip)
+                {
+                    partText = $"[Image: {ip.FileName ?? ip.MimeType} - Not Sent]";
+                }
+                else if (part is FilePart fp)
+                {
+                    if (fp.MimeType == "text/csv" || fp.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        _logger?.LogWarning("CSV file {FileName} detected - DeepSeek doesn't support CSV files directly. Using the csv_reader plugin is recommended instead.", fp.FileName);
+                        partText = $"Note: The CSV file '{fp.FileName}' can't be processed directly by DeepSeek. Please use the csv_reader tool to analyze this file. Example usage:\ncsv_reader(file_name=\"{fp.FileName}\", max_rows=100, analyze=true)";
+                    }
+                    else
+                    {
+                        partText = $"[File: {fp.FileName} ({fp.MimeType}) - Not Sent]";
+                    }
+                }
+                if (!string.IsNullOrEmpty(partText))
+                {
+                    processedParts.Add(partText);
+                }
+            }
+            string contentText = string.Join("\n", processedParts).Trim();
+            if (!string.IsNullOrWhiteSpace(contentText))
+            {
+                processedMessages.Add(new { role, content = contentText });
+            }
+        }
+        bool isReasonerModel = context.SpecificModel.ModelCode?.ToLower().Contains("reasoner") ?? false;
+        if (isReasonerModel && processedMessages.Count > 0)
+        {
+            int firstNonSystemIndex = processedMessages.FindIndex(m => GetRoleFromDynamicMessage(m) != "system");
+            if (firstNonSystemIndex == -1 || GetRoleFromDynamicMessage(processedMessages[firstNonSystemIndex]) != "user")
+            {
+                int insertIndex = firstNonSystemIndex == -1 ? processedMessages.Count : firstNonSystemIndex;
+                processedMessages.Insert(insertIndex, new { role = "user", content = "Proceed." });
+                _logger?.LogWarning("Inserted placeholder user message for DeepSeek reasoner model {ModelCode} as the first non-system message was not 'user'.", context.SpecificModel.ModelCode);
+            }
+        }
+        return processedMessages;
+    }
+
+    private void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        var parameters = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+        var agent = context.AiAgent;
+        var userSettings = context.UserSettings;
+        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
+        {
+            var sourceParams = agent.ModelParameter;
+            parameters["temperature"] = sourceParams.Temperature;
+            parameters["max_tokens"] = sourceParams.MaxTokens;
+        }
+        else if (userSettings != null)
+        {
+            parameters["temperature"] = userSettings.ModelParameters.Temperature;
+        }
+        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
+        {
+            parameters["max_tokens"] = model.MaxOutputTokens.Value;
+        }
+        foreach (var kvp in parameters)
+        {
+            string standardName = kvp.Key;
+            string providerName = standardName;
+            requestObj[providerName] = kvp.Value;
+        }
+    }
+
+    private List<(string Role, string Content)> MergeConsecutiveRoles(List<(string Role, string Content)> messages)
+    {
+        if (messages == null || !messages.Any()) return new List<(string Role, string Content)>();
+        var merged = new List<(string Role, string Content)>();
+        var currentRole = messages[0].Role;
+        var currentContent = new System.Text.StringBuilder(messages[0].Content);
+        for (int i = 1; i < messages.Count; i++)
+        {
+            if (messages[i].Role == currentRole)
+            {
+                if (currentContent.Length > 0 && !string.IsNullOrWhiteSpace(currentContent.ToString()))
+                {
+                    currentContent.AppendLine().AppendLine();
+                }
+                currentContent.Append(messages[i].Content);
+            }
+            else
+            {
+                merged.Add((currentRole, currentContent.ToString().Trim()));
+                currentRole = messages[i].Role;
+                currentContent.Clear().Append(messages[i].Content);
+            }
+        }
+        merged.Add((currentRole, currentContent.ToString().Trim()));
+        return merged.Where(m => !string.IsNullOrEmpty(m.Content)).ToList();
+    }
+
+    private string GetRoleFromDynamicMessage(dynamic message)
+    {
+        try
+        {
+            if (message is IDictionary<string, object> dict && dict.TryGetValue("role", out var roleValue) && roleValue is string roleStr)
+            {
+                return roleStr;
+            }
+            var roleProp = message.GetType().GetProperty("role");
+            if (roleProp != null && roleProp.PropertyType == typeof(string))
+            {
+                var value = roleProp.GetValue(message);
+                if (value is string roleVal)
+                {
+                    return roleVal;
+                }
+            }
+        }
+        catch (Exception) { }
+        return string.Empty;
+    }
+
+    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        if (useThinking)
+        {
+            if (!requestObj.ContainsKey("enable_cot"))
+            {
+                requestObj["enable_cot"] = true;
+                _logger?.LogDebug("Enabled DeepSeek 'enable_cot' parameter for model {ModelCode}", context.SpecificModel.ModelCode);
+            }
+            if (!requestObj.ContainsKey("enable_reasoning"))
+            {
+                requestObj["enable_reasoning"] = true;
+                _logger?.LogDebug("Enabled DeepSeek 'enable_reasoning' parameter for model {ModelCode}", context.SpecificModel.ModelCode);
+            }
+            if (!requestObj.ContainsKey("reasoning_mode"))
+            {
+                requestObj["reasoning_mode"] = "detailed";
+                _logger?.LogDebug("Set DeepSeek 'reasoning_mode' to 'detailed' for thinking");
+            }
         }
     }
 }

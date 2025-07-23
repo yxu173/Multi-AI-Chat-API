@@ -9,6 +9,7 @@ using System.Net.Http.Headers;
 using System.Diagnostics;
 using System.Text.Json;
 using Application.Services.Messaging;
+using Application.Services.Helpers;
 
 namespace Infrastructure.Services.AiProvidersServices;
 
@@ -17,6 +18,7 @@ public class QwenService : BaseAiService
     private const string QwenBaseUrl = "https://api.aimlapi.com/v1/";
     private readonly ILogger<QwenService> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
+    private readonly MultimodalContentParser _multimodalContentParser;
 
     private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.QwenService", "1.0.0");
 
@@ -28,12 +30,13 @@ public class QwenService : BaseAiService
         string modelCode,
         ILogger<QwenService> logger,
         IResilienceService resilienceService,
-        IStreamChunkParser chunkParser)
+        IStreamChunkParser chunkParser,
+        MultimodalContentParser multimodalContentParser)
         : base(httpClient, apiKey, modelCode, QwenBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
-        
+        _multimodalContentParser = multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
         ConfigureHttpClient();
     }
 
@@ -219,6 +222,209 @@ public class QwenService : BaseAiService
         finally
         {
             response.Dispose();
+        }
+    }
+
+    // --- Begin merged payload builder logic ---
+
+    public override async Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
+    {
+        var requestObj = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+        requestObj["model"] = model.ModelCode;
+        requestObj["stream"] = true;
+        requestObj["stream_options"] = new { include_usage = true };
+        AddParameters(requestObj, context);
+        CustomizePayload(requestObj, context);
+        var processedMessages = await ProcessMessagesForQwenInputAsync(context.History, context.AiAgent, context.UserSettings, cancellationToken);
+        requestObj["messages"] = processedMessages;
+        if (tools != null && tools.Any())
+        {
+            var formattedTools = tools.Select(def => new 
+            {
+                type = "function",
+                function = new
+                {
+                    name = def.Name,
+                    description = def.Description,
+                    parameters = def.ParametersSchema
+                }
+            }).ToList();
+            requestObj["tools"] = formattedTools;
+            if (!string.IsNullOrEmpty(context.FunctionCall))
+            {
+                if (context.FunctionCall == "auto")
+                {
+                    requestObj["tool_choice"] = "auto";
+                }
+                else if (context.FunctionCall == "none")
+                {
+                    requestObj["tool_choice"] = "none";
+                }
+                else
+                {
+                    requestObj["tool_choice"] = new
+                    {
+                        type = "function",
+                        function = new
+                        {
+                            name = context.FunctionCall
+                        }
+                    };
+                }
+            }
+        }
+        return new AiRequestPayload(requestObj);
+    }
+
+    private async Task<List<object>> ProcessMessagesForQwenInputAsync(
+        List<MessageDto> history,
+        Domain.Aggregates.AiAgents.AiAgent? aiAgent,
+        Domain.Aggregates.Users.UserAiModelSettings? userSettings,
+        CancellationToken cancellationToken)
+    {
+        var processedMessages = new List<object>();
+        string? systemMessage = aiAgent?.ModelParameter.SystemInstructions ?? userSettings?.ModelParameters.SystemInstructions;
+        if (!string.IsNullOrWhiteSpace(systemMessage))
+        {
+            processedMessages.Add(new { role = "system", content = systemMessage.Trim() });
+            _logger?.LogDebug("Added system instructions as a message for Qwen.");
+        }
+        foreach (var message in history)
+        {
+            string role = message.IsFromAi ? "assistant" : "user";
+            if (message.FunctionCall != null)
+            {
+                processedMessages.Add(new
+                {
+                    role = "assistant",
+                    tool_calls = new[]
+                    {
+                        new
+                        {
+                            type = "function",
+                            function = new
+                            {
+                                name = message.FunctionCall.Name,
+                                arguments = message.FunctionCall.Arguments
+                            },
+                            id = message.FunctionCall.Id
+                        }
+                    }
+                });
+            }
+            else if (message.FunctionResponse != null)
+            {
+                processedMessages.Add(new
+                {
+                    role = "tool",
+                    tool_call_id = message.FunctionResponse.FunctionCallId,
+                    name = message.FunctionResponse.Name,
+                    content = message.FunctionResponse.Content
+                });
+            }
+            else
+            {
+                string rawContent = message.Content?.Trim() ?? "";
+                if (string.IsNullOrEmpty(rawContent)) continue;
+                if (!message.IsFromAi)
+                {
+                    var contentParts = await _multimodalContentParser.ParseAsync(rawContent, cancellationToken);
+                    bool hasMultimodalContent = contentParts.Any(p => p is ImagePart || p is FilePart);
+                    if (hasMultimodalContent)
+                    {
+                        var contentArray = new List<object>();
+                        foreach (var part in contentParts)
+                        {
+                            switch (part)
+                            {
+                                case TextPart textPart:
+                                    var txt = textPart.Text?.Trim();
+                                    if (!string.IsNullOrEmpty(txt))
+                                        contentArray.Add(new { type = "text", text = txt });
+                                    break;
+                                case ImagePart imagePart:
+                                    contentArray.Add(new
+                                    {
+                                        type = "image_url",
+                                        image_url = new
+                                        {
+                                            url = $"data:{imagePart.MimeType};base64,{imagePart.Base64Data}"
+                                        }
+                                    });
+                                    break;
+                                case FilePart filePart:
+                                    if (filePart.MimeType == "text/csv" || filePart.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
+                                    {
+                                        _logger?.LogWarning("CSV file {FileName} detected - Qwen doesn't support CSV files directly. Using the csv_reader plugin is recommended instead.", filePart.FileName);
+                                        contentArray.Add(new { type = "text", text = $"Note: The CSV file '{filePart.FileName}' can't be processed directly by Qwen. Please use the csv_reader tool to analyze this file. Example usage:\n\n{{\n  \"type\": \"function\",\n  \"function\": {{\n    \"name\": \"csv_reader\",\n    \"arguments\": {{\n      \"file_name\": \"{filePart.FileName}\",\n      \"max_rows\": 100,\n      \"analyze\": true\n    }}\n  }}\n}}" });
+                                    }
+                                    else
+                                    {
+                                        contentArray.Add(new { type = "text", text = $"[Attached file: {filePart.FileName}]" });
+                                    }
+                                    break;
+                            }
+                        }
+                        if (contentArray.Count > 0)
+                        {
+                            processedMessages.Add(new { role = role, content = contentArray });
+                        }
+                    }
+                    else
+                    {
+                        processedMessages.Add(new { role = role, content = rawContent });
+                    }
+                }
+                else
+                {
+                    processedMessages.Add(new { role = role, content = rawContent });
+                }
+            }
+        }
+        return processedMessages;
+    }
+
+    private void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        var parameters = new Dictionary<string, object>();
+        var model = context.SpecificModel;
+        var agent = context.AiAgent;
+        var userSettings = context.UserSettings;
+        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
+        {
+            var sourceParams = agent.ModelParameter;
+            parameters["temperature"] = sourceParams.Temperature;
+            parameters["max_tokens"] = sourceParams.MaxTokens;
+        }
+        else if (userSettings != null)
+        {
+            parameters["temperature"] = userSettings.ModelParameters.Temperature;
+        }
+        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
+        {
+            parameters["max_tokens"] = model.MaxOutputTokens.Value;
+        }
+        foreach (var kvp in parameters)
+        {
+            string standardName = kvp.Key;
+            string providerName = standardName;
+            requestObj[providerName] = kvp.Value;
+        }
+    }
+
+    private void CustomizePayload(Dictionary<string, object> requestObj, AiRequestContext context)
+    {
+        bool useThinking = context.RequestSpecificThinking == true || context.SpecificModel.SupportsThinking;
+        requestObj["enable_thinking"] = useThinking;
+        if (useThinking)
+        {
+            _logger?.LogDebug("Enabled Qwen native 'enable_thinking' parameter for model {ModelCode}", context.SpecificModel.ModelCode);
+            if (requestObj.ContainsKey("temperature") && requestObj["temperature"] is double temp && temp < 0.7)
+            {
+                requestObj["temperature"] = 0.7;
+                _logger?.LogDebug("Increased temperature for thinking mode");
+            }
         }
     }
 } 
