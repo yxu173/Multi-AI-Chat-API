@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
 using Application.Services.AI.RequestHandling.Interfaces;
-using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
 using Domain.Aggregates.AiAgents;
 using Domain.Aggregates.Chats;

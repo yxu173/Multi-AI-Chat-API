@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Application.Abstractions.Interfaces;
-using Application.Services.AI.Interfaces;
 using Application.Services.AI.RequestHandling.Interfaces;
 using Domain.Enums;
 using Domain.Repositories;

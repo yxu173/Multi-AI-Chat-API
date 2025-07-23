@@ -11,7 +11,6 @@ using Infrastructure.Services.AiProvidersServices.Base;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Microsoft.Extensions.Configuration;
-using Application.Services.AI.Builders;
 
 namespace Infrastructure.Services.AiProvidersServices;
 

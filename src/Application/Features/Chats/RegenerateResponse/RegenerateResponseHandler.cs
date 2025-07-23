@@ -1,6 +1,5 @@
 using Application.Notifications;
 using Application.Services.AI;
-using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
 using Application.Services.Streaming;
 using Domain.Aggregates.Chats;

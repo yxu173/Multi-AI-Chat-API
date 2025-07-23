@@ -7,7 +7,6 @@ using Domain.Aggregates.Chats;
 using Domain.Enums;
 using Microsoft.Extensions.Logging;
 using Application.Notifications;
-using Application.Services.AI.Interfaces;
 using FastEndpoints;
 
 namespace Application.Services.AI.Streaming;

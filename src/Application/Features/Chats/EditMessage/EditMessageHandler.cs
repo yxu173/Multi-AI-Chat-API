@@ -1,7 +1,6 @@
 using Application.Abstractions.Messaging;
 using Application.Notifications;
 using Application.Services.AI;
-using Application.Services.AI.Interfaces;
 using Application.Services.Messaging;
 using Application.Services.Streaming;
 using Application.Services.Utilities;

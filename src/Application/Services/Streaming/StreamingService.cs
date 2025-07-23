@@ -2,7 +2,6 @@ using Application.Abstractions.Interfaces;
 using Application.Exceptions;
 using Application.Notifications;
 using Application.Services.AI;
-using Application.Services.AI.Interfaces;
 using Application.Services.AI.RequestHandling.Interfaces;
 using Application.Services.AI.Streaming;
 using Application.Services.Helpers;
