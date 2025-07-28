@@ -18,7 +18,7 @@ using Application.Features.Chats.SummarizeHistory;
 
 namespace Application.Features.Chats.SendMessage;
 
-public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHandler<SendMessageCommand>
+public class SendMessageHandler : Abstractions.Messaging.ICommandHandler<SendMessageCommand>
 {
     private readonly IChatSessionRepository _chatSessionRepository;
     private readonly IMessageRepository _messageRepository;
@@ -84,7 +84,9 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 ImageSize: command.ImageSize,
                 NumImages: command.NumImages,
                 OutputFormat: command.OutputFormat,
-                EnableDeepSearch: command.EnableDeepSearch
+                EnableDeepSearch: command.EnableDeepSearch,
+                Temperature: command.Temperature,
+                OutputToken: command.OutputToken
             );
 
             await _streamingService.StreamResponseAsync(streamingRequest, ct);
@@ -98,7 +100,6 @@ public class SendMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 _logger.LogInformation("Enqueued title generation job for chat {ChatSessionId}", command.ChatSessionId);
             }
 
-            // Enqueue summarization job for longer chats
             const int summarizationMessageThreshold = 10;
             if (currentChat.Messages.Count >= summarizationMessageThreshold)
             {

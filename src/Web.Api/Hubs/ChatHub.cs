@@ -127,6 +127,8 @@ public class ChatHub : Hub
         public int? NumImages { get; set; }
         public string? OutputFormat { get; set; }
         public bool EnableDeepSearch { get; set; } = false;
+        public double? Temperature { get; set; } 
+        public int? MaxTokens { get; set; } 
     }
 
     public async Task SendMessage(SendMessageRequest request)
@@ -178,7 +180,9 @@ public class ChatHub : Hub
                 request.ImageSize,
                 request.NumImages,
                 request.OutputFormat,
-                request.EnableDeepSearch
+                request.EnableDeepSearch,
+                request.Temperature,
+                request.MaxTokens
             );
             await command.ExecuteAsync();
         }

@@ -1,10 +1,8 @@
 using Application.Abstractions.Interfaces;
-using Application.Exceptions;
 using Application.Notifications;
 using Application.Services.AI;
 using Application.Services.AI.RequestHandling.Interfaces;
 using Application.Services.AI.Streaming;
-using Application.Services.Helpers;
 using Application.Services.Infrastructure;
 using Application.Services.Messaging;
 using Application.Services.Resilience;
@@ -31,9 +29,9 @@ public record StreamingRequest(
     string? ImageSize = null,
     int? NumImages = null,
     string? OutputFormat = null,
-    bool? EnableSafetyChecker = null,
-    string? SafetyTolerance = null,
-    bool EnableDeepSearch = false
+    bool EnableDeepSearch = false,
+    double? Temperature = null,
+    int? OutputToken = null
 );
 
 public record StreamingResult(

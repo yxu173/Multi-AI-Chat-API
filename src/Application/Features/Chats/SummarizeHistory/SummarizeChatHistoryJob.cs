@@ -32,12 +32,6 @@ public class SummarizeChatHistoryJob
 
         var chatSession = await _chatSessionRepository.GetByIdAsync(chatSessionId);
 
-        if (chatSession is null)
-        {
-            _logger.LogWarning("Chat session {ChatSessionId} not found for summarization.", chatSessionId);
-            return;
-        }
-
         if (chatSession.LastSummarizedAt.HasValue &&
             chatSession.Messages.All(m => m.CreatedAt <= chatSession.LastSummarizedAt.Value))
         {

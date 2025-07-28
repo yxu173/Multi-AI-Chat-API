@@ -19,14 +19,15 @@ public class OpenAiService : BaseAiService
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
     private readonly MultimodalContentParser _multimodalContentParser;
 
-    private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.OpenAiService", "1.0.0");
+    private static readonly ActivitySource ActivitySource =
+        new("Infrastructure.Services.AiProvidersServices.OpenAiService", "1.0.0");
 
     protected override string ProviderName => "OpenAI";
 
     public OpenAiService(
         HttpClient httpClient,
-        string? apiKey, 
-        string modelCode, 
+        string? apiKey,
+        string modelCode,
         ILogger<OpenAiService> logger,
         IResilienceService resilienceService,
         OpenAiStreamChunkParser chunkParser,
@@ -35,14 +36,15 @@ public class OpenAiService : BaseAiService
         : base(httpClient, apiKey, modelCode, OpenAiBaseUrl, chunkParser)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName, timeout) 
-                            ?? throw new ArgumentNullException(nameof(resilienceService));
-        _multimodalContentParser = multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
+        _resiliencePipeline = resilienceService?.CreateAiServiceProviderPipeline(ProviderName, timeout)
+                              ?? throw new ArgumentNullException(nameof(resilienceService));
+        _multimodalContentParser =
+            multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
         if (timeout.HasValue)
         {
             HttpClient.Timeout = timeout.Value;
         }
-        
+
         ConfigureHttpClient();
     }
 
@@ -54,6 +56,7 @@ public class OpenAiService : BaseAiService
         {
             HttpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {ApiKey}");
         }
+
         HttpClient.DefaultRequestHeaders.Add("Accept", "text/event-stream");
     }
 
@@ -62,10 +65,12 @@ public class OpenAiService : BaseAiService
         return "responses";
     }
 
-    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
+    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context,
+        CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Formatting OpenAI tool result for ToolCallId {ToolCallId}, ToolName {ToolName}", context.ToolCallId, context.ToolName);
-        
+        _logger.LogInformation("Formatting OpenAI tool result for ToolCallId {ToolCallId}, ToolName {ToolName}",
+            context.ToolCallId, context.ToolName);
+
         var messagePayload = new
         {
             role = "tool",
@@ -73,14 +78,15 @@ public class OpenAiService : BaseAiService
             content = context.Result
         };
 
-        string contentJson = JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
+        string contentJson =
+            JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
         var messageDto = new MessageDto(contentJson, false, Guid.NewGuid());
-        
+
         return Task.FromResult(messageDto);
     }
 
     public override async IAsyncEnumerable<ParsedChunkInfo> StreamResponseAsync(
-        AiRequestPayload requestPayload, 
+        AiRequestPayload requestPayload,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         Guid? providerApiKeyId = null)
     {
@@ -95,18 +101,18 @@ public class OpenAiService : BaseAiService
         try
         {
             response = await _resiliencePipeline.ExecuteAsync(
-                async ct => 
+                async ct =>
                 {
                     using var attemptActivity = ActivitySource.StartActivity("SendHttpRequestAttempt");
-                    var attemptRequest = CreateRequest(requestPayload); 
+                    var attemptRequest = CreateRequest(requestPayload);
                     requestUriForLogging = attemptRequest.RequestUri;
                     attemptActivity?.SetTag("http.url", requestUriForLogging?.ToString());
                     attemptActivity?.SetTag("http.method", attemptRequest.Method.ToString());
-                    
+
                     return await HttpClient.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
                 },
                 cancellationToken).ConfigureAwait(false);
-            
+
             activity?.SetTag("http.response_status_code", ((int)response.StatusCode).ToString());
 
             if (!response.IsSuccessStatusCode)
@@ -120,45 +126,53 @@ public class OpenAiService : BaseAiService
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Circuit breaker open");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
-            throw; 
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.",
+                ProviderName, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
+            throw;
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Request timed out by Polly");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName,
+                requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Operation cancelled by user");
             activity?.AddEvent(new ActivityEvent("Stream request operation was cancelled by user."));
-            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
+            _logger.LogInformation(ex,
+                "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}", ProviderName,
+                ModelCode, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
             yield break;
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during API resilience execution.");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}", ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
-            throw; 
+            _logger.LogError(ex,
+                "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}",
+                ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (OpenAiBaseUrl + GetEndpointPath()));
+            throw;
         }
 
         try
         {
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
+            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
+                               .WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 if (string.IsNullOrWhiteSpace(jsonChunk)) continue;
-                
+
                 if (jsonChunk == "[DONE]")
                 {
                     activity?.AddEvent(new ActivityEvent("Stream finished with [DONE] marker."));
                     break;
                 }
-                
+
                 yield return ChunkParser.ParseChunk(jsonChunk);
             }
+
             if (!cancellationToken.IsCancellationRequested)
             {
                 activity?.AddEvent(new ActivityEvent("Finished reading stream successfully."));
@@ -170,9 +184,8 @@ public class OpenAiService : BaseAiService
         }
     }
 
-    // --- Begin merged payload builder logic ---
-
-    public override async Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
+    public override async Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context,
+        List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -193,21 +206,6 @@ public class OpenAiService : BaseAiService
         var processedMessages = await ProcessMessagesForOpenAIInputAsync(context.History, cancellationToken);
         requestObj["input"] = processedMessages;
 
-        if (context.EnableDeepSearch)
-        {
-            var deepSearchToolName = "jina_deepsearch";
-            var deepSearchTool = tools?.FirstOrDefault(t => t.Name == deepSearchToolName);
-            if (deepSearchTool != null)
-            {
-                tools = new List<PluginDefinition> { deepSearchTool };
-                requestObj["tool_choice"] = "required";
-            }
-            else
-            {
-                _logger?.LogWarning("Deep Search was enabled, but the '{ToolName}' tool was not found or available.", deepSearchToolName);
-            }
-        }
-
         if (tools?.Any() == true)
         {
             _logger?.LogInformation("Adding {ToolCount} tool definitions to OpenAI payload for model {ModelCode}",
@@ -217,11 +215,13 @@ public class OpenAiService : BaseAiService
             {
                 if (def.Name == "code_interpreter")
                 {
-                    return (object)new {
+                    return (object)new
+                    {
                         type = "code_interpreter",
                         container = new { type = "auto" }
                     };
                 }
+
                 if (def.ParametersSchema is System.Text.Json.Nodes.JsonObject schema &&
                     schema.TryGetPropertyValue("mcp", out var mcpVal) &&
                     mcpVal?.GetValue<bool>() == true)
@@ -244,7 +244,8 @@ public class OpenAiService : BaseAiService
                 }
                 else
                 {
-                    return (object)new {
+                    return (object)new
+                    {
                         type = "function",
                         name = def.Name,
                         description = def.Description,
@@ -255,17 +256,17 @@ public class OpenAiService : BaseAiService
 
             if (formattedTools.Any())
             {
-                var firstTool = System.Text.Json.JsonSerializer.Serialize(formattedTools[0]);
+                var firstTool = JsonSerializer.Serialize(formattedTools[0]);
                 _logger?.LogDebug("First tool structure: {FirstTool}", firstTool);
             }
 
             requestObj["tools"] = formattedTools;
-            
+
             if (!string.IsNullOrEmpty(context.FunctionCall))
             {
                 requestObj["tool_choice"] = context.FunctionCall;
             }
-            else 
+            else
             {
                 requestObj["tool_choice"] = "auto";
             }
@@ -280,9 +281,11 @@ public class OpenAiService : BaseAiService
         return new AiRequestPayload(requestObj);
     }
 
-    public Task<AiRequestPayload> BuildDeepResearchPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
+    public Task<AiRequestPayload> BuildDeepResearchPayloadAsync(AiRequestContext context,
+        List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Preparing payload for OpenAI Deep Research model {ModelCode}", context.SpecificModel.ModelCode);
+        _logger.LogInformation("Preparing payload for OpenAI Deep Research model {ModelCode}",
+            context.SpecificModel.ModelCode);
 
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -301,12 +304,13 @@ public class OpenAiService : BaseAiService
                 context.ChatSession.Id);
             requestObj["input"] = "";
         }
-        requestObj["stream"] = true; 
+
+        requestObj["stream"] = true;
 
         var deepResearchTools = new List<object>();
         deepResearchTools.Add(new { type = "web_search_preview" });
         _logger.LogInformation("Enabling 'web_search_preview' tool for deep research.");
-        
+
         if (tools?.Any(t => t.Name.Equals("code_interpreter", StringComparison.OrdinalIgnoreCase)) == true)
         {
             deepResearchTools.Add(new { type = "code_interpreter", container = new { type = "auto" } });
@@ -323,11 +327,12 @@ public class OpenAiService : BaseAiService
                 "No tools specified for deep research model {ModelCode}. The API may reject this request as it requires at least one data source.",
                 model.ModelCode);
         }
-        
+
         return Task.FromResult(new AiRequestPayload(requestObj));
     }
 
-    private async Task<List<object>> ProcessMessagesForOpenAIInputAsync(List<MessageDto> history, CancellationToken cancellationToken)
+    private async Task<List<object>> ProcessMessagesForOpenAIInputAsync(List<MessageDto> history,
+        CancellationToken cancellationToken)
     {
         var processedMessages = new List<object>();
         foreach (var message in history)
@@ -383,9 +388,11 @@ public class OpenAiService : BaseAiService
                                 });
                                 hasNonTextContent = true;
                             }
+
                             break;
                     }
                 }
+
                 if (openAiContentItems.Any())
                 {
                     if (openAiContentItems.Count == 1 && !hasNonTextContent && openAiContentItems[0] is var textItem &&
@@ -408,6 +415,7 @@ public class OpenAiService : BaseAiService
                 processedMessages.Add(new { role = "assistant", content = rawContent });
             }
         }
+
         return processedMessages;
     }
 
@@ -417,20 +425,12 @@ public class OpenAiService : BaseAiService
         var model = context.SpecificModel;
         var agent = context.AiAgent;
         var userSettings = context.UserSettings;
-        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
-        {
-            var sourceParams = agent.ModelParameter;
-            parameters["temperature"] = sourceParams.Temperature;
-            parameters["max_tokens"] = sourceParams.MaxTokens;
-        }
-        else if (userSettings != null)
-        {
-            parameters["temperature"] = userSettings.ModelParameters.Temperature;
-        }
-        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
-        {
-            parameters["max_tokens"] = model.MaxOutputTokens.Value;
-        }
+
+
+        parameters["temperature"] = context.Temperature;
+        parameters["max_output_tokens"] = context.OutputToken;
+
+
         foreach (var kvp in parameters)
         {
             string standardName = kvp.Key;
@@ -456,9 +456,11 @@ public class OpenAiService : BaseAiService
         }
         else if (context.SpecificModel.SupportsThinking)
         {
-            _logger?.LogDebug("Model {ModelCode} is marked as supporting thinking but doesn't support reasoning.effort parameter",
+            _logger?.LogDebug(
+                "Model {ModelCode} is marked as supporting thinking but doesn't support reasoning.effort parameter",
                 context.SpecificModel.ModelCode);
         }
+
         if (requestObj.TryGetValue("max_tokens", out var maxTokensValue) && !requestObj.ContainsKey("reasoning"))
         {
             requestObj.Remove("max_tokens");

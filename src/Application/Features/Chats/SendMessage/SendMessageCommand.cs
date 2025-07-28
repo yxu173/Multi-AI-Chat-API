@@ -12,5 +12,7 @@ public record SendMessageCommand(
     string? ImageSize = null,
     int? NumImages = null,
     string? OutputFormat = null,
-    bool EnableDeepSearch = false
-) : ICommand; 
+    bool EnableDeepSearch = false,
+    double? Temperature = null,
+    int? OutputToken = null
+) : ICommand;

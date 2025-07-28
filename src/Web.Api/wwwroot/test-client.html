@@ -751,6 +751,15 @@
                 <input type="checkbox" id="enableSafetyCheckerToggle" checked style="vertical-align: middle;">
                 <label for="enableSafetyCheckerToggle" style="vertical-align: middle;">Enable Safety Checker</label>
             </div>
+            <!-- Add temperature and max tokens controls -->
+            <div>
+                <label for="temperatureInput">Temperature:</label>
+                <input type="number" id="temperatureInput" min="0" max="2" step="0.01" value="1.0" style="width: 100%; padding: 5px;">
+            </div>
+            <div>
+                <label for="maxTokensInput">Max Tokens:</label>
+                <input type="number" id="maxTokensInput" min="1" max="4096" step="1" style="width: 100%; padding: 5px;" placeholder="(No limit)">
+            </div>
         </div>
         <!-- Add deep search toggle to the settings panel -->
         <div style="margin-bottom: 10px;">
@@ -876,6 +885,9 @@
     const outputFormatSelect = document.getElementById('outputFormatSelect');
     const enableSafetyCheckerToggle = document.getElementById('enableSafetyCheckerToggle');
     const safetyToleranceSelect = document.getElementById('safetyToleranceSelect');
+    // Add refs for temperature and max tokens
+    const temperatureInput = document.getElementById('temperatureInput');
+    const maxTokensInput = document.getElementById('maxTokensInput');
 
     // State variables
     let connection = null;
@@ -1428,6 +1440,11 @@
         const outputFormat = outputFormatSelect.value || null;
         const enableSafetyChecker = enableSafetyCheckerToggle.checked;
         const safetyTolerance = safetyToleranceSelect.value || null;
+        // Get temperature and max tokens
+        const temperatureRaw = temperatureInput.value;
+        const maxTokensRaw = maxTokensInput.value;
+        const temperature = temperatureRaw !== '' ? parseFloat(temperatureRaw) : null;
+        const maxTokens = maxTokensRaw !== '' ? parseInt(maxTokensRaw, 10) : null;
         startGenerationState(null, "Sending...");
         try {
             // Split uploaded files into files and images by fileType
@@ -1443,7 +1460,9 @@
                 ImageSize: imageSize,
                 NumImages: numImages,
                 OutputFormat: outputFormat,
-                EnableDeepSearch: enableDeepSearch
+                EnableDeepSearch: enableDeepSearch,
+                Temperature: temperature,
+                MaxTokens: maxTokens
             };
             await connection.invoke("SendMessage", request);
             clearUploadedFiles(); // Clear only if sent successfully

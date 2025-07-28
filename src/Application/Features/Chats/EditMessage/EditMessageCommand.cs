@@ -10,6 +10,6 @@ public record EditMessageCommand(
     string? ImageSize = null,
     int? NumImages = null,
     string? OutputFormat = null,
-    bool? EnableSafetyChecker = null,
-    string? SafetyTolerance = null
+    double? Temperature = null,
+    int? OutputToken = null
 ) : ICommand; 

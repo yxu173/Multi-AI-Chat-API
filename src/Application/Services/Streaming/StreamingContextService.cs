@@ -75,6 +75,8 @@ public class StreamingContextService : IStreamingContextService
             NumImages: request.NumImages,
             OutputFormat: request.OutputFormat,
             ToolDefinitions: toolDefinitions,
-            EnableDeepSearch: request.EnableDeepSearch);
+            EnableDeepSearch: request.EnableDeepSearch,
+            Temperature:request.Temperature,
+            OutputToken:request.OutputToken);
     }
 } 

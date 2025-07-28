@@ -24,7 +24,9 @@ public record AiRequestContext(
     string? OutputFormat = null,
     string? FunctionCall = null,
     List<PluginDefinition>? ToolDefinitions = null,
-    bool EnableDeepSearch = false
+    bool EnableDeepSearch = false,
+    double? Temperature = null,
+    int? OutputToken = null
 );
 
 public class AiRequestHandler : IAiRequestHandler
@@ -73,7 +75,19 @@ public class AiRequestHandler : IAiRequestHandler
                 updatedContext.ChatSession.AiAgentId,
                 cancellationToken);
             var aiService = serviceContext.Service;
-            // All provider services now have BuildPayloadAsync
+
+            if (updatedContext.EnableDeepSearch || modelType == ModelType.OpenAiDeepResearch)
+            {
+                try
+                {
+                    return await ((dynamic)aiService).BuildDeepResearchPayloadAsync(updatedContext, toolDefinitions, cancellationToken);
+                }
+                catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+                {
+                    _logger.LogWarning("Model {ModelType} does not support deep research", modelType);
+                }
+            }
+
             return await aiService.BuildPayloadAsync(updatedContext, toolDefinitions, cancellationToken);
         }
         catch (Exception ex)

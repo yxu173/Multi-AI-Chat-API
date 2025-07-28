@@ -67,7 +67,6 @@ public class ChatTitleGenerator
                 }
             }
 
-            // Clean up the title and ensure it's within length limits
             title = title.Trim().Trim('"', '\'', '`');
             if (title.Length > MaxTitleLength)
             {

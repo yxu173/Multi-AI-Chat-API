@@ -99,7 +99,9 @@ public class EditMessageHandler : Application.Abstractions.Messaging.ICommandHan
                 EnableThinking: false,
                 ImageSize: command.ImageSize,
                 NumImages: command.NumImages,
-                OutputFormat: command.OutputFormat
+                OutputFormat: command.OutputFormat,
+                Temperature: command.Temperature,
+                OutputToken: command.OutputToken
             );
 
             await _streamingService.StreamResponseAsync(streamingRequest, cancellationToken);
