@@ -20,7 +20,8 @@ public class QwenService : BaseAiService
     private readonly ResiliencePipeline<HttpResponseMessage> _resiliencePipeline;
     private readonly MultimodalContentParser _multimodalContentParser;
 
-    private static readonly ActivitySource ActivitySource = new("Infrastructure.Services.AiProvidersServices.QwenService", "1.0.0");
+    private static readonly ActivitySource ActivitySource =
+        new("Infrastructure.Services.AiProvidersServices.QwenService", "1.0.0");
 
     protected override string ProviderName => "Qwen";
 
@@ -36,7 +37,8 @@ public class QwenService : BaseAiService
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _resiliencePipeline = resilienceService.CreateAiServiceProviderPipeline(ProviderName);
-        _multimodalContentParser = multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
+        _multimodalContentParser =
+            multimodalContentParser ?? throw new ArgumentNullException(nameof(multimodalContentParser));
         ConfigureHttpClient();
     }
 
@@ -50,14 +52,17 @@ public class QwenService : BaseAiService
         }
         else
         {
-            HttpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
+            HttpClient.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
             activity?.SetTag("auth.method", "Bearer");
         }
     }
 
-    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context, CancellationToken cancellationToken)
+    public override Task<MessageDto> FormatToolResultAsync(ToolResultFormattingContext context,
+        CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Formatting Qwen tool result for ToolCallId {ToolCallId}, ToolName {ToolName}", context.ToolCallId, context.ToolName);
+        _logger.LogInformation("Formatting Qwen tool result for ToolCallId {ToolCallId}, ToolName {ToolName}",
+            context.ToolCallId, context.ToolName);
 
         var messagePayload = new
         {
@@ -66,7 +71,8 @@ public class QwenService : BaseAiService
             content = context.Result
         };
 
-        string contentJson = JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
+        string contentJson =
+            JsonSerializer.Serialize(messagePayload, new JsonSerializerOptions { WriteIndented = false });
         var messageDto = new MessageDto(contentJson, false, Guid.NewGuid());
 
         return Task.FromResult(messageDto);
@@ -74,7 +80,8 @@ public class QwenService : BaseAiService
 
     protected override string GetEndpointPath() => "chat/completions";
 
-    protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
+    protected override async IAsyncEnumerable<string> ReadStreamAsync(HttpResponseMessage response,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var activity = ActivitySource.StartActivity(nameof(ReadStreamAsync));
         activity?.SetTag("http.response_status_code", response.StatusCode.ToString());
@@ -85,7 +92,7 @@ public class QwenService : BaseAiService
         while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (cancellationToken.IsCancellationRequested) 
+            if (cancellationToken.IsCancellationRequested)
             {
                 activity?.AddEvent(new ActivityEvent("Stream reading cancelled."));
                 break;
@@ -93,18 +100,21 @@ public class QwenService : BaseAiService
 
             if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:"))
             {
-                if (!string.IsNullOrWhiteSpace(line)) 
+                if (!string.IsNullOrWhiteSpace(line))
                 {
-                    activity?.AddEvent(new ActivityEvent("Skipped non-data line in stream", tags: new ActivityTagsCollection { { "line_preview", line.Substring(0, Math.Min(line.Length, 100)) } }));
+                    activity?.AddEvent(new ActivityEvent("Skipped non-data line in stream",
+                        tags: new ActivityTagsCollection
+                            { { "line_preview", line.Substring(0, Math.Min(line.Length, 100)) } }));
                 }
+
                 continue;
             }
-            
+
             var jsonData = line.Substring("data:".Length).Trim();
             if (jsonData.Equals("[DONE]", StringComparison.OrdinalIgnoreCase))
             {
                 activity?.AddEvent(new ActivityEvent("Received [DONE] marker."));
-                break; 
+                break;
             }
 
             if (!string.IsNullOrEmpty(jsonData))
@@ -113,6 +123,7 @@ public class QwenService : BaseAiService
                 yield return jsonData;
             }
         }
+
         activity?.AddEvent(new ActivityEvent("Finished reading stream."));
     }
 
@@ -140,6 +151,7 @@ public class QwenService : BaseAiService
                     {
                         attemptRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
                     }
+
                     requestUriForLogging = attemptRequest.RequestUri;
                     attemptActivity?.SetTag("http.url", requestUriForLogging?.ToString());
                     attemptActivity?.SetTag("http.method", attemptRequest.Method.ToString());
@@ -160,30 +172,34 @@ public class QwenService : BaseAiService
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Circuit breaker open");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.", ProviderName, requestUriForLogging?.ToString() ?? (QwenBaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Circuit breaker is open for {ProviderName}. Request to {Uri} was not sent.",
+                ProviderName, requestUriForLogging?.ToString() ?? (QwenBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Request timed out by Polly");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName, requestUriForLogging?.ToString() ?? (QwenBaseUrl + GetEndpointPath()));
+            _logger.LogError(ex, "Request to {ProviderName} timed out. URI: {Uri}", ProviderName,
+                requestUriForLogging?.ToString() ?? (QwenBaseUrl + GetEndpointPath()));
             throw;
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
             activity?.SetStatus(ActivityStatusCode.Ok, "Operation cancelled by user");
             activity?.AddEvent(new ActivityEvent("Stream request operation was cancelled by user."));
-            _logger.LogInformation(ex, "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}",
-               ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (QwenBaseUrl + GetEndpointPath()));
+            _logger.LogInformation(ex,
+                "{ProviderName} stream request operation was cancelled for model {ModelCode}. URI: {Uri}",
+                ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (QwenBaseUrl + GetEndpointPath()));
             yield break;
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, "Unhandled exception during API resilience execution.");
             activity?.AddException(ex);
-            _logger.LogError(ex, "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}",
-               ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (QwenBaseUrl + GetEndpointPath()));
+            _logger.LogError(ex,
+                "Error during {ProviderName} API resilience execution or initial response handling for model {ModelCode}. URI: {Uri}",
+                ProviderName, ModelCode, requestUriForLogging?.ToString() ?? (QwenBaseUrl + GetEndpointPath()));
             throw;
         }
 
@@ -191,32 +207,36 @@ public class QwenService : BaseAiService
         {
             yield break;
         }
-        
+
         var successfulRequestUri = response.RequestMessage?.RequestUri;
         try
         {
-            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
+            await foreach (var jsonChunk in ReadStreamAsync(response, cancellationToken)
+                               .WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    activity?.AddEvent(new ActivityEvent("Stream processing cancelled by token.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
+                    activity?.AddEvent(new ActivityEvent("Stream processing cancelled by token.",
+                        tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
                     break;
                 }
-                
+
                 if (string.IsNullOrWhiteSpace(jsonChunk)) continue;
 
                 var parsedChunk = ChunkParser.ParseChunk(jsonChunk);
                 yield return parsedChunk;
-                
+
                 if (parsedChunk.FinishReason is not null)
                 {
                     activity?.AddEvent(new ActivityEvent("Stream processing completed due to finish_reason."));
                     break;
                 }
             }
+
             if (!cancellationToken.IsCancellationRequested)
             {
-                activity?.AddEvent(new ActivityEvent("Stream completed.", tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
+                activity?.AddEvent(new ActivityEvent("Stream completed.",
+                    tags: new ActivityTagsCollection { { "http.url", successfulRequestUri?.ToString() } }));
             }
         }
         finally
@@ -225,9 +245,8 @@ public class QwenService : BaseAiService
         }
     }
 
-    // --- Begin merged payload builder logic ---
-
-    public override async Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
+    public override async Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context,
+        List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
         var model = context.SpecificModel;
@@ -236,11 +255,12 @@ public class QwenService : BaseAiService
         requestObj["stream_options"] = new { include_usage = true };
         AddParameters(requestObj, context);
         CustomizePayload(requestObj, context);
-        var processedMessages = await ProcessMessagesForQwenInputAsync(context.History, context.AiAgent, context.UserSettings, cancellationToken);
+        var processedMessages = await ProcessMessagesForQwenInputAsync(context.History, context.AiAgent,
+            context.UserSettings, cancellationToken);
         requestObj["messages"] = processedMessages;
         if (tools != null && tools.Any())
         {
-            var formattedTools = tools.Select(def => new 
+            var formattedTools = tools.Select(def => new
             {
                 type = "function",
                 function = new
@@ -274,6 +294,7 @@ public class QwenService : BaseAiService
                 }
             }
         }
+
         return new AiRequestPayload(requestObj);
     }
 
@@ -284,12 +305,14 @@ public class QwenService : BaseAiService
         CancellationToken cancellationToken)
     {
         var processedMessages = new List<object>();
-        string? systemMessage = aiAgent?.ModelParameter.SystemInstructions ?? userSettings?.ModelParameters.SystemInstructions;
+        string? systemMessage = aiAgent?.ModelParameter.SystemInstructions ??
+                                userSettings?.ModelParameters.SystemInstructions;
         if (!string.IsNullOrWhiteSpace(systemMessage))
         {
             processedMessages.Add(new { role = "system", content = systemMessage.Trim() });
             _logger?.LogDebug("Added system instructions as a message for Qwen.");
         }
+
         foreach (var message in history)
         {
             string role = message.IsFromAi ? "assistant" : "user";
@@ -354,18 +377,29 @@ public class QwenService : BaseAiService
                                     });
                                     break;
                                 case FilePart filePart:
-                                    if (filePart.MimeType == "text/csv" || filePart.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
+                                    if (filePart.MimeType == "text/csv" ||
+                                        filePart.FileName?.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) == true)
                                     {
-                                        _logger?.LogWarning("CSV file {FileName} detected - Qwen doesn't support CSV files directly. Using the csv_reader plugin is recommended instead.", filePart.FileName);
-                                        contentArray.Add(new { type = "text", text = $"Note: The CSV file '{filePart.FileName}' can't be processed directly by Qwen. Please use the csv_reader tool to analyze this file. Example usage:\n\n{{\n  \"type\": \"function\",\n  \"function\": {{\n    \"name\": \"csv_reader\",\n    \"arguments\": {{\n      \"file_name\": \"{filePart.FileName}\",\n      \"max_rows\": 100,\n      \"analyze\": true\n    }}\n  }}\n}}" });
+                                        _logger?.LogWarning(
+                                            "CSV file {FileName} detected - Qwen doesn't support CSV files directly. Using the csv_reader plugin is recommended instead.",
+                                            filePart.FileName);
+                                        contentArray.Add(new
+                                        {
+                                            type = "text",
+                                            text =
+                                                $"Note: The CSV file '{filePart.FileName}' can't be processed directly by Qwen. Please use the csv_reader tool to analyze this file. Example usage:\n\n{{\n  \"type\": \"function\",\n  \"function\": {{\n    \"name\": \"csv_reader\",\n    \"arguments\": {{\n      \"file_name\": \"{filePart.FileName}\",\n      \"max_rows\": 100,\n      \"analyze\": true\n    }}\n  }}\n}}"
+                                        });
                                     }
                                     else
                                     {
-                                        contentArray.Add(new { type = "text", text = $"[Attached file: {filePart.FileName}]" });
+                                        contentArray.Add(new
+                                            { type = "text", text = $"[Attached file: {filePart.FileName}]" });
                                     }
+
                                     break;
                             }
                         }
+
                         if (contentArray.Count > 0)
                         {
                             processedMessages.Add(new { role = role, content = contentArray });
@@ -382,29 +416,15 @@ public class QwenService : BaseAiService
                 }
             }
         }
+
         return processedMessages;
     }
 
     private void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         var parameters = new Dictionary<string, object>();
-        var model = context.SpecificModel;
-        var agent = context.AiAgent;
-        var userSettings = context.UserSettings;
-        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
-        {
-            var sourceParams = agent.ModelParameter;
-            parameters["temperature"] = sourceParams.Temperature;
-            parameters["max_tokens"] = sourceParams.MaxTokens;
-        }
-        else if (userSettings != null)
-        {
-            parameters["temperature"] = userSettings.ModelParameters.Temperature;
-        }
-        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
-        {
-            parameters["max_tokens"] = model.MaxOutputTokens.Value;
-        }
+        parameters["temperature"] = context.Temperature;
+        parameters["max_tokens"] = context.OutputToken;
         foreach (var kvp in parameters)
         {
             string standardName = kvp.Key;
@@ -419,7 +439,8 @@ public class QwenService : BaseAiService
         requestObj["enable_thinking"] = useThinking;
         if (useThinking)
         {
-            _logger?.LogDebug("Enabled Qwen native 'enable_thinking' parameter for model {ModelCode}", context.SpecificModel.ModelCode);
+            _logger?.LogDebug("Enabled Qwen native 'enable_thinking' parameter for model {ModelCode}",
+                context.SpecificModel.ModelCode);
             if (requestObj.ContainsKey("temperature") && requestObj["temperature"] is double temp && temp < 0.7)
             {
                 requestObj["temperature"] = 0.7;
@@ -427,4 +448,4 @@ public class QwenService : BaseAiService
             }
         }
     }
-} 
+}

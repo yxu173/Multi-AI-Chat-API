@@ -137,9 +137,6 @@ public class GeminiService : BaseAiService, IAiFileUploader
                     using var attemptActivity = ActivitySource.StartActivity("UploadFileAttempt");
                     var attemptRequest = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
                     attemptRequest.Headers.Add("X-Goog-Upload-Protocol", "raw");
-                    // For ByteArrayContent, it's generally safe to reuse the same byte array.
-                    // If issues were to arise with content being "consumed", it would need to be new byte[fileBytes.Length] and fileBytes.CopyTo(newArray,0)
-                    // but ByteArrayContent itself can typically be reused if the underlying array isn't modified.
                     attemptRequest.Content = new ByteArrayContent(fileBytes); 
                     attemptRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
                     
@@ -198,7 +195,6 @@ public class GeminiService : BaseAiService, IAiFileUploader
             return null;
         }
 
-        // 2. Extract file metadata from the response
         string uploadResponseBody = await uploadResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         activity?.AddEvent(new ActivityEvent("File upload response received."));
         _logger.LogDebug("Gemini file upload response for {FileName}: {ResponseBody}", fileName, uploadResponseBody);
@@ -225,8 +221,6 @@ public class GeminiService : BaseAiService, IAiFileUploader
             SizeBytes: sizeBytes,
             OriginalFileName: fileName
         );
-        activity?.SetTag("ai.file.provider_id", result.ProviderFileId);
-        activity?.SetTag("ai.file.uri", result.Uri);
         _logger.LogInformation("Successfully uploaded file {FileName} to {ProviderName}. ProviderFileId: {ProviderFileId}", fileName, ProviderName, result.ProviderFileId);
         return result;
     }
@@ -451,23 +445,8 @@ public class GeminiService : BaseAiService, IAiFileUploader
     private void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         var parameters = new Dictionary<string, object>();
-        var model = context.SpecificModel;
-        var agent = context.AiAgent;
-        var userSettings = context.UserSettings;
-        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
-        {
-            var sourceParams = agent.ModelParameter;
-            parameters["temperature"] = sourceParams.Temperature;
-            parameters["max_tokens"] = sourceParams.MaxTokens;
-        }
-        else if (userSettings != null)
-        {
-            parameters["temperature"] = userSettings.ModelParameters.Temperature;
-        }
-        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
-        {
-            parameters["max_tokens"] = model.MaxOutputTokens.Value;
-        }
+        parameters["temperature"] = context.Temperature;
+        parameters["max_tokens"] = context.OutputToken;
         foreach (var kvp in parameters)
         {
             string standardName = kvp.Key;

@@ -422,11 +422,7 @@ public class OpenAiService : BaseAiService
     private void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         var parameters = new Dictionary<string, object>();
-        var model = context.SpecificModel;
-        var agent = context.AiAgent;
-        var userSettings = context.UserSettings;
-
-
+       
         parameters["temperature"] = context.Temperature;
         parameters["max_output_tokens"] = context.OutputToken;
 
@@ -435,7 +431,6 @@ public class OpenAiService : BaseAiService
         {
             string standardName = kvp.Key;
             string providerName = standardName;
-            // OpenAI uses standard names, so no mapping needed
             requestObj[providerName] = kvp.Value;
         }
     }
@@ -447,18 +442,10 @@ public class OpenAiService : BaseAiService
         if (useEffectiveThinking)
         {
             requestObj["reasoning"] = new { effort = "medium", summary = "detailed" };
-            _logger?.LogDebug("Adding reasoning effort for OpenAI model {ModelCode}", context.SpecificModel.ModelCode);
             requestObj.Remove("temperature");
             requestObj.Remove("top_p");
             requestObj.Remove("max_output_tokens");
             requestObj.Remove("max_tokens");
-            _logger?.LogDebug("Removed potentially conflicting parameters due to reasoning effort.");
-        }
-        else if (context.SpecificModel.SupportsThinking)
-        {
-            _logger?.LogDebug(
-                "Model {ModelCode} is marked as supporting thinking but doesn't support reasoning.effort parameter",
-                context.SpecificModel.ModelCode);
         }
 
         if (requestObj.TryGetValue("max_tokens", out var maxTokensValue) && !requestObj.ContainsKey("reasoning"))

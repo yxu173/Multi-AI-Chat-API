@@ -150,7 +150,6 @@ public class GrokService : BaseAiService
 
             activity?.SetTag("http.response_status_code", ((int)response.StatusCode).ToString());
 
-            // Log response headers to see if usage information is available
             _logger.LogInformation("Grok response headers:");
             foreach (var header in response.Headers)
             {
@@ -232,7 +231,6 @@ public class GrokService : BaseAiService
         }
     }
 
-    // --- Begin merged payload builder logic ---
 
     public override async Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
@@ -386,23 +384,9 @@ public class GrokService : BaseAiService
     private void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         var parameters = new Dictionary<string, object>();
-        var model = context.SpecificModel;
-        var agent = context.AiAgent;
-        var userSettings = context.UserSettings;
-        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
-        {
-            var sourceParams = agent.ModelParameter;
-            parameters["temperature"] = sourceParams.Temperature;
-            parameters["max_tokens"] = sourceParams.MaxTokens;
-        }
-        else if (userSettings != null)
-        {
-            parameters["temperature"] = userSettings.ModelParameters.Temperature;
-        }
-        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
-        {
-            parameters["max_tokens"] = model.MaxOutputTokens.Value;
-        }
+        
+        parameters["temperature"] = context.Temperature;
+        parameters["max_tokens"] = context.OutputToken;
         foreach (var kvp in parameters)
         {
             string standardName = kvp.Key;

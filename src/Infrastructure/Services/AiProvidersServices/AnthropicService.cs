@@ -231,9 +231,6 @@ public class AnthropicService : BaseAiService
             response.Dispose();
         }
     }
-
-    // --- Begin merged payload builder logic ---
-
     public override async Task<AiRequestPayload> BuildPayloadAsync(AiRequestContext context, List<PluginDefinition>? tools = null, CancellationToken cancellationToken = default)
     {
         var requestObj = new Dictionary<string, object>();
@@ -372,23 +369,10 @@ public class AnthropicService : BaseAiService
     private void AddParameters(Dictionary<string, object> requestObj, AiRequestContext context)
     {
         var parameters = new Dictionary<string, object>();
-        var model = context.SpecificModel;
-        var agent = context.AiAgent;
-        var userSettings = context.UserSettings;
-        if (agent?.AssignCustomModelParameters == true && agent.ModelParameter != null)
-        {
-            var sourceParams = agent.ModelParameter;
-            parameters["temperature"] = sourceParams.Temperature;
-            parameters["max_tokens"] = sourceParams.MaxTokens;
-        }
-        else if (userSettings != null)
-        {
-            parameters["temperature"] = userSettings.ModelParameters.Temperature;
-        }
-        if (!parameters.ContainsKey("max_tokens") && model.MaxOutputTokens.HasValue)
-        {
-            parameters["max_tokens"] = model.MaxOutputTokens.Value;
-        }
+        
+        parameters["temperature"] = context.Temperature;
+        parameters["max_tokens"] = context.OutputToken;
+      
         foreach (var kvp in parameters)
         {
             string standardName = kvp.Key;
